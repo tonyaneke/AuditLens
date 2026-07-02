@@ -1,36 +1,41 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Audit Reporting Bot (Next.js)
 
-## Getting Started
+Next.js port of the CREDICORP Internal Audit Reporting Bot. All features from the original single-page HTML app are preserved — dashboard, audits, observations, remediation tracker, fraud risk, process review, and Word exports.
 
-First, run the development server:
+Data is still stored in the browser via `localStorage` (key: `auditBotData`).
+
+## Getting started
 
 ```bash
+cd audit-app
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Project structure
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Path | Purpose |
+|------|---------|
+| `app/` | Next.js App Router (layout, page, global CSS) |
+| `components/AuditApp.tsx` | App shell (sidebar, main content, modal) |
+| `public/audit-bot.js` | Application logic extracted from the original HTML |
+| `scripts/extract-html.mjs` | Re-syncs CSS/JS from `../Audit-Reporting-Bot (1).html` |
 
-## Learn More
+## Updating from the HTML source
 
-To learn more about Next.js, take a look at the following resources:
+If you edit the original HTML file, re-run:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npm run extract
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Then restart the dev server.
 
-## Deploy on Vercel
+## Production build
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npm run build
+npm start
+```
