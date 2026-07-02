@@ -207,10 +207,10 @@ function render(){
   const A=document.getElementById("topActions");
   A.innerHTML=""; setTopSearch(""); setTopBack("");
   if(view==="dashboard"){ T.textContent=pageTitleFor("dashboard"); A.innerHTML=`<button class="btn sec sm" onclick="exportDashboard()">⤓ Export dashboard</button><button class="btn sec sm" onclick="modalCaeReport()">⤓ Quarterly BAC report</button>`; C.innerHTML=viewDashboard(); }
-  else if(view==="auditra"){ T.textContent=pageTitleFor("auditra"); A.innerHTML=`${btnDownload("modalRADownload()","Download")}<button class="btn sm dark" onclick="modalRAPrompt()">✦ Recommend audits</button><button class="btn sm" onclick="modalRA()">+ Add unit</button>`; C.innerHTML=viewAuditRA(); }
-  else if(view==="fraud"){ T.textContent=pageTitleFor("fraud"); A.innerHTML=`${btnDownload("modalFraudDownload()","Download")}<button class="btn sm dark" onclick="modalFraudPrompt()">✦ Build fraud-risk prompt</button><button class="btn sm" onclick="modalFraud()">+ Add fraud risk</button>`; C.innerHTML=viewFraud(); }
+  else if(view==="auditra"){ T.textContent=pageTitleFor("auditra"); A.innerHTML=`${btnDownload("modalRADownload()","Download")}<button class="btn sm dark ai-generate-btn" onclick="modalRAPrompt()">Generate audit universe</button><button class="btn sm" onclick="modalRA()">+ Add unit</button>`; C.innerHTML=viewAuditRA(); }
+  else if(view==="fraud"){ T.textContent=pageTitleFor("fraud"); A.innerHTML=`${btnDownload("modalFraudDownload()","Download")}<button class="btn sm dark ai-generate-btn" onclick="modalFraudPrompt()">Generate fraud risks</button><button class="btn sm" onclick="modalFraud()">+ Add fraud risk</button>`; C.innerHTML=viewFraud(); }
   else if(view==="external"){ T.textContent=pageTitleFor("external"); A.innerHTML=`<button class="btn sec sm" onclick="exportExternal()">⤓ Status report (Word)</button><button class="btn sm dark" onclick="modalExtImport()">⤒ Import findings</button><button class="btn sm" onclick="modalExt()">+ Add finding</button>`; C.innerHTML=viewExternal(); }
-  else if(view==="iasa"){ T.textContent=pageTitleFor("iasa"); A.innerHTML=`<button class="btn sec sm" onclick="exportIASA()">⤓ Self-assessment (Word)</button><button class="btn sm dark" onclick="modalIASAPrompt()">✦ Draft with Claude</button>`; C.innerHTML=viewIASA(); }
+  else if(view==="iasa"){ T.textContent=pageTitleFor("iasa"); A.innerHTML=`<button class="btn sec sm" onclick="exportIASA()">⤓ Self-assessment (Word)</button><button class="btn sm dark ai-generate-btn" onclick="modalIASAPrompt()">Generate assessment</button>`; C.innerHTML=viewIASA(); }
   else if(view==="audits"){
     T.textContent=pageTitleFor("audits");
     setTopSearch(`<input id="afq" class="topbar-search" value="${esc(auditFilter.q||"")}" placeholder="Search audits &amp; reports…" oninput="auditFilter.q=this.value;refreshAuditList()">`);
@@ -585,7 +585,7 @@ function viewAuditRA(){
   if(!U.length){
     return `<div class="note">The annual <b>audit risk assessment</b> ranks the audit universe by risk to build a risk-based annual audit plan (IIA Standard 2010). Each auditable unit is scored on weighted risk factors; the composite rating drives the recommended <b>audit frequency</b> and whether it enters this year's plan.</div>
     <div class="card"><div class="empty"><div class="big">◈</div>No auditable units yet.<br><br>
-      <button class="btn dark" onclick="modalRAPrompt()">✦ Recommend audits with Claude</button> &nbsp; <button class="btn" onclick="modalRA()">+ Add auditable unit</button></div></div>`;
+      <button class="btn dark ai-generate-btn" onclick="modalRAPrompt()">Generate audit universe</button> &nbsp; <button class="btn" onclick="modalRA()">+ Add auditable unit</button></div></div>`;
   }
   const py=+planYear();
   const en=U.map(e=>{ const score=raComposite(e.factors); const band=e.ratingOverride||raBand(score); const due=raDue(e,band); return {...e,score,band,due,incl:raInPlan(e,band,due),freq:e.frequencyOverride||raFreqLabel(band)}; }).sort((a,b)=>b.score-a.score);
@@ -695,20 +695,15 @@ function saveRA(id){
 }
 function delRA(id){ if(!confirm("Delete this auditable unit?"))return; DB.auditUniverse=auditUniverse().filter(x=>x.id!==id); save(); render(); }
 function modalRAPrompt(){
-  openModal("Recommend audits with Claude",`
-    <p class="hint">Describe the organisation / list its key departments, processes and functions (and any known risk context). I'll propose the audit universe, score each unit on the risk factors, and recommend an audit frequency. Paste the result back below.</p>
+  openModal("Generate audit universe",`
+    <p class="hint">Describe the organisation / list its key departments, processes and functions (and any known risk context). AI will propose the audit universe, score each unit on the risk factors, and recommend an audit frequency.</p>
     <label>Organisation context / areas</label><textarea id="rap_ctx" style="min-height:90px" placeholder="e.g. CREDICORP: Credit Operations, Treasury, Finance, IT, HR, Procurement, Risk & Compliance, Internal Control. New core banking go-live 2026; regulated by CBN."></textarea>
-    <div class="row" style="margin-top:12px"><button class="btn" onclick="genRAPrompt()">Build prompt</button></div>
-    <div id="rapOut" style="margin-top:14px"></div>
-    <hr style="margin:16px 0;border:none;border-top:1px solid var(--line)">
-    <label>Paste audit-universe JSON</label><textarea id="raImp" style="min-height:140px" placeholder='[ { "name":"Credit Operations", "factors":{...}, ... } ]'></textarea>
-    <div id="raImpErr" style="color:var(--crit);font-size:12.5px;margin-top:6px"></div>`,
-    `<button class="btn sec" onclick="closeModal()">Close</button><button class="btn dark" onclick="doImportRA()">Add to universe</button>`);
+    <div id="raImpErr"></div>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark ai-generate-btn" onclick="generateRAUniverse()">Generate audit universe</button>`);
 }
-function genRAPrompt(){
-  const ctx=val("rap_ctx");
+function buildRAPrompt(ctx){
   const factorList=RA_FACTORS.map(([k,lab,w])=>`    "${k}": 3,   // ${lab} (weight ${Math.round(w*100)}%), 1-5`).join("\n");
-  const p=`Act as Chief Audit Executive for ${DB.org}. Perform a risk-based annual audit risk assessment to build the audit universe and recommend the annual audit plan, in line with IIA Standard 2010.
+  return `Act as Chief Audit Executive for ${DB.org}. Perform a risk-based annual audit risk assessment to build the audit universe and recommend the annual audit plan, in line with IIA Standard 2010.
 
 Context / areas:
 ${ctx||"(infer the typical auditable units for a consumer-credit corporation)"}
@@ -726,13 +721,14 @@ ${factorList}
     "rationale": "why this risk level and audit frequency"
   }
 ]`;
-  document.getElementById("rapOut").innerHTML=`<div class="codebox" id="rapbox">${esc(p)}</div><div class="row" style="margin-top:8px"><button class="btn sec sm" onclick="copyText(document.getElementById('rapbox').innerText,this)">Copy prompt</button></div>`;
 }
-function doImportRA(){
-  const U=auditUniverse(); let raw=val("raImp").trim(); const err=document.getElementById("raImpErr");
-  if(!raw){ err.textContent="Paste the JSON first."; return; }
-  raw=raw.replace(/^```(json)?/i,"").replace(/```$/,"").trim();
-  let d; try{ d=JSON.parse(raw); }catch(e){ err.textContent="Couldn't read that as JSON (array or object)."; return; }
+async function generateRAUniverse(){
+  await runAiJson(buildRAPrompt(val("rap_ctx")),"raImpErr",d=>{ doImportRA(d); });
+}
+function doImportRA(raw){
+  const U=auditUniverse(); raw=importRaw(raw);
+  if(!raw){ showAiErr("raImpErr","Nothing to import."); return false; }
+  let d; try{ d=parseAiJson(raw); }catch(e){ showAiErr("raImpErr",e.message); return false; }
   const arr=Array.isArray(d)?d:[d]; let n=0;
   arr.forEach(x=>{ if(!x||typeof x!=="object")return;
     const factors={}; RA_FACTORS.forEach(([k])=>{ const v=x.factors&&x.factors[k]; factors[k]=Math.min(5,Math.max(1,Math.round(+v||3))); });
@@ -743,8 +739,8 @@ function doImportRA(){
       engStatus:es||"Not started",includeInPlan:(x.includeInPlan!=null?!!x.includeInPlan:undefined),rationale:x.rationale||"",createdAt:new Date().toISOString()});
     n++;
   });
-  if(!n){ err.textContent="No auditable units found in that JSON."; return; }
-  save(); closeModal(); render();
+  if(!n){ showAiErr("raImpErr","No auditable units found in that JSON."); return false; }
+  save(); closeModal(); render(); return true;
 }
 function exportRA(){
   const U=auditUniverse(); if(!U.length){ alert("No auditable units to export."); return; }
@@ -781,7 +777,7 @@ function viewFraud(){
   if(!F.length){
     return `<div class="note">A fraud risk assessment is conducted <b>annually</b> to identify, assess and respond to fraud risks across the Corporation — aligned to the <b>ACFE Fraud Tree</b> (asset misappropriation, corruption, financial statement fraud) and <b>COSO fraud risk management</b> principles. Its output drives the <b>Fraud Prevention Plan</b>.</div>
     <div class="card"><div class="empty"><div class="big">⚠</div>No fraud risks captured yet.<br><br>
-      <button class="btn dark" onclick="modalFraudPrompt()">✦ Build fraud-risk prompt</button> &nbsp; <button class="btn" onclick="modalFraud()">+ Add fraud risk manually</button></div></div>`;
+      <button class="btn dark ai-generate-btn" onclick="modalFraudPrompt()">Generate fraud risks</button> &nbsp; <button class="btn" onclick="modalFraud()">+ Add fraud risk manually</button></div></div>`;
   }
   migrateFraudActions();
   const en=F.map(f=>{ const inh=fraudBand(f.likelihood*f.impact); const res=f.residualOverride||residualBand(inh,f.controlStrength); return {...f,inh,res,score:f.likelihood*f.impact}; });
@@ -819,8 +815,8 @@ function viewFraud(){
   const allActs=en.flatMap(f=>fraudActions(f)); const implN=allActs.filter(a=>a.status==="Implemented").length;
   h+=`<div class="card"><div class="row" style="align-items:center"><div class="seclabel" style="margin:0">Fraud Prevention Plan</div><div class="spacer"></div>
     <span class="hint">${allActs.length?implN+"/"+allActs.length+" actions implemented":"no actions yet"}</span>
-    <button class="btn ghost sm" onclick="modalFraudActionsPrompt()">✦ Draft actions</button>
-    <button class="btn ghost sm" onclick="modalFraudPlanPrompt()">✦ Draft overview</button>
+    <button class="btn ghost sm ai-generate-btn" onclick="modalFraudActionsPrompt()">Generate actions</button>
+    <button class="btn ghost sm ai-generate-btn" onclick="modalFraudPlanPrompt()">Generate overview</button>
     <button class="btn ghost sm" onclick="modalFraudUpdate()">📅 Quarterly update</button>
     <button class="btn ghost sm" onclick="modalFraudPlan()">Edit overview</button></div>
     <div class="hint" style="margin:4px 0 10px">Each fraud risk from the assessment is listed below by residual priority. Add the prevention/response actions that will mitigate it — together they are your fraud prevention plan.</div>
@@ -913,27 +909,27 @@ function saveFraudAction(rid,aid){
 }
 function delFraudAction(rid,aid){ const f=fraudList().find(x=>x.id===rid); if(!f)return; f.actions=(f.actions||[]).filter(x=>x.id!==aid); rollupFraud(f); save(); render(); }
 function modalFraudActionsPrompt(){
+  openModal("Generate prevention actions",`<p class="hint">AI will recommend prevention / response actions for each fraud risk in the register (matched by title).</p><div id="faImpErr"></div>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark ai-generate-btn" onclick="generateFraudActions()">Generate actions</button>`);
+}
+function buildFraudActionsPrompt(){
   const F=fraudList();
   const list=F.map(f=>{ const inh=fraudBand(f.likelihood*f.impact); const res=f.residualOverride||residualBand(inh,f.controlStrength); return `- "${f.scheme}" [${f.category}] residual ${res}; existing controls: ${f.existingControls||"none noted"}`; }).join("\n")||"(no fraud risks captured)";
-  const p=`Act as a fraud risk specialist for ${DB.org}. For each fraud risk below, recommend specific prevention / response actions (a balanced mix of preventive and detective controls) that would reduce residual risk. Return ONLY a JSON array (no commentary):
+  return `Act as a fraud risk specialist for ${DB.org}. For each fraud risk below, recommend specific prevention / response actions (a balanced mix of preventive and detective controls) that would reduce residual risk. Return ONLY a JSON array (no commentary):
 [
   { "scheme": "exact fraud risk title as listed", "actions": [ { "text": "specific action", "type": "Preventive | Detective | Corrective", "owner": "responsible role" } ] }
 ]
 
 Fraud risks:
 ${list}`;
-  openModal("Draft prevention actions",`<p class="hint">Send this to me in chat; paste my JSON below to attach the actions to each risk (matched by title).</p>
-    <div class="codebox" id="fabox">${esc(p)}</div><div class="row" style="margin-top:8px"><button class="btn sec sm" onclick="copyText(document.getElementById('fabox').innerText,this)">Copy prompt</button></div>
-    <hr style="margin:14px 0;border:none;border-top:1px solid var(--line)">
-    <label>Paste actions JSON</label><textarea id="faImp" style="min-height:130px" placeholder='[ { "scheme":"...", "actions":[ { "text":"...", "type":"Preventive", "owner":"..." } ] } ]'></textarea>
-    <div id="faImpErr" style="color:var(--crit);font-size:12.5px;margin-top:6px"></div>`,
-    `<button class="btn sec" onclick="closeModal()">Close</button><button class="btn dark" onclick="doImportFraudActions()">Attach actions</button>`);
 }
-function doImportFraudActions(){
-  const F=fraudList(); let raw=val("faImp").trim(); const err=document.getElementById("faImpErr");
-  if(!raw){ err.textContent="Paste the JSON first."; return; }
-  raw=raw.replace(/^```(json)?/i,"").replace(/```$/,"").trim();
-  let d; try{ d=JSON.parse(raw); }catch(e){ err.textContent="Couldn't read that as JSON."; return; }
+async function generateFraudActions(){
+  await runAiJson(buildFraudActionsPrompt(),"faImpErr",d=>{ doImportFraudActions(d); });
+}
+function doImportFraudActions(raw){
+  const F=fraudList(); raw=importRaw(raw);
+  if(!raw){ showAiErr("faImpErr","Nothing to import."); return false; }
+  let d; try{ d=parseAiJson(raw); }catch(e){ showAiErr("faImpErr",e.message); return false; }
   const arr=Array.isArray(d)?d:[d]; let n=0;
   arr.forEach(x=>{ if(!x||!x.scheme||!Array.isArray(x.actions))return;
     let f=F.find(z=>z.scheme.toLowerCase().trim()===String(x.scheme).toLowerCase().trim());
@@ -942,24 +938,20 @@ function doImportFraudActions(){
     x.actions.forEach(a=>{ if(a&&a.text){ f.actions.push({id:uid(),text:a.text,type:ACTION_TYPES.includes(a.type)?a.type:"Preventive",owner:a.owner||"",targetDate:a.targetDate||"",status:"Planned"}); n++; } });
     rollupFraud(f);
   });
-  if(!n){ err.textContent="No matching actions found — check the scheme titles match the register."; return; }
-  save(); closeModal(); render();
+  if(!n){ showAiErr("faImpErr","No matching actions found — check the scheme titles match the register."); return false; }
+  save(); closeModal(); render(); return true;
 }
 function modalFraudPrompt(){
-  openModal("Build fraud-risk prompt",`
-    <p class="hint">Name a process/department (and any context). I'll return fraud risks — schemes, likelihood/impact, existing-control assessment and prevention actions — per ACFE/COSO best practice. Paste them back below.</p>
+  openModal("Generate fraud risks",`
+    <p class="hint">Name a process/department (and any context). AI will return fraud risks — schemes, likelihood/impact, existing-control assessment and prevention actions — per ACFE/COSO best practice.</p>
     <label>Process / Department</label><input id="frp_proc" placeholder="e.g. Credit Operations / Loan disbursement">
     <label>Context (optional)</label><textarea id="frp_ctx" placeholder="e.g. manual disbursement approvals; PFIs onboarded without bureau checks"></textarea>
-    <div class="row" style="margin-top:12px"><button class="btn" onclick="genFraudPrompt()">Build prompt</button></div>
-    <div id="frpOut" style="margin-top:14px"></div>
-    <hr style="margin:16px 0;border:none;border-top:1px solid var(--line)">
-    <label>Paste fraud-risk JSON</label><textarea id="frImp" style="min-height:140px" placeholder='[ { "scheme":"...", "category":"...", "likelihood":4, "impact":4, ... } ]'></textarea>
-    <div id="frImpErr" style="color:var(--crit);font-size:12.5px;margin-top:6px"></div>`,
-    `<button class="btn sec" onclick="closeModal()">Close</button><button class="btn dark" onclick="doImportFraud()">Add to register</button>`);
+    <div id="frImpErr" style="margin-top:10px"></div>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark ai-generate-btn" onclick="generateFraudRisks()">Generate fraud risks</button>`);
 }
-function genFraudPrompt(){
+function buildFraudPrompt(){
   const proc=val("frp_proc"), ctx=val("frp_ctx");
-  const p=`Act as a fraud risk assessment specialist for ${DB.org}, following the ACFE Fraud Tree and COSO fraud risk management principles. For the process/department below, identify the key fraud risks (schemes) and assess each.
+  return `Act as a fraud risk assessment specialist for ${DB.org}, following the ACFE Fraud Tree and COSO fraud risk management principles. For the process/department below, identify the key fraud risks (schemes) and assess each.
 
 Process / Department: ${proc||"(not specified)"}
 Context: ${ctx||"(none)"}
@@ -980,13 +972,14 @@ Rate inherent likelihood and impact on a 1–5 scale (1 lowest, 5 highest), asse
   }
 ]
 Cover the most relevant schemes for this area (for lending e.g. collusive/ghost borrowers, kickbacks on approvals, diversion of disbursements, collateral manipulation, override of credit limits, financial-statement manipulation).`;
-  document.getElementById("frpOut").innerHTML=`<div class="codebox" id="frpbox">${esc(p)}</div><div class="row" style="margin-top:8px"><button class="btn sec sm" onclick="copyText(document.getElementById('frpbox').innerText,this)">Copy prompt</button></div>`;
 }
-function doImportFraud(){
-  const F=fraudList(); let raw=val("frImp").trim(); const err=document.getElementById("frImpErr");
-  if(!raw){ err.textContent="Paste the JSON first."; return; }
-  raw=raw.replace(/^```(json)?/i,"").replace(/```$/,"").trim();
-  let d; try{ d=JSON.parse(raw); }catch(e){ err.textContent="Couldn't read that as JSON (array or object)."; return; }
+async function generateFraudRisks(){
+  await runAiJson(buildFraudPrompt(),"frImpErr",d=>{ doImportFraud(d); });
+}
+function doImportFraud(raw){
+  const F=fraudList(); raw=importRaw(raw);
+  if(!raw){ showAiErr("frImpErr","Nothing to import."); return false; }
+  let d; try{ d=parseAiJson(raw); }catch(e){ showAiErr("frImpErr",e.message); return false; }
   const arr=Array.isArray(d)?d:[d]; let n=0;
   arr.forEach(x=>{ if(!x||typeof x!=="object")return;
     const cat=FRAUD_CATS.find(c=>c.toLowerCase()===String(x.category||"").toLowerCase())||"Other";
@@ -996,8 +989,8 @@ function doImportFraud(){
       existingControls:x.existingControls||x.controls||"",controlStrength:cs,residualOverride:"",preventionAction:x.preventionAction||x.prevention||"",owner:x.owner||"",status:"Identified",createdAt:new Date().toISOString()});
     n++;
   });
-  if(!n){ err.textContent="No fraud risks found in that JSON."; return; }
-  save(); closeModal(); render();
+  if(!n){ showAiErr("frImpErr","No fraud risks found in that JSON."); return false; }
+  save(); closeModal(); render(); return true;
 }
 function modalFraudPlan(){
   openModal("Fraud Prevention Plan — overview",`
@@ -1006,13 +999,21 @@ function modalFraudPlan(){
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="DB.fraudPlanNarrative=val('fp_plan');save();closeModal();render();">Save</button>`);
 }
 function modalFraudPlanPrompt(){
+  openModal("Generate Fraud Prevention Plan overview",`<p class="hint">AI will draft the overview narrative based on fraud risks in the register. You can edit it afterward via <b>Edit overview</b>.</p><div id="fpErr"></div>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark ai-generate-btn" onclick="generateFraudPlanNarrative()">Generate overview</button>`);
+}
+function buildFraudPlanPrompt(){
   const F=fraudList();
   const list=F.map(f=>`- [${f.category}] ${f.scheme} (L${f.likelihood}×I${f.impact})`).join("\n")||"(no fraud risks captured yet)";
-  const p=`Act as a fraud risk specialist for ${DB.org}. Draft the overview narrative for our annual Fraud Prevention Plan, based on the fraud risks below. Cover: objective, governance/ownership, preventive & detective controls, whistleblowing/reporting channel, fraud awareness training, and monitoring & reporting cadence to the Board Audit Committee. Return plain text (no JSON), 3–5 short paragraphs.
+  return `Act as a fraud risk specialist for ${DB.org}. Draft the overview narrative for our annual Fraud Prevention Plan, based on the fraud risks below. Cover: objective, governance/ownership, preventive & detective controls, whistleblowing/reporting channel, fraud awareness training, and monitoring & reporting cadence to the Board Audit Committee. Return plain text (no JSON), 3–5 short paragraphs.
 
 Fraud risks identified:
 ${list}`;
-  openModal("Draft Fraud Prevention Plan overview",`<p class="hint">Send this to me in chat; paste my reply into <b>Edit overview</b>.</p><div class="codebox" id="fpbox">${esc(p)}</div><div class="row" style="margin-top:8px"><button class="btn sec sm" onclick="copyText(document.getElementById('fpbox').innerText,this)">Copy prompt</button></div>`,`<button class="btn sec" onclick="closeModal()">Close</button>`);
+}
+async function generateFraudPlanNarrative(){
+  await runAiText(buildFraudPlanPrompt(),"fpErr",text=>{
+    DB.fraudPlanNarrative=text.trim(); save(); closeModal(); render();
+  });
 }
 function exportFraud(){
   const F=fraudList(); if(!F.length){ alert("No fraud risks to export."); return; }
@@ -1053,20 +1054,24 @@ function modalFraudUpdate(){
     <p class="hint">Set the reporting period and an executive commentary, then export the implementation update for the Board Audit Committee. Per-action progress notes are entered on each action in the plan (Edit action → Progress update).</p>
     <div class="f2">
       <div><label>Reporting period</label><input id="fu_period" value="${esc(u.period||"")}" placeholder="e.g. Q2 2026"></div>
-      <div><label>&nbsp;</label><button class="btn sec" style="width:100%" onclick="genFraudUpdatePrompt()">✦ Draft commentary with Claude</button></div>
+      <div><label>&nbsp;</label><button class="btn sec ai-generate-btn" style="width:100%" onclick="generateFraudUpdateCommentary()">Generate commentary</button></div>
     </div>
     <label>Executive commentary to the BAC</label><textarea id="fu_comm" style="min-height:140px">${esc(u.commentary||"")}</textarea>
     <div id="fuOut" style="margin-top:10px"></div>`,
     `<button class="btn sec" onclick="closeModal()">Close</button><button class="btn" onclick="DB.fraudUpdate={period:val('fu_period'),commentary:val('fu_comm')};save();">Save</button><button class="btn dark" onclick="DB.fraudUpdate={period:val('fu_period'),commentary:val('fu_comm')};save();exportFraudUpdate();">⤓ Export update (Word)</button>`);
 }
-function genFraudUpdatePrompt(){
+function buildFraudUpdatePrompt(period){
   const F=fraudList();
   const lines=F.map(f=>{ const inh=fraudBand(f.likelihood*f.impact); const res=f.residualOverride||residualBand(inh,f.controlStrength); const acts=f.actions||[]; const done=acts.filter(a=>a.status==="Implemented").length; return `- [${res}] ${f.scheme}: ${done}/${acts.length} actions implemented`+(acts.length?"; "+acts.map(a=>`${a.text} (${a.status}${a.update?": "+a.update:""})`).join("; "):""); }).join("\n");
-  const p=`Act as a fraud risk specialist for ${DB.org}. Draft a concise executive commentary (3–4 short paragraphs) for the Board Audit Committee on the implementation status of the Fraud Prevention Plan for ${val("fu_period")||"the reporting period"}. Cover overall progress, key actions completed, items in progress or behind schedule, residual exposure, and next steps. Return plain text only (no JSON).
+  return `Act as a fraud risk specialist for ${DB.org}. Draft a concise executive commentary (3–4 short paragraphs) for the Board Audit Committee on the implementation status of the Fraud Prevention Plan for ${period||"the reporting period"}. Cover overall progress, key actions completed, items in progress or behind schedule, residual exposure, and next steps. Return plain text only (no JSON).
 
 Plan status:
 ${lines||"(no fraud risks/actions captured)"}`;
-  document.getElementById("fuOut").innerHTML=`<div class="hint">Send this to me in chat; paste my reply into the commentary box above.</div><div class="codebox" id="fubox">${esc(p)}</div><div class="row" style="margin-top:8px"><button class="btn sec sm" onclick="copyText(document.getElementById('fubox').innerText,this)">Copy prompt</button></div>`;
+}
+async function generateFraudUpdateCommentary(){
+  await runAiText(buildFraudUpdatePrompt(val("fu_period")),"fuOut",text=>{
+    const el=document.getElementById("fu_comm"); if(el) el.value=text.trim();
+  });
 }
 function exportFraudUpdate(){
   const F=fraudList(); if(!F.length){ alert("No fraud risks/plan to report on."); return; }
@@ -1095,7 +1100,7 @@ function exportFraudUpdate(){
 function viewProcess(){
   const P=procList();
   if(curProc){ const p=P.find(x=>x.id===curProc); if(p) return procDetail(p); curProc=null; }
-  if(!P.length) return `<div class="note">Paste a <b>Standard Operating Procedure</b> for a business unit and have Claude assess its <b>process effectiveness</b> — identifying <b>control gaps</b>, <b>process gaps</b>, <b>redundant / duplicate tasks</b> and <b>efficiency opportunities</b>, with an overall rating and recommendations. Each finding can be raised as an audit observation.</div>
+  if(!P.length) return `<div class="note">Paste a <b>Standard Operating Procedure</b> for a business unit and use AI to assess its <b>process effectiveness</b> — identifying <b>control gaps</b>, <b>process gaps</b>, <b>redundant / duplicate tasks</b> and <b>efficiency opportunities</b>, with an overall rating and recommendations. Each finding can be raised as an audit observation.</div>
     <div class="card"><div class="empty"><div class="big">◫</div>No process reviews yet.<br><br><button class="btn dark" onclick="modalProcNew()">+ New process review</button></div></div>`;
   return `<div class="row" style="margin-bottom:14px"><div style="font-size:13px;color:var(--muted)">${P.length} process review(s)</div></div>`+
     P.slice().reverse().map(p=>{ const f=p.findings||[]; const counts={}; PROC_CATS.forEach(([c])=>counts[c]=f.filter(x=>x.category===c).length); const rh=PROC_RATING_HEX[p.overallRating]||"#64748b";
@@ -1172,7 +1177,7 @@ function procDetail(p){
 }
 function modalProcNew(){
   openModal("New process review",`
-    <p class="hint">Enter the unit and paste the SOP text (used to build the prompt — not stored). Build the prompt, send it to me in chat, then paste my JSON to create the review. <b>Tip:</b> for a Word/PDF SOP, you can also just give me the file directly in chat and I'll return the JSON.</p>
+    <p class="hint">Enter the unit and paste the SOP text. AI will assess process effectiveness and return findings you can edit.</p>
     <div class="f3">
       <div><label>Business unit *</label><input id="pc_unit" placeholder="e.g. Credit Operations"></div>
       <div><label>SOP title</label><input id="pc_sop" placeholder="e.g. Loan Disbursement SOP v2"></div>
@@ -1180,17 +1185,11 @@ function modalProcNew(){
     </div>
     <label>SOP text <span class="hint">(paste, or</span> <label class="btn sec sm" style="display:inline-block;margin:0">load .txt<input type="file" accept=".txt,text/plain" style="display:none" onchange="loadCsvInto(event,'pc_sop_text')"></label><span class="hint">)</span></label>
     <textarea id="pc_sop_text" style="min-height:120px" placeholder="Paste the standard operating procedure here..."></textarea>
-    <div class="row" style="margin-top:10px"><button class="btn" onclick="genProcPrompt()">Build analysis prompt</button></div>
-    <div id="pcPromptOut" style="margin-top:12px"></div>
-    <hr style="margin:14px 0;border:none;border-top:1px solid var(--line)">
-    <label>Paste analysis JSON</label><textarea id="pc_json" style="min-height:120px" placeholder='{ "overallRating":"Needs improvement", "summary":"...", "findings":[...], "keyRecommendations":[...] }'></textarea>
-    <div id="pcErr" style="color:var(--crit);font-size:12.5px;margin-top:6px"></div>`,
-    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark" onclick="doImportProc()">Create review</button>`);
+    <div id="pcErr" style="margin-top:10px"></div>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark ai-generate-btn" onclick="generateProcReview()">Generate analysis</button>`);
 }
-function genProcPrompt(){
-  const unit=val("pc_unit"), sop=val("pc_sop"), sopText=val("pc_sop_text");
-  if(!sopText){ alert("Paste the SOP text first."); return; }
-  const p=`Act as an internal audit / business process specialist for ${DB.org}. Review the Standard Operating Procedure below and assess the process effectiveness for the business unit. Identify:
+function buildProcPrompt(unit,sop,sopText){
+  return `Act as an internal audit / business process specialist for ${DB.org}. Review the Standard Operating Procedure below and assess the process effectiveness for the business unit. Identify:
 - Control gaps: missing or weak controls (approvals, segregation of duties, reconciliations, validations, limits, audit trail)
 - Process gaps: missing steps, unclear ownership, weak handoffs, no escalation, undefined timelines
 - Redundancy: duplicate, repetitive or non-value-adding tasks
@@ -1214,19 +1213,24 @@ Return ONLY a JSON object (no commentary):
   ],
   "keyRecommendations": ["top priority improvement", "..."]
 }`;
-  document.getElementById("pcPromptOut").innerHTML=`<div class="codebox" id="pcbox">${esc(p)}</div><div class="row" style="margin-top:8px"><button class="btn sec sm" onclick="copyText(document.getElementById('pcbox').innerText,this)">Copy prompt</button></div>`;
 }
-function doImportProc(){
-  const unit=val("pc_unit"); const err=document.getElementById("pcErr");
-  let raw=val("pc_json").trim();
-  if(!unit){ err.textContent="Enter the business unit."; return; }
-  if(!raw){ err.textContent="Paste the analysis JSON I gave you."; return; }
-  raw=raw.replace(/^```(json)?/i,"").replace(/```$/,"").trim();
-  let d; try{ d=JSON.parse(raw); }catch(e){ err.textContent="Couldn't read that as JSON (it should start with {)."; return; }
+async function generateProcReview(){
+  const unit=val("pc_unit"), sop=val("pc_sop"), sopText=val("pc_sop_text");
+  if(!unit){ showAiErr("pcErr","Enter the business unit."); return; }
+  if(!sopText){ showAiErr("pcErr","Paste the SOP text first."); return; }
+  await runAiJson(buildProcPrompt(unit,sop,sopText),"pcErr",d=>{ doImportProc(d); });
+}
+function doImportProc(raw){
+  const unit=val("pc_unit");
+  if(!unit && raw==null){ showAiErr("pcErr","Enter the business unit."); return false; }
+  if(raw==null) raw=val("pc_json").trim();
+  else raw=importRaw(raw);
+  if(!raw){ showAiErr("pcErr","Nothing to import."); return false; }
+  let d; try{ d=parseAiJson(raw); }catch(e){ showAiErr("pcErr",e.message); return false; }
   const rating=PROC_RATINGS.find(r=>r.toLowerCase()===String(d.overallRating||"").toLowerCase())||d.overallRating||"";
   const findings=(Array.isArray(d.findings)?d.findings:[]).map(x=>({id:uid(),category:(PROC_CATS.find(c=>c[0].toLowerCase()===String(x.category||"").toLowerCase())||["Process gap"])[0],title:x.title||"(untitled)",detail:x.detail||"",recommendation:x.recommendation||"",severity:PROC_SEV.find(s=>s.toLowerCase()===String(x.severity||"").toLowerCase())||"Medium"}));
   const p={id:uid(),unit,sopTitle:val("pc_sop"),period:val("pc_period"),overallRating:rating,summary:d.summary||"",findings,keyRecommendations:Array.isArray(d.keyRecommendations)?d.keyRecommendations.map(String):[],createdAt:new Date().toISOString()};
-  procList().push(p); save(); closeModal(); curProc=p.id; render();
+  procList().push(p); save(); closeModal(); curProc=p.id; render(); return true;
 }
 function modalProcMeta(id){
   const p=procList().find(x=>x.id===id); if(!p)return;
@@ -1323,20 +1327,15 @@ function downloadFlowchart(pid){ const p=procList().find(x=>x.id===pid); if(!p||
 function modalProposeProcess(pid){
   const p=procList().find(x=>x.id===pid); if(!p)return;
   openModal("Generate proposed updated process",`
-    <p class="hint">I'll redesign the process to resolve the flagged findings — producing a <b>proposed updated process</b> plus a flowchart. Optionally paste the original SOP for closer rewriting.</p>
+    <p class="hint">AI will redesign the process to resolve the flagged findings — producing a proposed updated process plus a flowchart. Optionally paste the original SOP for closer rewriting.</p>
     <label>Original SOP text <span class="hint">(optional)</span> <label class="btn sec sm" style="display:inline-block;margin:0">load .txt<input type="file" accept=".txt,text/plain" style="display:none" onchange="loadCsvInto(event,'pp_sop')"></label></label>
     <textarea id="pp_sop" style="min-height:80px" placeholder="(optional) paste the SOP for closer rewriting..."></textarea>
-    <div class="row" style="margin-top:10px"><button class="btn" onclick="genProposePrompt('${pid}')">Build prompt</button></div>
-    <div id="ppOut" style="margin-top:12px"></div>
-    <hr style="margin:14px 0;border:none;border-top:1px solid var(--line)">
-    <label>Paste proposed-process JSON</label><textarea id="pp_json" style="min-height:120px" placeholder='{ "proposedSummary":"...", "steps":[ { "actor":"...", "action":"...", "type":"step", "note":"" } ] }'></textarea>
-    <div id="ppErr" style="color:var(--crit);font-size:12.5px;margin-top:6px"></div>`,
-    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark" onclick="doImportProposed('${pid}')">Save proposed process</button>`);
+    <div id="ppErr" style="margin-top:10px"></div>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark ai-generate-btn" onclick="generateProposedProcess('${pid}')">Generate process</button>`);
 }
-function genProposePrompt(pid){
-  const p=procList().find(x=>x.id===pid); const sopText=val("pp_sop");
+function buildProposePrompt(p,sopText){
   const findingsList=(p.findings||[]).map(x=>`- [${x.category}] ${x.title}: ${x.recommendation||x.detail}`).join("\n")||"(no findings captured)";
-  const prompt=`Act as a business process re-engineering specialist for ${DB.org}. Redesign the "${p.unit}" process${p.sopTitle?" ("+p.sopTitle+")":""} into an improved, controlled and efficient end-to-end process — resolving the control gaps, removing redundancies and building in efficiency from the findings below.
+  return `Act as a business process re-engineering specialist for ${DB.org}. Redesign the "${p.unit}" process${p.sopTitle?" ("+p.sopTitle+")":""} into an improved, controlled and efficient end-to-end process — resolving the control gaps, removing redundancies and building in efficiency from the findings below.
 
 Findings to resolve:
 ${findingsList}
@@ -1350,17 +1349,20 @@ Return ONLY a JSON object (no commentary):
   ]
 }
 Order the steps end-to-end (begin with a "start", finish with an "end"). Use type "control" for embedded controls (approvals, segregation of duties, reconciliations, system blocks) and "decision" for branch/approval points.`;
-  document.getElementById("ppOut").innerHTML=`<div class="codebox" id="ppbox">${esc(prompt)}</div><div class="row" style="margin-top:8px"><button class="btn sec sm" onclick="copyText(document.getElementById('ppbox').innerText,this)">Copy prompt</button></div>`;
 }
-function doImportProposed(pid){
-  const p=procList().find(x=>x.id===pid); if(!p)return; const err=document.getElementById("ppErr");
-  let raw=val("pp_json").trim(); if(!raw){ err.textContent="Paste the JSON first."; return; }
-  raw=raw.replace(/^```(json)?/i,"").replace(/```$/,"").trim();
-  let d; try{ d=JSON.parse(raw); }catch(e){ err.textContent="Couldn't read that as JSON (it should start with {)."; return; }
+async function generateProposedProcess(pid){
+  const p=procList().find(x=>x.id===pid); if(!p)return;
+  await runAiJson(buildProposePrompt(p,val("pp_sop")),"ppErr",d=>{ doImportProposed(pid,d); });
+}
+function doImportProposed(pid,raw){
+  const p=procList().find(x=>x.id===pid); if(!p)return false;
+  if(raw==null) raw=val("pp_json").trim(); else raw=importRaw(raw);
+  if(!raw){ showAiErr("ppErr","Nothing to import."); return false; }
+  let d; try{ d=parseAiJson(raw); }catch(e){ showAiErr("ppErr",e.message); return false; }
   p.proposedSummary=d.proposedSummary||d.summary||"";
   const types=["start","step","control","decision","end"];
   p.proposedSteps=(Array.isArray(d.steps)?d.steps:[]).map(s=>({id:uid(),actor:s.actor||"",action:s.action||"",type:types.includes(String(s.type||"").toLowerCase())?String(s.type).toLowerCase():"step",note:s.note||""}));
-  save(); closeModal(); render();
+  save(); closeModal(); render(); return true;
 }
 function modalProcStep(pid,sid){
   const p=procList().find(x=>x.id===pid); if(!p)return; p.proposedSteps=p.proposedSteps||[];
@@ -1513,13 +1515,13 @@ function iasaAssessment(){
     });
     h+=`</div>`;
   });
-  h+=`<div class="card iasa-conclusion anim-fade-in"><div class="row"><div class="seclabel" style="margin:0">Overall conclusion</div><div class="spacer"></div><button class="btn ghost sm" type="button" onclick="modalIASACommentary()">✦ Draft with Claude</button></div>
+  h+=`<div class="card iasa-conclusion anim-fade-in"><div class="row"><div class="seclabel" style="margin:0">Overall conclusion</div><div class="spacer"></div><button class="btn ghost sm ai-generate-btn" type="button" onclick="modalIASACommentary()">Generate conclusion</button></div>
     <textarea class="iasa-conclusion-input" placeholder="EQA opinion statement…" onchange="iaSA().commentary=this.value;save()">${esc(sa.commentary||"")}</textarea></div>`;
   return h;
 }
 function iasaInsights(){
   const st=iasaStats(); const stds=allStandards(); const op=overallOpinion(); const eq=eqaDue();
-  if(!st.rated) return `<div class="card"><div class="empty"><div class="big">⚖</div>No standards rated yet. Rate the 52 standards on the <b>Assessment</b> tab (or draft with Claude), and this tab surfaces the conformance heat map, gap themes, the remediation roadmap and EQA readiness.</div></div>`;
+  if(!st.rated) return `<div class="card"><div class="empty"><div class="big">⚖</div>No standards rated yet. Rate the 52 standards on the <b>Assessment</b> tab (or generate with AI), and this tab surfaces the conformance heat map, gap themes, the remediation roadmap and EQA readiness.</div></div>`;
   const gaps=stds.filter(s=>["Partially Conforms","Does Not Conform"].includes(stdConf(s.num)))
     .map(s=>({...s,c:stdConf(s.num),it:stdItem(s.num)}))
     .sort((a,b)=>(a.c==="Does Not Conform"?0:1)-(b.c==="Does Not Conform"?0:1));
@@ -1592,19 +1594,15 @@ function modalPrinc(n){
 }
 function savePrinc(n){ const s=iaSA(); s.items[n]=s.items[n]||{}; s.items[n].maturity=+val("pr_mat")||0; s.items[n].notes=val("pr_notes"); s.items[n].action=val("pr_action"); save(); closeModal(); render(); }
 function modalIASAPrompt(){
-  openModal("Draft EQA-grade self-assessment with Claude",`
-    <p class="hint">Describe your Internal Audit function (size, charter status, reporting line, methodology, QA/EQA history, recent achievements and gaps). I'll assess conformance against each of the <b>52 Global Internal Audit Standards</b>, judge maturity per principle, and draft an overall EQA opinion. Paste my JSON back to populate the whole assessment.</p>
+  openModal("Generate IA self-assessment",`
+    <p class="hint">Describe your Internal Audit function (size, charter status, reporting line, methodology, QA/EQA history, recent achievements and gaps). AI will assess conformance against each of the <b>15 principles</b> in the IIA Global Internal Audit Standards.</p>
     <label>Context about the IA function</label><textarea id="iap_ctx" style="min-height:120px" placeholder="e.g. one-person in-house function (Head of Internal Audit); board-approved IA charter; functionally reports to the Board Audit Committee, administratively to the MD/CEO; risk-based annual plan approved; uses IIA methodology; whistleblowing programme; no external quality assessment yet; recruitment of 2 staff underway; ..."></textarea>
-    <div class="row" style="margin-top:10px"><button class="btn" onclick="genIASAPrompt()">Build prompt</button></div>
-    <div id="iapOut" style="margin-top:12px"></div>
-    <hr style="margin:14px 0;border:none;border-top:1px solid var(--line)">
-    <label>Paste assessment JSON</label><textarea id="iap_json" style="min-height:120px" placeholder='{ "standards":[ { "standard":"1.1", "conformance":"Conforms", "evidence":"...", "gap":"", "action":"", "owner":"", "target":"" } ], "principles":[ { "principle":1, "maturity":3, "notes":"..." } ], "commentary":"..." }'></textarea>
-    <div id="iapErr" style="color:var(--crit);font-size:12.5px;margin-top:6px"></div>`,
-    `<button class="btn sec" onclick="closeModal()">Close</button><button class="btn dark" onclick="doImportIASA()">Apply assessment</button>`);
+    <div id="iapErr" style="margin-top:10px"></div>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark ai-generate-btn" onclick="generateIASA()">Generate assessment</button>`);
 }
-function genIASAPrompt(){
-  const ctx=val("iap_ctx"); const list=allPrinciples().map(p=>`P${p.n}: ${p.t}`).join("; ");
-  const p=`Act as an internal audit quality assessor for ${DB.org}. Assess the Internal Audit function's conformance and maturity against the IIA Global Internal Audit Standards (2024) — the 15 principles below. For each principle give: a conformance rating (Conforms / Partially Conforms / Does Not Conform), a maturity level 1–5 (1 Initial, 2 Developing, 3 Established, 4 Managed, 5 Optimised), brief assessment notes, and an improvement action where conformance is not full.
+function buildIASAPrompt(ctx){
+  const list=allPrinciples().map(p=>`P${p.n}: ${p.t}`).join("; ");
+  return `Act as an internal audit quality assessor for ${DB.org}. Assess the Internal Audit function's conformance and maturity against the IIA Global Internal Audit Standards (2024) — the 15 principles below. For each principle give: a conformance rating (Conforms / Partially Conforms / Does Not Conform), a maturity level 1–5 (1 Initial, 2 Developing, 3 Established, 4 Managed, 5 Optimised), brief assessment notes, and an improvement action where conformance is not full.
 
 IA function context:
 ${ctx||"(infer for a small in-house internal audit function at a Nigerian consumer-credit corporation regulated by the CBN)"}
@@ -1613,26 +1611,35 @@ Principles: ${list}
 
 Return ONLY a JSON array (no commentary):
 [ { "principle": 1, "conformance": "Conforms | Partially Conforms | Does Not Conform", "maturity": 3, "notes": "...", "action": "..." } ]`;
-  document.getElementById("iapOut").innerHTML=`<div class="codebox" id="iapbox">${esc(p)}</div><div class="row" style="margin-top:8px"><button class="btn sec sm" onclick="copyText(document.getElementById('iapbox').innerText,this)">Copy prompt</button></div>`;
 }
-function doImportIASA(){
-  const sa=iaSA(); let raw=val("iap_json").trim(); const err=document.getElementById("iapErr");
-  if(!raw){ err.textContent="Paste the JSON first."; return; }
-  raw=raw.replace(/^```(json)?/i,"").replace(/```$/,"").trim();
-  let d; try{ d=JSON.parse(raw); }catch(e){ err.textContent="Couldn't read that as JSON (array)."; return; }
+async function generateIASA(){
+  await runAiJson(buildIASAPrompt(val("iap_ctx")),"iapErr",d=>{ doImportIASA(d); });
+}
+function doImportIASA(raw){
+  const sa=iaSA(); raw=importRaw(raw);
+  if(!raw){ showAiErr("iapErr","Nothing to import."); return false; }
+  let d; try{ d=parseAiJson(raw); }catch(e){ showAiErr("iapErr",e.message); return false; }
   const arr=Array.isArray(d)?d:[d]; let n=0;
   arr.forEach(x=>{ const pn=+x.principle||+x.n||+x.p; if(!pn||pn<1||pn>15)return; const conf=IASA_CONF.find(c=>c.toLowerCase()===String(x.conformance||"").toLowerCase())||"Not rated"; sa.items[pn]={conformance:conf,maturity:Math.min(5,Math.max(0,Math.round(+x.maturity||0))),notes:x.notes||"",action:x.action||""}; n++; });
-  if(!n){ err.textContent="No principle assessments found (need a \"principle\" number 1–15)."; return; }
-  save(); closeModal(); render();
+  if(!n){ showAiErr("iapErr","No principle assessments found (need a \"principle\" number 1–15)."); return false; }
+  save(); closeModal(); render(); return true;
 }
 function modalIASACommentary(){
+  openModal("Generate overall conclusion",`<p class="hint">AI will draft a concise overall conclusion based on your self-assessment results.</p><div id="iacErr"></div>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark ai-generate-btn" onclick="generateIASACommentary()">Generate conclusion</button>`);
+}
+function buildIASACommentaryPrompt(){
   const sa=iaSA(); const items=sa.items;
   const lines=allPrinciples().map(p=>{ const it=items[p.n]||{}; return `P${p.n} ${p.t}: ${it.conformance||"Not rated"}, maturity ${it.maturity||"—"}`; }).join("\n");
-  const p=`Act as an internal audit quality assessor for ${DB.org}. Based on the self-assessment results below against the IIA Global Internal Audit Standards (2024), draft a concise overall conclusion (3–4 short paragraphs) covering: the overall conformance statement, the function's maturity, key strengths, priority improvement areas, and whether an external quality assessment (EQA) is due. Return plain text only (no JSON).
+  return `Act as an internal audit quality assessor for ${DB.org}. Based on the self-assessment results below against the IIA Global Internal Audit Standards (2024), draft a concise overall conclusion (3–4 short paragraphs) covering: the overall conformance statement, the function's maturity, key strengths, priority improvement areas, and whether an external quality assessment (EQA) is due. Return plain text only (no JSON).
 
 Results:
 ${lines}`;
-  openModal("Draft overall conclusion",`<p class="hint">Send this to me in chat; paste the reply into the commentary box.</p><div class="codebox" id="iacbox">${esc(p)}</div><div class="row" style="margin-top:8px"><button class="btn sec sm" onclick="copyText(document.getElementById('iacbox').innerText,this)">Copy prompt</button></div>`,`<button class="btn sec" onclick="closeModal()">Close</button>`);
+}
+async function generateIASACommentary(){
+  await runAiText(buildIASACommentaryPrompt(),"iacErr",text=>{
+    iaSA().commentary=text.trim(); save(); closeModal(); render();
+  });
 }
 function exportIASA(){
   const sa=iaSA(); const items=sa.items; const principles=allPrinciples();
@@ -1767,7 +1774,7 @@ function extInsights(){
   const cross=F.map(f=>{ let bs=0,best=null; obs.forEach(o=>{ const s=repSim(f.title,o.title).score; if(s>bs){bs=s;best=o;} }); return {f,best,bs}; });
   const covered=cross.filter(c=>c.bs>=0.4); const blind=cross.filter(c=>c.bs<0.4);
   let h=`<div class="row" style="margin-bottom:14px"><div style="font-size:13px;color:var(--muted)">Strategic view of external &amp; regulatory findings.</div><div class="spacer"></div>
-    <button class="btn ghost sm" onclick="modalExtCommentary()">✦ Insight commentary</button></div>
+    <button class="btn ghost sm ai-generate-btn" onclick="modalExtCommentary()">Generate insight commentary</button></div>
   ${DB.extCommentary?`<div class="note">${esc(DB.extCommentary)}</div>`:""}
   <div class="card"><div class="seclabel">Recurring areas of concern (by theme)</div>
     ${themeRows.map(([t,v])=>`<div class="rcrow"><div class="nm">${esc(t)}</div><div class="track"><div class="fill" style="width:${v/maxTheme*100}%"></div></div><div class="vv">${v}</div></div>`).join("")}
@@ -1849,26 +1856,22 @@ function saveExt(id){
 function delExt(id){ DB.extFindings=extList().filter(x=>x.id!==id); save(); closeModal(); render(); }
 function modalExtImport(){
   openModal("Import external findings",`
-    <p class="hint"><b>A · From a management letter (AI).</b> Choose the source, paste the report text, build the prompt and send it to me; paste my JSON back below.</p>
+    <p class="hint"><b>A · From a management letter (AI).</b> Choose the source, paste the report text, and click Generate to extract structured findings.</p>
     <div class="f2"><div><label>Source</label><select id="xi_src">${EXT_SOURCES.map(s=>`<option>${s}</option>`).join("")}</select></div>
     <div><label>Source report / ref</label><input id="xi_sref" placeholder="e.g. 2024 Statutory Mgmt Letter"></div></div>
     <label>Report text</label><textarea id="xi_text" style="min-height:90px" placeholder="Paste the external/regulatory audit findings text…"></textarea>
-    <div class="row" style="margin-top:8px"><button class="btn sm" onclick="genExtPrompt()">Build prompt</button></div>
-    <div id="xi_out" style="margin-top:10px"></div>
-    <label style="margin-top:10px">Paste findings JSON</label><textarea id="xi_json" style="min-height:110px" placeholder='[ { "title":"...", "theme":"...", "severity":"High", ... } ]'></textarea>
-    <div id="xi_err" style="color:var(--crit);font-size:12.5px;margin-top:4px"></div>
+    <div id="xi_err" style="margin-top:10px"></div>
+    <div class="row" style="margin-top:10px"><button class="btn dark ai-generate-btn sm" onclick="generateExtFindings()">Generate findings</button></div>
     <hr style="margin:14px 0;border:none;border-top:1px solid var(--line)">
     <p class="hint"><b>B · From a spreadsheet (CSV).</b> Download the template, fill one finding per row, then paste or upload.</p>
     <div class="row"><button class="btn sec sm" onclick="downloadExtTemplate()">⤓ CSV template</button>
       <label class="btn sec sm" style="display:inline-block;margin:0">⤒ Load CSV<input type="file" accept=".csv,text/csv" style="display:none" onchange="loadCsvInto(event,'xi_csv')"></label></div>
     <textarea id="xi_csv" style="min-height:90px;font-family:Consolas,monospace;font-size:12px;margin-top:8px" placeholder="Source,SourceRef,Year,Ref,Title,…"></textarea>
     <div id="xi_cerr" style="color:var(--crit);font-size:12.5px;margin-top:4px"></div>`,
-    `<button class="btn sec" onclick="closeModal()">Close</button><button class="btn" onclick="doImportExtCSV()">Import CSV</button><button class="btn dark" onclick="doImportExtJSON()">Add JSON to register</button>`);
+    `<button class="btn sec" onclick="closeModal()">Close</button><button class="btn" onclick="doImportExtCSV()">Import CSV</button>`);
 }
-function genExtPrompt(){
-  const src=val("xi_src"), sref=val("xi_sref"), text=val("xi_text");
-  if(!text){ alert("Paste the report text first."); return; }
-  const p=`Act as an internal audit specialist for ${DB.org}. Extract every finding from the external/regulatory audit report text below into structured data. Classify each finding's theme from this list: ${EXT_THEMES.join(" | ")}. Return ONLY a JSON array (no commentary):
+function buildExtPrompt(src,sref,text){
+  return `Act as an internal audit specialist for ${DB.org}. Extract every finding from the external/regulatory audit report text below into structured data. Classify each finding's theme from this list: ${EXT_THEMES.join(" | ")}. Return ONLY a JSON array (no commentary):
 [ { "ref":"finding number if any", "title":"concise finding title", "detail":"what was found", "risk":"risk/impact", "recommendation":"the auditor's recommendation", "theme":"one theme from the list", "severity":"High | Medium | Low", "owner":"responsible party if stated" } ]
 
 Source: ${src}${sref?" ("+sref+")":""}
@@ -1877,7 +1880,20 @@ Report text:
 """
 ${text}
 """`;
-  document.getElementById("xi_out").innerHTML=`<div class="hint">Send to me in chat; paste my JSON into the box below.</div><div class="codebox" id="xi_box">${esc(p)}</div><div class="row" style="margin-top:6px"><button class="btn sec sm" onclick="copyText(document.getElementById('xi_box').innerText,this)">Copy prompt</button></div>`;
+}
+async function generateExtFindings(){
+  const src=val("xi_src"), sref=val("xi_sref"), text=val("xi_text");
+  if(!text){ showAiErr("xi_err","Paste the report text first."); return; }
+  await runAiJson(buildExtPrompt(src,sref,text),"xi_err",d=>{ doImportExtJSON(d); });
+}
+function doImportExtJSON(raw){
+  const F=extList(); raw=importRaw(raw);
+  if(!raw){ showAiErr("xi_err","Nothing to import."); return false; }
+  let d; try{ d=parseAiJson(raw); }catch(e){ showAiErr("xi_err",e.message); return false; }
+  const arr=Array.isArray(d)?d:[d]; const src=val("xi_src"), sref=val("xi_sref"); let n=0;
+  arr.forEach(x=>{ if(x&&typeof x==="object"&&(x.title||x.finding)){ F.push(extNormalize(x,src,sref)); n++; } });
+  if(!n){ showAiErr("xi_err","No findings found in that JSON."); return false; }
+  save(); closeModal(); render(); return true;
 }
 function extNormalize(x,src,sref){
   const theme=EXT_THEMES.find(t=>t.toLowerCase()===String(x.theme||"").toLowerCase())||"Other";
@@ -1885,16 +1901,6 @@ function extNormalize(x,src,sref){
   const source=EXT_SOURCES.find(s=>s.toLowerCase()===String(x.source||src||"").toLowerCase())||(x.source||src||"Other");
   const st=STATUSES.find(s=>s.toLowerCase()===String(x.status||"").toLowerCase())||"Open";
   return {id:uid(),source,sourceRef:x.sourceRef||sref||"",year:x.year?String(x.year):"",ref:x.ref||"",title:x.title||x.finding||"(untitled)",detail:x.detail||x.description||"",risk:x.risk||x.impact||"",recommendation:x.recommendation||"",theme,severity:sev,owner:x.owner||"",targetDate:x.targetDate||x.target||"",status:st,managementResponse:x.managementResponse||x.response||"",isRepeat:!!x.isRepeat,repeatOf:x.repeatOf||"",closedDateISO:st==="Closed"?isoNow():"",createdAt:new Date().toISOString()};
-}
-function doImportExtJSON(){
-  const F=extList(); const err=document.getElementById("xi_err"); let raw=val("xi_json").trim();
-  if(!raw){ err.textContent="Paste the JSON first."; return; }
-  raw=raw.replace(/^```(json)?/i,"").replace(/```$/,"").trim();
-  let d; try{ d=JSON.parse(raw); }catch(e){ err.textContent="Couldn't read that as JSON (array)."; return; }
-  const arr=Array.isArray(d)?d:[d]; const src=val("xi_src"), sref=val("xi_sref"); let n=0;
-  arr.forEach(x=>{ if(x&&typeof x==="object"&&(x.title||x.finding)){ F.push(extNormalize(x,src,sref)); n++; } });
-  if(!n){ err.textContent="No findings found in that JSON."; return; }
-  save(); closeModal(); render();
 }
 function downloadExtTemplate(){
   const headers=["Source","SourceRef","Year","Ref","Title","Detail","Risk","Recommendation","Theme","Severity","Owner","TargetDate","Status","ManagementResponse","IsRepeat","RepeatOf"];
@@ -1920,22 +1926,25 @@ function doImportExtCSV(){
 }
 function modalExtCommentary(){
   openModal("External findings — insight commentary",`
-    <p class="hint">A strategic narrative on recurring external concerns for the Board Audit Committee. Draft it with me, then it appears at the top of Insights and in the Word report.</p>
-    <div class="row" style="margin-bottom:8px"><button class="btn sec sm" onclick="genExtInsightPrompt()">✦ Draft with Claude</button></div>
-    <div id="xc_out" style="margin-bottom:8px"></div>
-    <textarea id="xc_text" style="min-height:150px">${esc(DB.extCommentary||"")}</textarea>`,
-    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="DB.extCommentary=val('xc_text');save();closeModal();render();">Save</button>`);
+    <p class="hint">A strategic narrative on recurring external concerns for the Board Audit Committee.</p>
+    <textarea id="xc_text" style="min-height:150px">${esc(DB.extCommentary||"")}</textarea>
+    <div id="xc_err" style="margin-top:10px"></div>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn sec ai-generate-btn" onclick="generateExtCommentary()">Generate</button><button class="btn" onclick="DB.extCommentary=val('xc_text');save();closeModal();render();">Save</button>`);
 }
-function genExtInsightPrompt(){
+function buildExtInsightPrompt(){
   const F=extList(); const themeC={}; F.forEach(f=>{ const t=f.theme||"Other"; themeC[t]=(themeC[t]||0)+1; });
   const themes=Object.entries(themeC).sort((a,b)=>b[1]-a[1]).map(([t,v])=>t+" ("+v+")").join(", ");
   const bySrc={}; F.forEach(f=>bySrc[f.source||"Other"]=(bySrc[f.source||"Other"]||0)+1);
   const src=Object.entries(bySrc).map(([s,v])=>s+" "+v).join("; ");
   const open=F.filter(f=>f.status!=="Closed").length, reps=F.filter(f=>f.isRepeat).length;
-  const p=`Act as Chief Audit Executive for ${DB.org}. Draft a concise strategic commentary (2–3 short paragraphs) for the Board Audit Committee on the external and regulatory audit findings. Highlight the recurring areas of concern, any repeat/systemic issues, closure/remediation status, and where these point to internal-control themes requiring management attention. Return plain text only.
+  return `Act as Chief Audit Executive for ${DB.org}. Draft a concise strategic commentary (2–3 short paragraphs) for the Board Audit Committee on the external and regulatory audit findings. Highlight the recurring areas of concern, any repeat/systemic issues, closure/remediation status, and where these point to internal-control themes requiring management attention. Return plain text only.
 
 Data: ${F.length} findings (${open} open, ${reps} flagged repeat). By theme: ${themes||"n/a"}. By source: ${src||"n/a"}.`;
-  document.getElementById("xc_out").innerHTML=`<div class="hint">Send to me in chat; paste my reply into the box below.</div><div class="codebox" id="xc_box">${esc(p)}</div><div class="row" style="margin-top:6px"><button class="btn sec sm" onclick="copyText(document.getElementById('xc_box').innerText,this)">Copy prompt</button></div>`;
+}
+async function generateExtCommentary(){
+  await runAiText(buildExtInsightPrompt(),"xc_err",text=>{
+    const el=document.getElementById("xc_text"); if(el) el.value=text.trim();
+  });
 }
 function exportExternal(){
   const F=extList(); if(!F.length){ alert("No external findings to report."); return; }
@@ -2116,8 +2125,7 @@ function renderAudit(C,T,A){
 function planCard(a){
   const p=a.plan;
   return `<div class="card"><div class="row"><h3 style="margin:0">Audit Planning — Scope &amp; Test Programme</h3><div class="spacer"></div>
-    <button class="btn sec sm" onclick="modalPlanPrompt('${a.id}')">✦ Build planning prompt</button>
-    <button class="btn sm dark" onclick="modalImportPlan('${a.id}')">⇪ Paste plan from Claude</button>
+    <button class="btn sm dark ai-generate-btn" onclick="modalPlanPrompt('${a.id}')">Generate audit plan</button>
     ${p?`<button class="btn ghost sm" onclick="modalEditPlan('${a.id}')">Edit</button>
     <button class="btn sm" onclick="exportPlan('${a.id}')">⤓ Export plan (Word)</button>
     ${(p.tests||[]).some(t=>t.result==="Exception"||t.result==="Partial")?`<button class="btn sm" style="background:var(--crit)" onclick="exportExceptions('${a.id}')">⤓ Exceptions report (Word)</button>`:""}`:""}
@@ -2127,7 +2135,7 @@ function planHTML(a){
   const p=a.plan;
   if(!p||(!p.scope && !(p.tests||[]).length && !(p.objectives||[]).length && !(p.keyRisks||[]).length)){
     return `<div class="empty" style="padding:24px 10px"><div class="big">✦</div>
-      No audit plan yet.<br>Click <b>Build planning prompt</b>, send it to me in chat, then <b>Paste plan from Claude</b> to get a recommended scope and test programme.</div>`;
+      No audit plan yet.<br>Click <b>Generate audit plan</b> to get a recommended scope and test programme from AI.</div>`;
   }
   let h="";
   if(p.scope) h+=`<div class="obs-field"><div class="ttl">Scope</div><div class="txt">${esc(p.scope)}</div></div>`;
@@ -2155,17 +2163,16 @@ function planHTML(a){
 }
 function modalPlanPrompt(aid){
   const a=audit(aid);
-  openModal("Build audit planning prompt",`
-    <p class="hint">This uses the audit’s details to ask me for a recommended scope and test programme. Add any extra context (systems, regulations, known issues) to sharpen it.</p>
+  openModal("Generate audit plan",`
+    <p class="hint">Uses the audit's details to generate a recommended scope and test programme. Add any extra context to sharpen it.</p>
     <label>Additional context (optional)</label>
     <textarea id="pl_ctx" placeholder="e.g. New loan management system went live Jan 2026; prior audit flagged weak collateral records."></textarea>
-    <div class="row" style="margin-top:12px"><button class="btn" onclick="genPlanPrompt('${aid}')">Build prompt</button></div>
-    <div id="planPromptOut" style="margin-top:14px"></div>`,
-    `<button class="btn sec" onclick="closeModal()">Close</button>`);
+    <div id="planImpErr" style="margin-top:10px"></div>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark ai-generate-btn" onclick="generateAuditPlan('${aid}')">Generate audit plan</button>`);
 }
-function genPlanPrompt(aid){
+function buildPlanPrompt(aid){
   const a=audit(aid); const ctx=val("pl_ctx");
-  const p=`Act as my internal audit planning assistant for ${DB.org}. Based on the audit details below, design a risk-based audit plan with a recommended scope and a test programme aligned to IIA best practice.
+  return `Act as my internal audit planning assistant for ${DB.org}. Based on the audit details below, design a risk-based audit plan with a recommended scope and a test programme aligned to IIA best practice.
 
 Audit name: ${a.name}
 Basis: ${a.type==="department"?"Department":"Process"} audit
@@ -2191,31 +2198,25 @@ Return ONLY a JSON object (no commentary) with these exact keys:
   ]
 }
 Tailor the key risks and tests specifically to this process/department.`;
-  document.getElementById("planPromptOut").innerHTML=`<div class="codebox" id="ppbox">${esc(p)}</div>
-    <div class="row" style="margin-top:10px"><button class="btn sec sm" onclick="copyText(document.getElementById('ppbox').innerText,this)">Copy prompt</button></div>`;
 }
-function modalImportPlan(aid){
-  openModal("Paste audit plan JSON from Claude",`
-    <p class="hint">Paste the JSON plan I gave you. It replaces the scope/objectives/risks and adds its tests to the programme.</p>
-    <textarea id="planImp" style="min-height:220px" placeholder='{ "scope":"...", "objectives":[...], "keyRisks":[...], "tests":[...] }'></textarea>
-    <div id="planImpErr" style="color:var(--crit);font-size:12.5px;margin-top:8px"></div>`,
-    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark" onclick="doImportPlan('${aid}')">Add to plan</button>`);
+async function generateAuditPlan(aid){
+  await runAiJson(buildPlanPrompt(aid),"planImpErr",d=>{ doImportPlan(aid,d); });
 }
-function doImportPlan(aid){
-  const a=audit(aid); let raw=val("planImp").trim();
-  const err=document.getElementById("planImpErr");
-  if(!raw){ err.textContent="Paste some JSON first."; return; }
-  raw=raw.replace(/^```(json)?/i,"").replace(/```$/,"").trim();
-  let d; try{ d=JSON.parse(raw); }catch(e){ err.textContent="Couldn't read that as JSON. Check it copied fully (it should start with { or [)."; return; }
+function modalImportPlan(aid){ modalPlanPrompt(aid); }
+function doImportPlan(aid,raw){
+  const a=audit(aid);
+  if(raw==null) raw=val("planImp").trim(); else raw=importRaw(raw);
+  if(!raw){ showAiErr("planImpErr","Nothing to import."); return false; }
+  let d; try{ d=parseAiJson(raw); }catch(e){ showAiErr("planImpErr",e.message); return false; }
   if(Array.isArray(d)) d={tests:d};
-  if(typeof d!=="object"||!d){ err.textContent="Expected a JSON object."; return; }
+  if(typeof d!=="object"||!d){ showAiErr("planImpErr","Expected a JSON object."); return false; }
   a.plan=a.plan||{scope:"",objectives:[],keyRisks:[],tests:[]};
   if(d.scope!=null) a.plan.scope=String(d.scope);
   if(Array.isArray(d.objectives)) a.plan.objectives=d.objectives.map(String);
   if(Array.isArray(d.keyRisks)) a.plan.keyRisks=d.keyRisks.map(String);
   const tests=Array.isArray(d.tests)?d.tests:[];
   tests.forEach(t=>{ if(t&&typeof t==="object") a.plan.tests.push({id:uid(),ref:t.ref||"",title:t.title||"(untitled test)",objective:t.objective||"",procedure:t.procedure||"",controlTested:t.controlTested||t.control||"",population:t.population||"",sampleBasis:t.sampleBasis||t.sample||""}); });
-  save(); closeModal(); render();
+  save(); closeModal(); render(); return true;
 }
 function modalEditPlan(aid){
   const a=audit(aid); const p=a.plan||{scope:"",objectives:[],keyRisks:[]};
@@ -2280,18 +2281,13 @@ function modalRaiseException(aid,tid){
   openModal("Raise exception from test "+esc(t.ref||""),`
     <div class="note"><b>${esc(t.ref?t.ref+" — ":"")}${esc(t.title)}</b> · ${resultPill(t.result)}<br>
       ${t.resultNotes?esc(t.resultNotes):"<i>No result notes captured yet — add them on the test for a sharper write-up.</i>"}</div>
-    <p class="hint"><b>Step 1.</b> Build the prompt, send it to me in chat, and I’ll return the exception as JSON.</p>
-    <button class="btn sm" onclick="genExceptionPrompt('${aid}','${tid}')">Build exception prompt</button>
-    <div id="excPromptOut" style="margin-top:12px"></div>
-    <p class="hint" style="margin-top:16px"><b>Step 2.</b> Paste my JSON and choose the report it belongs to.</p>
     <label>Target report</label><select id="exc_rep">${opts}</select>
-    <label>Observation JSON</label><textarea id="exc_json" style="min-height:150px" placeholder='{ "title":"...", "description":"...", "criticality":"High", ... }'></textarea>
-    <div id="excErr" style="color:var(--crit);font-size:12.5px;margin-top:8px"></div>`,
-    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark" onclick="doRaiseException('${aid}','${tid}')">Add exception to report</button>`);
+    <div id="excErr" style="margin-top:10px"></div>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark ai-generate-btn" onclick="generateException('${aid}','${tid}')">Generate exception</button>`);
 }
-function genExceptionPrompt(aid,tid){
+function buildExceptionPrompt(aid,tid){
   const a=audit(aid); const t=a.plan.tests.find(x=>x.id===tid);
-  const p=`Act as my internal audit observation drafter for ${DB.org}. Convert the audit test result below into a formal exception (audit observation) using the 5C structure, and recommend a criticality using this rubric:
+  return `Act as my internal audit observation drafter for ${DB.org}. Convert the audit test result below into a formal exception (audit observation) using the 5C structure, and recommend a criticality using this rubric:
 ${CRITS.map(c=>`- ${c}: ${RUBRIC[c]}`).join("\n")}
 
 Audit: ${a.name}${a.area?" ("+a.area+")":""}
@@ -2317,26 +2313,25 @@ Return ONLY a JSON object (no commentary) with these exact keys:
   "owner": "the role/function best placed to own remediation, e.g. Head, Credit Operations",
   "timeline": "Immediate | Short-term | Long-term"
 }`;
-  document.getElementById("excPromptOut").innerHTML=`<div class="codebox" id="excbox">${esc(p)}</div>
-    <div class="row" style="margin-top:8px"><button class="btn sec sm" onclick="copyText(document.getElementById('excbox').innerText,this)">Copy prompt</button></div>`;
 }
-function doRaiseException(aid,tid){
+async function generateException(aid,tid){
+  await runAiJson(buildExceptionPrompt(aid,tid),"excErr",d=>{ doRaiseException(aid,tid,d); });
+}
+function doRaiseException(aid,tid,raw){
   const a=audit(aid); const t=a.plan.tests.find(x=>x.id===tid);
   const r=a.reports.find(x=>x.id===val("exc_rep"));
-  const err=document.getElementById("excErr");
-  if(!r){ err.textContent="Choose a target report."; return; }
-  let raw=val("exc_json").trim();
-  if(!raw){ err.textContent="Paste the JSON I gave you first."; return; }
-  raw=raw.replace(/^```(json)?/i,"").replace(/```$/,"").trim();
-  let d; try{ d=JSON.parse(raw); }catch(e){ err.textContent="Couldn't read that as JSON. Check it copied fully (starts with {)."; return; }
+  if(!r){ showAiErr("excErr","Choose a target report."); return false; }
+  if(raw==null) raw=val("exc_json").trim(); else raw=importRaw(raw);
+  if(!raw){ showAiErr("excErr","Nothing to import."); return false; }
+  let d; try{ d=parseAiJson(raw); }catch(e){ showAiErr("excErr",e.message); return false; }
   if(Array.isArray(d)) d=d[0];
-  if(typeof d!=="object"||!d){ err.textContent="Expected a JSON object."; return; }
+  if(typeof d!=="object"||!d){ showAiErr("excErr","Expected a JSON object."); return false; }
   let crit=CRITS.find(c=>c.toLowerCase()===String(d.criticality||"Moderate").toLowerCase())||"Moderate";
   r.observations.push({id:uid(),ref:d.ref||t.ref||"",title:d.title||t.title||"(untitled)",category:d.category||t.controlTested||"",
     description:d.description||"",criteria:d.criteria||"",risk:d.risk||d.impact||"",rootCause:d.rootCause||d.root_cause||"",
     recommendation:d.recommendation||"",sopUpdate:d.sopUpdate||d.proposedSOP||"",criticality:crit,managementResponse:"",owner:d.owner||"",timeline:TIMELINES.includes(d.timeline)?d.timeline:"",dueDate:"",isRepeat:!!d.isRepeat,repeatOf:d.repeatOf||"",status:"Open",
     sourceTest:t.id, sourceTestRef:t.ref||"", evidenceRef:t.evidenceRef||"", createdAt:new Date().toISOString()});
-  save(); closeModal(); go("report",{audit:aid,report:r.id});
+  save(); closeModal(); go("report",{audit:aid,report:r.id}); return true;
 }
 function exportExceptions(aid){
   const a=audit(aid); const tests=(a.plan&&a.plan.tests||[]).filter(t=>t.result==="Exception"||t.result==="Partial");
@@ -2383,7 +2378,7 @@ function renderReport(C,T,A){
   T.textContent=pageTitleFor("audits");
   setTopBack(backBtn("go('audit',{audit:'"+a.id+"'})"));
   A.innerHTML=`<button class="btn sec sm" onclick="modalReport('${a.id}','${r.id}')">Edit report</button>
-    <button class="btn sm dark" onclick="modalImport('${a.id}','${r.id}')">⇪ Paste from Claude</button>
+    <button class="btn sm dark ai-generate-btn" onclick="modalGenerateObs('${a.id}','${r.id}')">Generate observation</button>
     ${btnDownload(`exportReport('${a.id}','${r.id}')`,"Download")}`;
 
   const obs=r.observations.slice().sort((x,y)=>CRITS.indexOf(x.criticality)-CRITS.indexOf(y.criticality));
@@ -2404,8 +2399,7 @@ function renderReport(C,T,A){
 
   // exec summary
   html+=`<div class="card anim-fade-in"><div class="row"><h3 style="margin:0">Executive Summary</h3><div class="spacer"></div>
-    <button class="btn ghost sm" onclick="modalExecPrompt('${a.id}','${r.id}')">✦ Build exec-summary prompt</button>
-    <button class="btn ghost sm" onclick="modalImportExec('${a.id}','${r.id}')">⇪ Paste exec summary</button>
+    <button class="btn ghost sm ai-generate-btn" onclick="modalExecPrompt('${a.id}','${r.id}')">Generate exec summary</button>
     <button class="btn ghost sm" onclick="modalFrontMatter('${a.id}','${r.id}')">Edit</button></div>
     <div style="margin:12px 0">${reportSummaryHTML(r)}${execSummaryHTML(r)}</div></div>`;
 
@@ -2427,7 +2421,7 @@ function renderReport(C,T,A){
   `;
   if(!r.observations.length){
     html+=`<div class="empty"><div class="big">✎</div>No observations yet.<br>
-      Use <b>Paste from Claude</b> after I draft one for you, or <b>Add observation</b> to type it manually.</div>`;
+      Use <b>Generate observation</b> to draft one with AI, or <b>Add observation</b> to type it manually.</div>`;
   }else if(!filteredObs.length){
     html+=`<div class="empty">No observations match the current filter.</div>`;
   }else{
@@ -2437,7 +2431,7 @@ function renderReport(C,T,A){
   // proposed SOP updates roll-up
   const sopObs=obs.filter(o=>(o.sopUpdate||"").trim());
   const sopMissing=obs.filter(o=>!(o.sopUpdate||"").trim()).length;
-  html+=`<div class="card"><div class="row"><h3 style="margin:0">Proposed SOP updates (${sopObs.length})</h3><div class="spacer"></div>${obs.length?`<button class="btn sec sm" onclick="modalSopBulk('${a.id}','${r.id}')">✦ Draft${sopMissing?" missing ("+sopMissing+")":" with Claude"}</button>`:""}${sopObs.length?`<button class="btn sec sm" onclick="exportSopUpdates('${a.id}','${r.id}')">⤓ Export change-list (Word)</button>`:""}</div>`;
+  html+=`<div class="card"><div class="row"><h3 style="margin:0">Proposed SOP updates (${sopObs.length})</h3><div class="spacer"></div>${obs.length?`<button class="btn sec sm ai-generate-btn" onclick="modalSopBulk('${a.id}','${r.id}')">Generate${sopMissing?" missing ("+sopMissing+")":""}</button>`:""}${sopObs.length?`<button class="btn sec sm" onclick="exportSopUpdates('${a.id}','${r.id}')">⤓ Export change-list (Word)</button>`:""}</div>`;
   if(!sopObs.length){ html+=`<div class="hint" style="margin-top:8px">No proposed SOP updates yet. Add a <b>Proposed SOP update</b> to an observation and it rolls up here as a consolidated change-list for process owners.</div>`; }
   else { html+=`<p class="hint" style="margin:2px 0 0">Consolidated procedure revisions arising from this report's observations.</p>`+sopObs.map(o=>`<div class="sop-card">
     <div class="row" style="align-items:center;gap:8px"><span class="pill c-${ck(o.criticality)}">${o.criticality}</span><b>${esc(o.ref?o.ref+" — ":"")}${esc(o.title)}</b></div>
@@ -2458,9 +2452,12 @@ function exportSopUpdates(aid,rid){
   wordDoc("Proposed SOP Updates - "+r.title.replace(/[^\w \-]/g,""),inner);
 }
 function genSopPrompt(){
+  generateSopField();
+}
+async function generateSopField(){
   const title=val("o_title"), desc=val("o_desc"), crit=val("o_crit2"), risk=val("o_risk"), root=val("o_root"), rec=val("o_rec");
   if(!title && !desc && !rec){ alert("Add the observation details (title / description / recommendation) first."); return; }
-  const p=`Act as an internal audit / policy specialist for ${DB.org}. For the audit observation below, draft the precise revised Standard Operating Procedure wording that resolves it — i.e. exactly what the procedure should now say (you may reference a clause/section number and quote the new text). Return ONLY the revised SOP wording as plain text (no commentary, no JSON).
+  const prompt=`Act as an internal audit / policy specialist for ${DB.org}. For the audit observation below, draft the precise revised Standard Operating Procedure wording that resolves it — i.e. exactly what the procedure should now say (you may reference a clause/section number and quote the new text). Return ONLY the revised SOP wording as plain text (no commentary, no JSON).
 
 Observation: ${title}
 What was found: ${desc||"-"}
@@ -2468,12 +2465,15 @@ Criteria / expectation: ${crit||"-"}
 Impact / risk: ${risk||"-"}
 Possible root cause: ${root||"-"}
 Recommendation: ${rec||"-"}`;
-  document.getElementById("o_sop_prompt").innerHTML=`<div class="hint" style="margin-bottom:4px">Send this to me in chat, then paste my reply into the box above.</div><div class="codebox" id="o_sop_box">${esc(p)}</div><div class="row" style="margin-top:6px"><button class="btn sec sm" type="button" onclick="copyText(document.getElementById('o_sop_box').innerText,this)">Copy prompt</button></div>`;
+  await runAiText(prompt,"o_sop_prompt",text=>{ const el=document.getElementById("o_sop"); if(el) el.value=text.trim(); });
 }
 function genMgmtPrompt(){
+  generateMgmtField();
+}
+async function generateMgmtField(){
   const title=val("o_title"), desc=val("o_desc"), crit=val("o_crit2"), risk=val("o_risk"), root=val("o_root"), rec=val("o_rec"), draft=val("o_mgmt"), criticality=val("o_crit"), owner=val("o_owner"), tl=val("o_tl"), due=val("o_due");
   if(!title && !desc){ alert("Add the observation details first."); return; }
-  const p=`Act as the process owner / management responding to an internal audit observation at ${DB.org}. Enhance the brief management response below into a concise, ACTION-focused response. Guidance:
+  const prompt=`Act as the process owner / management responding to an internal audit observation at ${DB.org}. Enhance the brief management response below into a concise, ACTION-focused response. Guidance:
 - Do NOT over-acknowledge or restate the issue/risk — at most one short clause showing you understand it, then move on. The auditor has already described the issue.
 - Lead with what management is doing: the agreed remediation action, the responsible owner, and a target timeline.
 - Where applicable, state the interim / compensating control(s) applied now to contain the risk while the permanent, preventive fix is implemented.
@@ -2489,46 +2489,47 @@ Auditor recommendation: ${rec||"-"}
 Criticality: ${criticality||"-"}${owner?`\nAction owner: ${owner}`:""}${tl?`\nResolution timeline: ${tl}`:""}${due?`\nTarget date: ${due}`:""}
 
 Management's current draft response: ${draft||"(none provided — draft an appropriate response from scratch)"}`;
-  document.getElementById("o_mgmt_prompt").innerHTML=`<div class="hint" style="margin-bottom:4px">Send this to me in chat, then paste my reply into the box above.</div><div class="codebox" id="o_mgmt_box">${esc(p)}</div><div class="row" style="margin-top:6px"><button class="btn sec sm" type="button" onclick="copyText(document.getElementById('o_mgmt_box').innerText,this)">Copy prompt</button></div>`;
+  await runAiText(prompt,"o_mgmt_prompt",text=>{ const el=document.getElementById("o_mgmt"); if(el) el.value=text.trim(); });
 }
 function modalSopBulk(aid,rid){
   const a=audit(aid), r=report(a,rid);
   const targets=r.observations.filter(o=>!(o.sopUpdate||"").trim());
-  openModal("Draft proposed SOP updates with Claude",`
-    <p class="hint">Builds a prompt covering observations that don't yet have a proposed SOP update (${targets.length} of ${r.observations.length}). Send it to me, then paste my JSON to fill them in. Tick to include observations that already have one (regenerate).</p>
+  openModal("Generate proposed SOP updates",`
+    <p class="hint">Generates proposed SOP updates for observations that don't yet have one (${targets.length} of ${r.observations.length}).</p>
     <label style="display:flex;align-items:center;gap:8px;font-weight:400;color:#475569"><input type="checkbox" id="sb_all" style="width:auto"> Include observations that already have a proposed SOP update</label>
-    <div class="row" style="margin-top:10px"><button class="btn" onclick="genSopBulkPrompt('${aid}','${rid}')">Build prompt</button></div>
-    <div id="sbOut" style="margin-top:12px"></div>
-    <hr style="margin:14px 0;border:none;border-top:1px solid var(--line)">
-    <label>Paste SOP-updates JSON</label><textarea id="sb_json" style="min-height:130px" placeholder='[ { "ref":"1.1", "sopUpdate":"..." } ]'></textarea>
-    <div id="sbErr" style="color:var(--crit);font-size:12.5px;margin-top:6px"></div>`,
-    `<button class="btn sec" onclick="closeModal()">Close</button><button class="btn dark" onclick="doImportSopBulk('${aid}','${rid}')">Apply SOP updates</button>`);
+    <div id="sbErr" style="margin-top:10px"></div>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark ai-generate-btn" onclick="generateSopBulk('${aid}','${rid}')">Generate SOP updates</button>`);
 }
-function genSopBulkPrompt(aid,rid){
+function buildSopBulkPrompt(aid,rid){
   const a=audit(aid), r=report(a,rid);
-  const includeAll=document.getElementById("sb_all").checked;
+  const includeAll=document.getElementById("sb_all")&&document.getElementById("sb_all").checked;
   const list=r.observations.filter(o=>includeAll||!(o.sopUpdate||"").trim());
-  if(!list.length){ document.getElementById("sbOut").innerHTML=`<div class="hint">All observations already have a proposed SOP update. Tick the box to regenerate them.</div>`; return; }
   const body=list.map((o,i)=>`${i+1}. ref="${o.ref||o.id}" | ${o.title}\n   Found: ${o.description||"-"}\n   Criteria: ${o.criteria||"-"}\n   Recommendation: ${o.recommendation||"-"}`).join("\n\n");
-  const p=`Act as an internal audit / policy specialist for ${DB.org}. For each audit observation below, draft the precise revised Standard Operating Procedure wording that resolves it — exactly what the procedure should now say (reference a clause/section where helpful). Return ONLY a JSON array (no commentary):
+  return `Act as an internal audit / policy specialist for ${DB.org}. For each audit observation below, draft the precise revised Standard Operating Procedure wording that resolves it — exactly what the procedure should now say (reference a clause/section where helpful). Return ONLY a JSON array (no commentary):
 [ { "ref": "the ref shown for the observation", "sopUpdate": "the revised SOP wording / clause" } ]
 
 Observations:
 ${body}`;
-  document.getElementById("sbOut").innerHTML=`<div class="codebox" id="sbbox">${esc(p)}</div><div class="row" style="margin-top:8px"><button class="btn sec sm" onclick="copyText(document.getElementById('sbbox').innerText,this)">Copy prompt</button></div>`;
 }
-function doImportSopBulk(aid,rid){
-  const a=audit(aid), r=report(a,rid); const err=document.getElementById("sbErr");
-  let raw=val("sb_json").trim(); if(!raw){ err.textContent="Paste the JSON first."; return; }
-  raw=raw.replace(/^```(json)?/i,"").replace(/```$/,"").trim();
-  let d; try{ d=JSON.parse(raw); }catch(e){ err.textContent="Couldn't read that as JSON (it should start with [)."; return; }
+async function generateSopBulk(aid,rid){
+  const r=report(audit(aid),rid);
+  const includeAll=document.getElementById("sb_all")&&document.getElementById("sb_all").checked;
+  const list=r.observations.filter(o=>includeAll||!(o.sopUpdate||"").trim());
+  if(!list.length){ showAiErr("sbErr","All observations already have a proposed SOP update. Tick the box to regenerate them."); return; }
+  await runAiJson(buildSopBulkPrompt(aid,rid),"sbErr",d=>{ doImportSopBulk(aid,rid,d); });
+}
+function doImportSopBulk(aid,rid,raw){
+  const a=audit(aid), r=report(a,rid);
+  if(raw==null) raw=val("sb_json").trim(); else raw=importRaw(raw);
+  if(!raw){ showAiErr("sbErr","Nothing to import."); return false; }
+  let d; try{ d=parseAiJson(raw); }catch(e){ showAiErr("sbErr",e.message); return false; }
   const arr=Array.isArray(d)?d:[d]; let n=0;
   arr.forEach(x=>{ if(!x||!x.sopUpdate)return; const key=String(x.ref||"").trim();
     let o=(key && r.observations.find(z=>z.ref&&z.ref.toLowerCase()===key.toLowerCase())) || (key && r.observations.find(z=>z.id===key)) || (x.title?r.observations.find(z=>z.title.toLowerCase().trim()===String(x.title).toLowerCase().trim()):null);
     if(!o)return; o.sopUpdate=String(x.sopUpdate); n++;
   });
-  if(!n){ err.textContent="No matching observations found — check the ref values match the prompt."; return; }
-  save(); closeModal(); render();
+  if(!n){ showAiErr("sbErr","No matching observations found — check the ref values match."); return false; }
+  save(); closeModal(); render(); return true;
 }
 function bullets(text){ const items=(text||"").split("\n").map(s=>s.trim()).filter(Boolean); return items.length?`<ul style="margin:6px 0 0;padding-left:18px">${items.map(i=>`<li>${esc(i)}</li>`).join("")}</ul>`:""; }
 function sumSection(t,body){ return body?`<div class="obs-field"><div class="ttl">${t}</div>${body}</div>`:""; }
@@ -2541,7 +2542,7 @@ function execSummaryHTML(r){
   h+=sumSection("1.4 Internal audit opinion"+(r.assuranceLevel?` <span class="tag">${esc(r.assuranceLevel)}</span>`:""), txt(r.auditOpinion));
   h+=sumSection("1.5 Conclusion", txt(r.conclusion));
   if(!(r.objective||r.scope||r.outOfScope||r.strengths||r.areasForImprovement||r.auditOpinion||r.conclusion)){
-    h+=`<div class="hint">No executive-summary narrative yet. Click <b>✦ Build exec-summary prompt</b> to have me draft it from your findings, then <b>⇪ Paste exec summary</b>.</div>`;
+    h+=`<div class="hint">No executive-summary narrative yet. Click <b>Generate exec summary</b> to draft it from your findings.</div>`;
   }
   return h;
 }
@@ -2606,28 +2607,21 @@ function field(t,v){ if(!v)return""; return `<div class="obs-field"><div class="
 function viewNewObs(){
   const opts=DB.audits.map(a=>`<optgroup label="${esc(a.name)}">`+a.reports.map(r=>`<option value="${a.id}|${r.id}">${esc(a.name)} → ${esc(r.title)}</option>`).join("")+`</optgroup>`).join("");
   return `
-  <div class="note">Two ways to create an observation:
-    <b>(A)</b> Ask Claude (me) to draft it from your one-liner, then paste the result here.
-    <b>(B)</b> Type it in manually.</div>
+  <div class="note">Create an observation from a one-liner with AI, or import past observations from CSV.</div>
   <div class="card">
-    <h3>A · Generate the prompt for Claude</h3>
-    <p class="hint">Fill these in, click <b>Build prompt</b>, copy it, and paste it to me in the Claude chat. I’ll return a JSON observation you can paste back in.</p>
+    <h3>Generate observation</h3>
+    <p class="hint">Enter your one-liner and target report — AI will draft a full observation with description, impact/risk, root cause, recommendation and criticality.</p>
     <label>Your one-liner observation</label>
     <input id="ol" placeholder="e.g. Loan disbursements approved without evidence of credit committee sign-off">
     <div class="f2">
       <div><label>Process / Department</label><input id="olArea" placeholder="e.g. Credit Operations"></div>
       <div><label>Audit area / context (optional)</label><input id="olCtx" placeholder="e.g. Consumer loan origination"></div>
     </div>
-    <div class="row" style="margin-top:14px"><button class="btn" onclick="buildPrompt()">Build prompt</button></div>
-    <div id="promptOut" style="margin-top:14px"></div>
-  </div>
-  <div class="card">
-    <h3>B · Paste Claude’s JSON into a report</h3>
     ${DB.audits.some(a=>a.reports.length)?`
       <label>Target report</label>
-      <select id="tgtReport">${opts}</select>
-      <div class="row" style="margin-top:12px"><button class="btn dark" onclick="openImportFromPicker()">⇪ Open paste box</button></div>`
-      : `<div class="hint">Create an audit and a report first (Audits &amp; Reports → New Audit).</div>`}
+      <select id="tgtReport">${opts}</select>`:`<div class="hint">Create an audit and a report first (Audits &amp; Reports → New Audit).</div>`}
+    <div id="obsGenErr" style="margin-top:10px"></div>
+    <div class="row" style="margin-top:14px">${DB.audits.some(a=>a.reports.length)?`<button class="btn dark ai-generate-btn" onclick="generateObsFromPicker()">Generate observation</button>`:""}</div>
   </div>
   <div class="card">
     <h3>C · Bulk import legacy observations (CSV)</h3>
@@ -2702,12 +2696,8 @@ function doBulkImport(){
   save();
   out.innerHTML=`<div class="note">Imported <b>${imported}</b> observation(s)${skipped.length?`; skipped ${skipped.length}`:""}.</div>`+(skipped.length?`<div class="hint">${skipped.slice(0,12).map(esc).join("<br>")}${skipped.length>12?"<br>…":""}</div>`:"")+(imported?`<div class="row" style="margin-top:8px"><button class="btn sm" onclick="go('audits')">View Audits &amp; Reports</button> <button class="btn sm sec" onclick="go('dashboard')">View Dashboard</button></div>`:"");
 }
-function buildPrompt(){
-  const ol=document.getElementById("ol").value.trim();
-  const area=document.getElementById("olArea").value.trim();
-  const ctx=document.getElementById("olCtx").value.trim();
-  if(!ol){ alert("Enter your one-liner first."); return; }
-  const p=`Act as my internal audit observation drafter for ${DB.org}. Expand the one-liner below into a formal audit observation using the 5C structure. Recommend a criticality using this rubric:
+function buildObsPrompt(ol,area,ctx){
+  return `Act as my internal audit observation drafter for ${DB.org}. Expand the one-liner below into a formal audit observation using the 5C structure. Recommend a criticality using this rubric:
 ${CRITS.map(c=>`- ${c}: ${RUBRIC[c]}`).join("\n")}
 
 One-liner: ${ol}
@@ -2728,13 +2718,36 @@ Return ONLY a JSON object (no commentary) with these exact keys:
   "owner": "the role/function best placed to own remediation, e.g. Head, Credit Operations",
   "timeline": "Immediate | Short-term | Long-term"
 }`;
-  document.getElementById("promptOut").innerHTML=`<div class="codebox" id="pbox">${esc(p)}</div>
-    <div class="row" style="margin-top:10px"><button class="btn sec sm" onclick="copyText(document.getElementById('pbox').innerText,this)">Copy prompt</button></div>`;
 }
-function openImportFromPicker(){
-  const v=document.getElementById("tgtReport").value; if(!v)return;
-  const [aid,rid]=v.split("|"); modalImport(aid,rid);
+async function generateObsFromPicker(){
+  const ol=document.getElementById("ol")&&document.getElementById("ol").value.trim();
+  const area=document.getElementById("olArea")&&document.getElementById("olArea").value.trim();
+  const ctx=document.getElementById("olCtx")&&document.getElementById("olCtx").value.trim();
+  const v=document.getElementById("tgtReport")&&document.getElementById("tgtReport").value;
+  if(!ol){ showAiErr("obsGenErr","Enter your one-liner first."); return; }
+  if(!v){ showAiErr("obsGenErr","Choose a target report."); return; }
+  const [aid,rid]=v.split("|");
+  await runAiJson(buildObsPrompt(ol,area,ctx),"obsGenErr",d=>{
+    if(doImport(aid,rid,d)){ closeModal(); go("report",{audit:aid,report:rid}); }
+  });
 }
+function modalGenerateObs(aid,rid){
+  openModal("Generate observation",`
+    <label>One-liner observation</label>
+    <input id="go_ol" placeholder="e.g. Loan disbursements approved without credit committee sign-off">
+    <div class="f2">
+      <div><label>Process / Department</label><input id="go_area" placeholder="e.g. Credit Operations"></div>
+      <div><label>Context (optional)</label><input id="go_ctx"></div>
+    </div>
+    <div id="go_err" style="margin-top:10px"></div>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark ai-generate-btn" onclick="generateObsForReport('${aid}','${rid}')">Generate observation</button>`);
+}
+async function generateObsForReport(aid,rid){
+  const ol=val("go_ol"), area=val("go_area"), ctx=val("go_ctx");
+  if(!ol){ showAiErr("go_err","Enter a one-liner first."); return; }
+  await runAiJson(buildObsPrompt(ol,area,ctx),"go_err",d=>{ doImport(aid,rid,d); });
+}
+function buildPrompt(){ generateObsFromPicker(); }
 
 /* ============================ GUIDE ============================ */
 function viewGuide(){
@@ -2742,9 +2755,9 @@ function viewGuide(){
   <div class="card"><h3>The 4-step loop</h3>
     <ol style="line-height:1.9;padding-left:18px">
       <li><b>Set up structure once.</b> In <b>Audits &amp; Reports</b>, create an audit (by process or department). Add one or more reports under it.</li>
-      <li><b>Plan the audit.</b> Open the audit and use <b>Build planning prompt</b> → send it to me → <b>Paste plan from Claude</b>. You get a recommended scope, objectives, key risks and a full test programme you can edit and export to Word.</li>
-      <li><b>Draft with Claude.</b> On the <b>Dashboard</b>, click <b>+ New Observation</b>, enter your one-liner, click <b>Build prompt</b>, copy it, and paste it to me in chat. I return a JSON observation with description, impact/risk, root cause, recommendation and a recommended criticality.</li>
-      <li><b>Paste it in.</b> Use <b>Paste from Claude</b> (inside a report, or from the New Observation modal) to drop the JSON in. It’s added automatically. Edit anything you like.</li>
+      <li><b>Plan the audit.</b> Open the audit and click <b>Generate audit plan</b> to get a recommended scope, objectives, key risks and a full test programme you can edit and export to Word.</li>
+      <li><b>Generate observations.</b> On the <b>Dashboard</b>, click <b>+ New Observation</b>, enter your one-liner, choose a report, and click <b>Generate observation</b>. AI returns a structured observation with description, impact/risk, root cause, recommendation and criticality.</li>
+      <li><b>Review &amp; edit.</b> Observations are added automatically. Edit anything you like — criticality, owner, management response, proposed SOP updates.</li>
       <li><b>Report &amp; brief.</b> Each report builds an <b>Executive Summary</b>; the <b>CAE/MD Dashboard</b> rolls everything up. Export any report or the whole audit to <b>Word</b>.</li>
     </ol>
   </div>
@@ -2756,21 +2769,14 @@ function viewGuide(){
       <li>In a report here, click <b>⤓ Export report (Word)</b>, open it, <b>select all → copy</b>, and <b>paste</b> into your template under the TOC. Headings, colour-coded ratings and the findings table come across.</li>
       <li>Click the Table of Contents → press <b>F9</b> → <b>Update entire table</b>. Done.</li>
     </ol>
-    <div class="hint">Set the report author for the sign-off in <b>Settings</b>. Fill the cover date, distribution list and the 1.1–1.5 narrative via <b>Edit</b> / <b>Build exec-summary prompt</b> on the report.</div>
+    <div class="hint">Set the report author for the sign-off in <b>Settings</b>. Fill the cover date, distribution list and the 1.1–1.5 narrative via <b>Edit</b> / <b>Generate exec summary</b> on the report.</div>
   </div>
   <div class="card"><h3>Criticality rubric (Risk Classification Guide)</h3>
     ${CRITS.map(c=>`<div class="kv"><b><span class="pill c-${ck(c)}">${c}</span></b> ${esc(RUBRIC[c])}</div>`).join("")}
-    <div class="hint" style="margin-top:8px">The bot recommends a rating; you always have the final say and can change it when editing an observation.</div>
+    <div class="hint" style="margin-top:8px">AI recommends a rating; you always have the final say and can change it when editing an observation.</div>
   </div>
-  <div class="card"><h3>You can also just ask me in chat</h3>
-    <p>You don’t have to use the prompt builder. In the Claude chat you can say things like:</p>
-    <ul style="line-height:1.8">
-      <li>“Draft an observation: <i>petty cash counts not performed monthly in the Lagos branch.</i>”</li>
-      <li>“Give me 3 observations for weaknesses in the loan recovery process, as JSON.”</li>
-      <li>“Write an executive summary for the Credit Operations review with these findings…”</li>
-      <li>“Draft a CAE dashboard commentary for this quarter’s audits.”</li>
-    </ul>
-    <p class="hint">Ask me to return observations as JSON and you can paste them straight into a report.</p>
+  <div class="card"><h3>AI generation</h3>
+    <p class="hint">Most workflows in AMS use one-click <b>Generate</b> buttons. AI runs server-side via Gemini — set <code>GEMINI_API_KEY</code> in <code>.env</code> and restart the dev server. CSV bulk import and backup restore work without AI.</p>
   </div>`;
 }
 
@@ -2914,11 +2920,15 @@ function saveFrontMatter(aid,rid){
   save(); closeModal(); render();
 }
 function modalExecPrompt(aid,rid){
+  openModal("Generate executive summary",`<p class="hint">AI will draft the executive summary front matter from the observations in this report.</p><div id="exErr" style="margin-top:10px"></div>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark ai-generate-btn" onclick="generateExecSummary('${aid}','${rid}')">Generate exec summary</button>`);
+}
+function buildExecPrompt(aid,rid){
   const a=audit(aid), r=report(a,rid);
   const obs=r.observations; const c=zc(); obs.forEach(o=>c[o.criticality]++);
   const overall=worst(c,obs.length);
   const findingList=obs.map((o,i)=>`${i+1}. [${o.criticality}] ${o.title}`).join("\n")||"(no observations captured yet)";
-  const p=`Act as my internal audit report writer for ${DB.org}. Draft the executive summary for the report "${r.title}" (audit: ${a.name}${a.area?", "+a.area:""}${r.period?", period "+r.period:""}).
+  return `Act as my internal audit report writer for ${DB.org}. Draft the executive summary for the report "${r.title}" (audit: ${a.name}${a.area?", "+a.area:""}${r.period?", period "+r.period:""}).
 
 Findings raised (${obs.length}; mix: ${CRITS.filter(k=>c[k]).map(k=>c[k]+" "+k).join(", ")||"none"}; overall residual risk ${overall}):
 ${findingList}
@@ -2933,24 +2943,16 @@ Write in the formal tone of an internal audit report to the CAE/MD and Board Aud
   "auditOpinion": "1.4 internal audit opinion narrative justifying the assurance level and describing the control environment",
   "conclusion": "1.5 conclusion paragraph"
 }`;
-  openModal("Build exec-summary prompt",`<p class="hint">Send this to me in chat; I'll return JSON you can paste via <b>⇪ Paste exec summary</b>.</p>
-    <div class="codebox" id="execbox">${esc(p)}</div>
-    <div class="row" style="margin-top:10px"><button class="btn sec sm" onclick="copyText(document.getElementById('execbox').innerText,this)">Copy prompt</button></div>`,
-    `<button class="btn sec" onclick="closeModal()">Close</button>`);
 }
-function modalImportExec(aid,rid){
-  openModal("Paste executive summary JSON",`
-    <p class="hint">Paste the JSON I gave you. It fills the front-matter fields (you can still edit them afterward).</p>
-    <textarea id="ex_json" style="min-height:220px" placeholder='{ "objective":"...", "strengths":[...], "assuranceLevel":"Moderate assurance", ... }'></textarea>
-    <div id="exErr" style="color:var(--crit);font-size:12.5px;margin-top:8px"></div>`,
-    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark" onclick="doImportExec('${aid}','${rid}')">Fill front matter</button>`);
+async function generateExecSummary(aid,rid){
+  await runAiJson(buildExecPrompt(aid,rid),"exErr",d=>{ doImportExec(aid,rid,d); });
 }
-function doImportExec(aid,rid){
-  const r=report(audit(aid),rid); let raw=val("ex_json").trim();
-  const err=document.getElementById("exErr");
-  if(!raw){ err.textContent="Paste some JSON first."; return; }
-  raw=raw.replace(/^```(json)?/i,"").replace(/```$/,"").trim();
-  let d; try{ d=JSON.parse(raw); }catch(e){ err.textContent="Couldn't read that as JSON (it should start with {)."; return; }
+function modalImportExec(aid,rid){ modalExecPrompt(aid,rid); }
+function doImportExec(aid,rid,raw){
+  const r=report(audit(aid),rid);
+  if(raw==null) raw=val("ex_json").trim(); else raw=importRaw(raw);
+  if(!raw){ showAiErr("exErr","Nothing to import."); return false; }
+  let d; try{ d=parseAiJson(raw); }catch(e){ showAiErr("exErr",e.message); return false; }
   const li=v=>Array.isArray(v)?v.join("\n"):(v||"");
   if(d.objective!=null) r.objective=String(d.objective);
   if(d.outOfScope!=null) r.outOfScope=li(d.outOfScope);
@@ -2959,7 +2961,7 @@ function doImportExec(aid,rid){
   if(d.assuranceLevel!=null) r.assuranceLevel=ASSURANCE.find(x=>x.toLowerCase()===String(d.assuranceLevel).toLowerCase())||String(d.assuranceLevel);
   if(d.auditOpinion!=null) r.auditOpinion=String(d.auditOpinion);
   if(d.conclusion!=null) r.conclusion=String(d.conclusion);
-  save(); closeModal(); render();
+  save(); closeModal(); render(); return true;
 }
 
 function modalObs(aid,rid,oid){
@@ -2980,9 +2982,9 @@ function modalObs(aid,rid,oid){
     <label>Impact / risk (effect)</label><textarea id="o_risk">${esc(o.risk)}</textarea>
     <label>Possible root cause</label><textarea id="o_root">${esc(o.rootCause)}</textarea>
     <label>Recommendation</label><textarea id="o_rec">${esc(o.recommendation)}</textarea>
-    <label>Proposed SOP update <span class="hint">(what the procedure should say)</span> <button class="btn sec sm" type="button" style="margin-left:6px" onclick="genSopPrompt()">✦ Draft with Claude</button></label><textarea id="o_sop">${esc(o.sopUpdate||"")}</textarea>
+    <label>Proposed SOP update <span class="hint">(what the procedure should say)</span> <button class="btn sec sm ai-generate-btn" type="button" style="margin-left:6px" onclick="genSopPrompt()">Generate</button></label><textarea id="o_sop">${esc(o.sopUpdate||"")}</textarea>
     <div id="o_sop_prompt" style="margin-top:6px"></div>
-    <label>Management response <button class="btn sec sm" type="button" style="margin-left:6px" onclick="genMgmtPrompt()">✦ Enhance with Claude</button></label><textarea id="o_mgmt">${esc(o.managementResponse)}</textarea>
+    <label>Management response <button class="btn sec sm ai-generate-btn" type="button" style="margin-left:6px" onclick="genMgmtPrompt()">Enhance with AI</button></label><textarea id="o_mgmt">${esc(o.managementResponse)}</textarea>
     <div id="o_mgmt_prompt" style="margin-top:6px"></div>
     <div class="f3">
       <div><label>Action owner</label><input id="o_owner" value="${esc(o.owner)}" placeholder="e.g. Head, Credit Operations"></div>
@@ -3082,23 +3084,12 @@ function flagRepeat(aid,rid,oid){
   o.isRepeat=true; if(!o.repeatOf) o.repeatOf=_scanLabels[oid]||""; save(); render(); scanRepeats(aid,rid);
 }
 
-function modalImport(aid,rid){
-  openModal("Paste observation JSON from Claude",`
-    <p class="hint">Paste the JSON I gave you. Works with a single observation <b>or</b> an array of several. Unknown fields are ignored; missing ones are left blank.</p>
-    <textarea id="imp" style="min-height:220px" placeholder='{ "title": "...", "description": "...", "criticality": "High", ... }'></textarea>
-    <div id="impErr" style="color:var(--crit);font-size:12.5px;margin-top:8px"></div>`,
-    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark" onclick="doImport('${aid}','${rid}')">Add to report</button>`);
-}
-function doImport(aid,rid){
+function modalImport(aid,rid){ modalGenerateObs(aid,rid); }
+function doImport(aid,rid,raw){
   const r=report(audit(aid),rid);
-  let raw=val("imp").trim();
-  const err=document.getElementById("impErr");
-  if(!raw){ err.textContent="Paste some JSON first."; return; }
-  // strip code fences if present
-  raw=raw.replace(/^```(json)?/i,"").replace(/```$/,"").trim();
-  let data;
-  try{ data=JSON.parse(raw); }
-  catch(e){ err.textContent="Couldn't read that as JSON. Check it copied fully (it should start with { or [)."; return; }
+  if(raw==null) raw=val("imp").trim(); else raw=importRaw(raw);
+  if(!raw){ showAiErr("impErr","Nothing to import."); return false; }
+  let data; try{ data=parseAiJson(raw); }catch(e){ showAiErr("impErr",e.message); return false; }
   const arr=Array.isArray(data)?data:[data];
   let added=0;
   arr.forEach(d=>{
@@ -3110,14 +3101,63 @@ function doImport(aid,rid){
       owner:d.owner||"",timeline:TIMELINES.includes(d.timeline)?d.timeline:"",dueDate:d.dueDate||"",isRepeat:!!d.isRepeat,repeatOf:d.repeatOf||"",status:d.status&&STATUSES.includes(d.status)?d.status:"Open",createdAt:new Date().toISOString()});
     added++;
   });
-  if(!added){ err.textContent="No observations found in that JSON."; return; }
+  if(!added){ showAiErr("impErr","No observations found in that JSON."); return false; }
   save(); closeModal(); render();
   if(view!=="report"){ go("report",{audit:aid,report:rid}); }
+  return true;
+}
+
+/* ============================ AI (Gemini) ============================ */
+let _aiBusy=false;
+function aiBusy(on){
+  _aiBusy=!!on;
+  document.body.classList.toggle("ai-busy",_aiBusy);
+  document.querySelectorAll(".ai-generate-btn").forEach(b=>{ b.disabled=_aiBusy; });
+  const ov=document.getElementById("aiBusyOverlay"); if(ov) ov.classList.toggle("show",_aiBusy);
+}
+function parseAiJson(raw){
+  raw=String(raw||"").trim().replace(/^```(json)?/i,"").replace(/```$/,"").trim();
+  try{ return JSON.parse(raw); }catch(e){ throw new Error("Couldn't read AI response as JSON."); }
+}
+async function aiGenerate(prompt,mode){
+  const res=await fetch("/api/ai",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt,mode:mode||"json"})});
+  const data=await res.json().catch(()=>({}));
+  if(!res.ok) throw new Error(data.error||"AI request failed.");
+  return data.text||"";
+}
+function showAiErr(id,msg){
+  const el=document.getElementById(id);
+  if(el) el.innerHTML=msg?'<div class="ai-err">'+esc(msg)+"</div>":"";
+}
+async function runAiJson(prompt,errId,onData){
+  if(_aiBusy)return;
+  showAiErr(errId,"");
+  aiBusy(true);
+  try{
+    const text=await aiGenerate(prompt,"json");
+    const data=parseAiJson(text);
+    await onData(data);
+  }catch(e){ showAiErr(errId,e.message); }
+  finally{ aiBusy(false); }
+}
+async function runAiText(prompt,errId,onText){
+  if(_aiBusy)return;
+  showAiErr(errId,"");
+  aiBusy(true);
+  try{
+    const text=await aiGenerate(prompt,"text");
+    await onText(text);
+  }catch(e){ showAiErr(errId,e.message); }
+  finally{ aiBusy(false); }
+}
+function importRaw(raw){
+  if(raw==null)return "";
+  if(typeof raw==="string")return raw.trim();
+  return JSON.stringify(raw);
 }
 
 /* ============================ HELPERS ============================ */
 function val(id){ const el=document.getElementById(id); return el?el.value.trim():""; }
-function copyText(t,btn){ navigator.clipboard.writeText(t).then(()=>{ if(btn){const o=btn.textContent;btn.textContent="Copied ✓";setTimeout(()=>btn.textContent=o,1500);} }); }
 
 /* ============================ BACKUP ============================ */
 function exportData(){
@@ -3297,7 +3337,7 @@ function modalTOR(aid){
       <div><label>ToR date</label><input type="date" id="t_date" value="${esc(t.date||"")}"></div>
     </div>
     <label>Planned timing / fieldwork dates</label><input id="t_timing" value="${esc(t.timing)}" placeholder="e.g. Fieldwork 15–26 Jul 2026; period under review Jan–Jun 2026">
-    <label>Background &amp; purpose <button class="btn sec sm" type="button" style="margin-left:6px" onclick="genTORPrompt('${aid}')">✦ Draft with Claude</button></label><textarea id="t_bg">${esc(t.background)}</textarea>
+    <label>Background &amp; purpose <button class="btn sec sm ai-generate-btn" type="button" style="margin-left:6px" onclick="generateTORBackground('${aid}')">Generate</button></label><textarea id="t_bg">${esc(t.background)}</textarea>
     <div id="t_bg_prompt" style="margin-top:6px"></div>
     <label>Areas out of scope (one per line)</label><textarea id="t_oos">${esc(t.outOfScope)}</textarea>
     <label>Information &amp; access required from the auditee</label><textarea id="t_info">${esc(t.infoRequired)}</textarea>
@@ -3305,15 +3345,20 @@ function modalTOR(aid){
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveTOR('${aid}',true)">Save</button><button class="btn dark" onclick="saveTOR('${aid}',false);exportTOR('${aid}')">⤓ Export ToR (Word)</button>`);
 }
 function saveTOR(aid,close){ const a=audit(aid); a.tor={addressee:val("t_addr"),date:val("t_date"),timing:val("t_timing"),background:val("t_bg"),outOfScope:val("t_oos"),infoRequired:val("t_info"),reportingTo:val("t_rep")}; save(); if(close){ closeModal(); } }
-function genTORPrompt(aid){
+function buildTORPrompt(aid){
   const a=audit(aid); const p=a.plan||{};
-  const prompt=`Act as Chief Audit Executive for ${DB.org}. Draft a brief, professional "Background and Purpose" for the Terms of Reference of the upcoming "${a.name}" audit${a.area?" ("+a.area+")":""}${a.period?", covering "+a.period:""}. Explain why the audit is being conducted (it forms part of the risk-based annual audit plan), its purpose, and what assurance it will provide. Keep it to 1–2 short paragraphs, addressed to the auditee. Return plain text only (no JSON).
+  return `Act as Chief Audit Executive for ${DB.org}. Draft a brief, professional "Background and Purpose" for the Terms of Reference of the upcoming "${a.name}" audit${a.area?" ("+a.area+")":""}${a.period?", covering "+a.period:""}. Explain why the audit is being conducted (it forms part of the risk-based annual audit plan), its purpose, and what assurance it will provide. Keep it to 1–2 short paragraphs, addressed to the auditee. Return plain text only (no JSON).
 
 Scope: ${p.scope||"(to be confirmed)"}
 Objectives: ${(p.objectives||[]).join("; ")||"(not specified)"}
 Key risks: ${(p.keyRisks||[]).join("; ")||"(not specified)"}`;
-  document.getElementById("t_bg_prompt").innerHTML=`<div class="hint">Send this to me in chat; paste my reply into the Background box above.</div><div class="codebox" id="t_bg_box">${esc(prompt)}</div><div class="row" style="margin-top:6px"><button class="btn sec sm" type="button" onclick="copyText(document.getElementById('t_bg_box').innerText,this)">Copy prompt</button></div>`;
 }
+async function generateTORBackground(aid){
+  await runAiText(buildTORPrompt(aid),"t_bg_prompt",text=>{
+    const el=document.getElementById("t_bg"); if(el) el.value=text.trim();
+  });
+}
+function genTORPrompt(aid){ generateTORBackground(aid); }
 function exportTOR(aid){
   const a=audit(aid); const p=a.plan||{}; const t=a.tor||{};
   const name=DB.signOffName||"Awa Michael", title=DB.signOffTitle||"Head, Internal Audit";
@@ -3375,27 +3420,32 @@ function modalCaeReport(){
     <p class="hint">Set the period and an executive commentary, then export the whole-of-function quarterly pack (plan progress, observations, remediation, fraud). Per-engagement status is set in the Audit Risk Assessment tab; closures on each observation.</p>
     <div class="f2">
       <div><label>Reporting period</label><input id="cae_period" value="${esc(u.period||"")}" placeholder="e.g. Q2 2026"></div>
-      <div><label>&nbsp;</label><button class="btn sec" style="width:100%" onclick="genCaePrompt()">✦ Draft commentary with Claude</button></div>
+      <div><label>&nbsp;</label><button class="btn sec ai-generate-btn" style="width:100%" onclick="generateCaeCommentary()">Generate commentary</button></div>
     </div>
     <label>Executive commentary to the BAC</label><textarea id="cae_comm" style="min-height:150px">${esc(u.commentary||"")}</textarea>
     <div id="caeOut" style="margin-top:10px"></div>`,
     `<button class="btn sec" onclick="closeModal()">Close</button><button class="btn" onclick="DB.caeReport={period:val('cae_period'),commentary:val('cae_comm')};save();">Save</button><button class="btn dark" onclick="DB.caeReport={period:val('cae_period'),commentary:val('cae_comm')};save();exportCaeReport();">⤓ Export report (Word)</button>`);
 }
-function genCaePrompt(){
+function buildCaePrompt(period){
   const obs=allObs(); const c=zc(); obs.forEach(o=>c[o.criticality]++);
   const open=obs.filter(o=>o.status!=="Closed").length;
   const en=auditUniverse().map(e=>{ const score=raComposite(e.factors); const band=e.ratingOverride||raBand(score); const due=raDue(e,band); return {...e,incl:raInPlan(e,band,due)}; }).filter(e=>e.incl);
   const pc=en.filter(e=>e.engStatus==="Completed").length;
   const F=fraudList(); const fA=F.flatMap(f=>f.actions||[]); const fI=fA.filter(a=>a.status==="Implemented").length;
   const ratingMix=CRITS.map(k=>c[k]+" "+k).filter(x=>!x.startsWith("0 ")).join(", ")||"none";
-  const p=`Act as the Chief Audit Executive for ${DB.org}. Draft a concise executive commentary (3–5 short paragraphs) for the quarterly Internal Audit report to the Board Audit Committee for ${val("cae_period")||"the period"}. Summarise: audit plan delivery, key observations and themes, remediation status (open / overdue), notable repeat findings, and fraud risk management progress. Return plain text only (no JSON).
+  return `Act as the Chief Audit Executive for ${DB.org}. Draft a concise executive commentary (3–5 short paragraphs) for the quarterly Internal Audit report to the Board Audit Committee for ${period||"the period"}. Summarise: audit plan delivery, key observations and themes, remediation status (open / overdue), notable repeat findings, and fraud risk management progress. Return plain text only (no JSON).
 
 Key data:
 - Annual audit plan: ${pc} of ${en.length} engagements completed.
 - Observations: ${obs.length} total (${ratingMix}); ${open} open.
 - Fraud prevention plan: ${fI} of ${fA.length} actions implemented.`;
-  document.getElementById("caeOut").innerHTML=`<div class="hint">Send this to me in chat; paste my reply into the commentary box above.</div><div class="codebox" id="caebox">${esc(p)}</div><div class="row" style="margin-top:8px"><button class="btn sec sm" onclick="copyText(document.getElementById('caebox').innerText,this)">Copy prompt</button></div>`;
 }
+async function generateCaeCommentary(){
+  await runAiText(buildCaePrompt(val("cae_period")),"caeOut",text=>{
+    const el=document.getElementById("cae_comm"); if(el) el.value=text.trim();
+  });
+}
+function genCaePrompt(){ generateCaeCommentary(); }
 function exportCaeReport(){
   const u=DB.caeReport||{};
   const obs=allObs();

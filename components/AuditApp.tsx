@@ -58,6 +58,13 @@ export default function AuditApp() {
 
       <span id="orgName" hidden aria-hidden="true" />
 
+      <div className="ai-busy-overlay" id="aiBusyOverlay" aria-hidden="true">
+        <div className="ai-busy-card">
+          <span className="ai-busy-spinner" aria-hidden="true" />
+          Generating…
+        </div>
+      </div>
+
       <Script src="/audit-bot.js" strategy="afterInteractive" />
     </>
   );

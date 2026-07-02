@@ -2860,3 +2860,60 @@ td.timeline-cell {
     grid-template-columns: 1fr;
   }
 }
+
+/* AI generation */
+body.ai-busy .ai-generate-btn:not(:disabled) {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.ai-busy-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(15, 23, 42, 0.18);
+  align-items: center;
+  justify-content: center;
+  pointer-events: all;
+}
+
+.ai-busy-overlay.show {
+  display: flex;
+}
+
+.ai-busy-card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 18px 22px;
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.12);
+  font-size: 14px;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ai-busy-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid #cbd5e1;
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: ai-spin 0.8s linear infinite;
+}
+
+@keyframes ai-spin {
+  to { transform: rotate(360deg); }
+}
+
+.ai-err {
+  color: var(--crit);
+  font-size: 12.5px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: #fdf2f4;
+  border: 1px solid #f5c2c9;
+  border-radius: 8px;
+}
