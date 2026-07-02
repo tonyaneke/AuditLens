@@ -131,7 +131,50 @@ function go(v,opts={}){
   document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("active",b.dataset.view===v && v!=="report" && v!=="observation" && v!=="audit"));
   render();
 }
-function backBtn(label,fn){ return `<button class="btn-back" onclick="${fn}"><span aria-hidden="true">←</span> ${esc(label)}</button>`; }
+function backBtn(fn){ return `<button class="btn-back" onclick="${fn}" title="Back"><span aria-hidden="true">←</span> Back</button>`; }
+function iconBtn(fn,icon,title,danger){ return `<button type="button" class="btn-icon-action${danger?" danger":""}" title="${esc(title)}" onclick="${fn}">${icon}</button>`; }
+function pageTitleFor(v){
+  const map={dashboard:"Dashboard",audits:"Audits & Reports",tracker:"Remediation Tracker",auditra:"Audit Risk Assessment",fraud:"Fraud Risk",process:"Process Review",external:"External Findings",iasa:"IA Self-Assessment",guide:"How to use AMS",settings:"Settings & Backup"};
+  return map[v]||"AMS";
+}
+function planYearOptions(selected){
+  const y=new Date().getFullYear();
+  return Array.from({length:7},(_,i)=>y-2+i).map(yr=>`<option value="${yr}"${String(selected)===String(yr)?" selected":""}>${yr}</option>`).join("");
+}
+function raDueYear(e,band){ const la=parseInt(e.lastAudited,10); return isNaN(la)?+planYear():la+raFreqYears(band); }
+function raDueDisplay(e,band,due){
+  if(!due) return `<span class="hint">—</span>`;
+  const yr=raDueYear(e,band);
+  return `<span class="due-date" title="Due by end of ${yr}">Dec ${yr}</span>`;
+}
+function raTimingSelect(e){
+  const py=planYear();
+  const presets=[`Q1 ${py}`,`Q2 ${py}`,`Q3 ${py}`,`Q4 ${py}`,`Q1-Q2 ${py}`,`Q3-Q4 ${py}`];
+  const cur=(e.plannedPeriod||"").trim();
+  let opts=`<option value="">— select —</option>${presets.map(o=>`<option value="${esc(o)}"${cur===o?" selected":""}>${esc(o)}</option>`).join("")}`;
+  if(cur && !presets.includes(cur)) opts+=`<option value="${esc(cur)}" selected>${esc(cur)}</option>`;
+  return `<select class="field-select field-select-sm ra-timing-select" onchange="raSetPeriod('${e.id}',this.value)">${opts}</select>`;
+}
+function modalRADownload(){
+  openModal("Download",`<p class="hint">Choose a Word export:</p>
+    <div class="download-choices">
+      <button class="btn" type="button" onclick="closeModal();exportRA()">Risk assessment</button>
+      <button class="btn sec" type="button" onclick="closeModal();exportAuditPlan()">Audit plan</button>
+    </div>`,`<button class="btn sec" onclick="closeModal()">Cancel</button>`);
+}
+function modalFraudDownload(){
+  openModal("Download",`<p class="hint">Choose a Word export:</p>
+    <div class="download-choices">
+      <button class="btn" type="button" onclick="closeModal();exportFraud()">Fraud assessment</button>
+      <button class="btn sec" type="button" onclick="closeModal();exportFraudPlan()">Prevention plan</button>
+    </div>`,`<button class="btn sec" onclick="closeModal()">Cancel</button>`);
+}
+function fraudCatHTML(byCat){
+  const rows=FRAUD_CATS.filter(c=>byCat[c]).map(c=>[c,byCat[c]]);
+  if(!rows.length) return `<div class="hint">No risks categorized yet.</div>`;
+  const max=Math.max(1,...rows.map(r=>r[1]));
+  return rows.map(([c,n])=>`<div class="acfe-row"><div class="acfe-nm">${esc(c)}</div><div class="acfe-track"><div class="acfe-fill" style="width:${n/max*100}%"></div></div><div class="acfe-val">${n}</div></div>`).join("");
+}
 function btnDownload(fn,label){ return `<button class="btn btn-download" onclick="${fn}"><span class="dl-icon" aria-hidden="true">⤓</span> ${esc(label)}</button>`; }
 function setTopSearch(html){
   const el=document.getElementById("topSearch"); if(el) el.innerHTML=html||"";
@@ -163,39 +206,30 @@ function render(){
   const T=document.getElementById("pageTitle");
   const A=document.getElementById("topActions");
   A.innerHTML=""; setTopSearch(""); setTopBack("");
-  if(view==="dashboard"){ T.textContent="Dashboard"; A.innerHTML=`<button class="btn sec sm" onclick="exportDashboard()">⤓ Export dashboard</button><button class="btn sec sm" onclick="modalCaeReport()">⤓ Quarterly BAC report</button>`; C.innerHTML=viewDashboard(); }
-  else if(view==="auditra"){ T.textContent="Audit Risk Assessment"; A.innerHTML=`<button class="btn sec sm" onclick="exportRA()">⤓ Risk assessment (Word)</button><button class="btn sec sm" onclick="exportAuditPlan()">⤓ Audit plan (Word)</button><button class="btn sm dark" onclick="modalRAPrompt()">✦ Recommend audits</button><button class="btn sm" onclick="modalRA()">+ Add unit</button>`; C.innerHTML=viewAuditRA(); }
-  else if(view==="fraud"){ T.textContent="Fraud Risk Assessment"; A.innerHTML=`<button class="btn sec sm" onclick="exportFraud()">⤓ Assessment (Word)</button><button class="btn sec sm" onclick="exportFraudPlan()">⤓ Prevention plan (Word)</button><button class="btn sm dark" onclick="modalFraudPrompt()">✦ Build fraud-risk prompt</button><button class="btn sm" onclick="modalFraud()">+ Add fraud risk</button>`; C.innerHTML=viewFraud(); }
-  else if(view==="external"){ T.textContent="External & Regulatory Audit Findings"; A.innerHTML=`<button class="btn sec sm" onclick="exportExternal()">⤓ Status report (Word)</button><button class="btn sm dark" onclick="modalExtImport()">⤒ Import findings</button><button class="btn sm" onclick="modalExt()">+ Add finding</button>`; C.innerHTML=viewExternal(); }
-  else if(view==="iasa"){ T.textContent="IA Self-Assessment & Maturity"; A.innerHTML=`<button class="btn sec sm" onclick="exportIASA()">⤓ Self-assessment (Word)</button><button class="btn sm dark" onclick="modalIASAPrompt()">✦ Draft with Claude</button>`; C.innerHTML=viewIASA(); }
+  if(view==="dashboard"){ T.textContent=pageTitleFor("dashboard"); A.innerHTML=`<button class="btn sec sm" onclick="exportDashboard()">⤓ Export dashboard</button><button class="btn sec sm" onclick="modalCaeReport()">⤓ Quarterly BAC report</button>`; C.innerHTML=viewDashboard(); }
+  else if(view==="auditra"){ T.textContent=pageTitleFor("auditra"); A.innerHTML=`${btnDownload("modalRADownload()","Download")}<button class="btn sm dark" onclick="modalRAPrompt()">✦ Recommend audits</button><button class="btn sm" onclick="modalRA()">+ Add unit</button>`; C.innerHTML=viewAuditRA(); }
+  else if(view==="fraud"){ T.textContent=pageTitleFor("fraud"); A.innerHTML=`${btnDownload("modalFraudDownload()","Download")}<button class="btn sm dark" onclick="modalFraudPrompt()">✦ Build fraud-risk prompt</button><button class="btn sm" onclick="modalFraud()">+ Add fraud risk</button>`; C.innerHTML=viewFraud(); }
+  else if(view==="external"){ T.textContent=pageTitleFor("external"); A.innerHTML=`<button class="btn sec sm" onclick="exportExternal()">⤓ Status report (Word)</button><button class="btn sm dark" onclick="modalExtImport()">⤒ Import findings</button><button class="btn sm" onclick="modalExt()">+ Add finding</button>`; C.innerHTML=viewExternal(); }
+  else if(view==="iasa"){ T.textContent=pageTitleFor("iasa"); A.innerHTML=`<button class="btn sec sm" onclick="exportIASA()">⤓ Self-assessment (Word)</button><button class="btn sm dark" onclick="modalIASAPrompt()">✦ Draft with Claude</button>`; C.innerHTML=viewIASA(); }
   else if(view==="audits"){
-    T.textContent="Audits & Reports";
+    T.textContent=pageTitleFor("audits");
     setTopSearch(`<input id="afq" class="topbar-search" value="${esc(auditFilter.q||"")}" placeholder="Search audits &amp; reports…" oninput="auditFilter.q=this.value;refreshAuditList()">`);
-    const periods=[...new Set(DB.audits.map(a=>a.period||"").filter(Boolean))].sort((x,y)=>periodKey(y)-periodKey(x));
-    A.innerHTML=`<div class="topbar-filters">
-      <div class="filter-group"><span class="filter-label">Quarter</span>
-        <select class="field-select field-select-sm" onchange="auditFilter.period=this.value;refreshAuditList()"><option value="All"${auditFilter.period==="All"?" selected":""}>All quarters</option>${periods.map(p=>`<option value="${esc(p)}"${auditFilter.period===p?" selected":""}>${esc(p)}</option>`).join("")}</select></div>
-      <div class="filter-group"><span class="filter-label">Status</span>
-        <select class="field-select field-select-sm" onchange="auditFilter.status=this.value;refreshAuditList()">${["All",...AUDIT_STATUS].map(s=>`<option value="${esc(s)}"${auditFilter.status===s?" selected":""}>${esc(s)}</option>`).join("")}</select></div>
-      <label class="filter-check"><input type="checkbox" ${auditFilter.group?"checked":""} onchange="auditFilter.group=this.checked;refreshAuditList()"> Group by quarter</label>
-      <button class="btn ghost sm" onclick="auditFilter={q:'',status:'All',period:'All',group:auditFilter.group};render()">Clear</button>
-    </div>
-    <button class="btn" onclick="modalAudit()">+ New Audit</button>`;
+    A.innerHTML=`<button class="btn" onclick="modalAudit()">+ New Audit</button>`;
     C.innerHTML=viewAudits();
   }
   else if(view==="audit"){ renderAudit(C,T,A); }
   else if(view==="report"){ renderReport(C,T,A); }
   else if(view==="observation"){ renderObservation(C,T,A); }
   else if(view==="tracker"){
-    T.textContent="Remediation Tracker";
+    T.textContent=pageTitleFor("tracker");
     A.innerHTML=trackerMode==="insights"
       ? `<button class="btn sec sm" onclick="exportInsights()">⤓ Export insights</button>`
       : `<button class="btn sec sm" onclick="exportTracker()">⤓ Export tracker</button>`;
     C.innerHTML=trackerTabs()+(trackerMode==="insights"?viewInsights():viewTracker());
   }
-  else if(view==="process"){ T.textContent="Process & Control Effectiveness Review"; const pp=curProc?procList().find(x=>x.id===curProc):null; A.innerHTML = pp? `<button class="btn sec sm" onclick="curProc=null;render()">← All reviews</button><button class="btn sec sm" onclick="exportProc('${pp.id}')">⤓ Export (Word)</button><button class="btn sm" onclick="modalProcMeta('${pp.id}')">Edit details</button>` : `<button class="btn sm" onclick="modalProcNew()">+ New review</button>`; C.innerHTML=viewProcess(); }
-  else if(view==="guide"){ T.textContent="How to use the bot"; C.innerHTML=viewGuide(); }
-  else if(view==="settings"){ T.textContent="Settings & Backup"; C.innerHTML=viewSettings(); }
+  else if(view==="process"){ T.textContent=pageTitleFor("process"); const pp=curProc?procList().find(x=>x.id===curProc):null; A.innerHTML = pp? `<button class="btn sec sm" onclick="curProc=null;render()">← All reviews</button><button class="btn sec sm" onclick="exportProc('${pp.id}')">⤓ Export (Word)</button><button class="btn sm" onclick="modalProcMeta('${pp.id}')">Edit details</button>` : `<button class="btn sm" onclick="modalProcNew()">+ New review</button>`; C.innerHTML=viewProcess(); }
+  else if(view==="guide"){ T.textContent=pageTitleFor("guide"); C.innerHTML=viewGuide(); }
+  else if(view==="settings"){ T.textContent=pageTitleFor("settings"); C.innerHTML=viewSettings(); }
 }
 
 /* ============================ DASHBOARD ============================ */
@@ -560,8 +594,10 @@ function viewAuditRA(){
   const totalOcc=planned.reduce((s,e)=>s+unitOccTotal(e),0);
   const doneOcc=planned.reduce((s,e)=>s+unitOccDone(e),0);
   const pctPlan=totalOcc?Math.round(doneOcc/totalOcc*100):0;
-  let h=`<div class="row" style="margin-bottom:14px"><div style="font-size:13px;color:var(--muted)">Risk-based annual audit planning · ${U.length} auditable unit(s)</div><div class="spacer"></div>
-    <label style="margin:0;display:flex;align-items:center;gap:6px;font-weight:600;color:#475569">Plan year <input style="width:84px;padding:6px 8px" value="${esc(planYear())}" onchange="DB.planYear=this.value.trim();save();render();"></label></div>
+  let h=`<div class="ra-toolbar">
+    <div class="filter-group"><span class="filter-label">Plan year</span>
+      <select class="field-select field-select-sm" onchange="DB.planYear=this.value;save();render();">${planYearOptions(planYear())}</select></div>
+  </div>
   <div class="dash-kpis" style="grid-template-columns:repeat(5,1fr)">
     ${kpi("warn","High / Critical",counts.High+counts.Critical,"units by risk rating")}
     ${kpi("base","Auditable units",U.length,"in the universe")}
@@ -570,7 +606,7 @@ function viewAuditRA(){
     ${kpi("good","Plan delivered",pctPlan+"%",doneOcc+" of "+totalOcc+" reviews done")}
   </div>
   <div class="card"><div class="seclabel">Risk-ranked audit universe</div>
-    <table style="margin-top:6px"><thead><tr><th>Auditable unit</th><th>Category</th><th>Risk score</th><th>Rating</th><th>Last audited</th><th>Frequency</th><th>Due</th><th>In plan</th><th></th></tr></thead><tbody>
+    <table class="ra-universe-table" style="margin-top:6px"><thead><tr><th>Auditable unit</th><th>Category</th><th>Risk score</th><th>Rating</th><th>Last audited</th><th>Frequency</th><th>Due</th><th>In plan</th><th></th></tr></thead><tbody>
     ${en.map(e=>`<tr>
       <td><b>${esc(e.name)}</b>${e.owner?`<div class="hint">${esc(e.owner)}</div>`:""}</td>
       <td>${esc(e.category||"—")}</td>
@@ -578,17 +614,17 @@ function viewAuditRA(){
       <td><span class="pill" style="background:${hx2rgba(RA_HEX[e.band],.16)};color:${RA_HEX[e.band]}">${e.band}</span></td>
       <td style="text-align:center">${esc(e.lastAudited||"—")}</td>
       <td>${esc(e.freq)}</td>
-      <td style="text-align:center">${e.due?`<span class="pill c-High">Due</span>`:"—"}</td>
-      <td style="text-align:center"><input type="checkbox" style="width:auto" ${e.incl?"checked":""} onchange="raToggle('${e.id}')"></td>
-      <td style="white-space:nowrap"><button class="btn ghost sm" onclick="modalRA('${e.id}')">Edit</button><button class="btn ghost sm" style="color:var(--crit)" onclick="delRA('${e.id}')">✕</button></td>
+      <td style="text-align:center">${raDueDisplay(e,e.band,e.due)}</td>
+      <td class="ra-inplan-cell" onclick="raToggle('${e.id}')"><input type="checkbox" style="width:auto;pointer-events:none" ${e.incl?"checked":""}></td>
+      <td class="ra-actions-cell">${iconBtn(`modalRA('${e.id}')`,"✎","Edit")}${iconBtn(`delRA('${e.id}')`,"✕","Delete",true)}</td>
     </tr>`).join("")}
     </tbody></table>
     <div class="hint" style="margin-top:8px">Risk score = weighted average of factors (1–5). Frequency: Critical/High = annual · Medium = 2 yrs · Low = 3 yrs. “Due” = last audited + cycle ≤ plan year (or never audited).</div>
   </div>
   <div class="card"><div class="row"><div class="seclabel" style="margin:0">Annual Audit Plan — ${esc(planYear())}</div><div class="spacer"></div><span class="hint">${planned.length} engagement(s) · ${doneOcc}/${totalOcc} quarter-reviews done (${pctPlan}%)</span></div>
-    ${planned.length?`<table style="margin-top:6px"><thead><tr><th>#</th><th>Auditable unit</th><th>Rating</th><th>Timing</th><th>Status</th><th>Linked audit</th><th>Rationale</th></tr></thead><tbody>
+    ${planned.length?`<table class="ra-plan-table" style="margin-top:6px"><thead><tr><th>#</th><th>Auditable unit</th><th>Rating</th><th class="ra-timing-col">Timing</th><th>Status</th><th>Linked audit</th><th>Rationale</th></tr></thead><tbody>
       ${planned.map((e,i)=>`<tr><td>${i+1}</td><td><b>${esc(e.name)}</b><div class="hint">${esc(e.freq)}</div></td><td><span class="pill" style="background:${hx2rgba(RA_HEX[e.band],.16)};color:${RA_HEX[e.band]}">${e.band}</span></td>
-        <td><input style="width:84px;padding:5px 7px" value="${esc(e.plannedPeriod||"")}" placeholder="Q2" onchange="raSetPeriod('${e.id}',this.value)"></td>
+        <td class="ra-timing-col">${raTimingSelect(e)}</td>
         <td>${engStatusCell(e)}</td>
         <td>${auditLinksCell(e)}</td>
         <td class="hint">${esc(e.rationale||(e.due?"Due per "+e.freq.toLowerCase()+" cycle":e.band+" risk"))}</td></tr>`).join("")}
@@ -606,7 +642,7 @@ function auditLinksCell(e){
 function raLinkAdd(id,aid){ if(!aid)return; const e=auditUniverse().find(x=>x.id===id); if(!e)return; const ids=raLinkIds(e).slice(); if(!ids.includes(aid))ids.push(aid); e.linkedAuditIds=ids; delete e.linkedAuditId; save(); render(); }
 function raLinkRemove(id,aid){ const e=auditUniverse().find(x=>x.id===id); if(!e)return; e.linkedAuditIds=raLinkIds(e).filter(x=>x!==aid); delete e.linkedAuditId; save(); render(); }
 function raToggle(id){ const e=auditUniverse().find(x=>x.id===id); if(!e)return; const score=raComposite(e.factors); const band=e.ratingOverride||raBand(score); const due=raDue(e,band); e.includeInPlan=!raInPlan(e,band,due); save(); render(); }
-function raSetPeriod(id,v){ const e=auditUniverse().find(x=>x.id===id); if(e){ e.plannedPeriod=v; save(); } }
+function raSetPeriod(id,v){ const e=auditUniverse().find(x=>x.id===id); if(e){ e.plannedPeriod=v; save(); render(); } }
 function raEngSet(id,v){ const e=auditUniverse().find(x=>x.id===id); if(e){ e.engStatus=v; save(); render(); } }
 function parseQuarters(s){
   s=String(s||""); const out=[];
@@ -752,8 +788,7 @@ function viewFraud(){
   const byBand={}; BANDS.forEach(b=>byBand[b]=0); en.forEach(f=>byBand[f.res]++);
   const byCat={}; en.forEach(f=>byCat[f.category]=(byCat[f.category]||0)+1);
   const grid={}; en.forEach(f=>{ const k=f.likelihood+"-"+f.impact; grid[k]=(grid[k]||0)+1; });
-  let h=`<div class="row" style="margin-bottom:16px"><div style="font-size:13px;color:var(--muted)">Annual fraud risk assessment · ${F.length} fraud risk(s) · drives the Fraud Prevention Plan</div></div>
-  <div class="dash-kpis" style="grid-template-columns:repeat(4,1fr)">
+  let h=`<div class="dash-kpis" style="grid-template-columns:repeat(4,1fr)">
     ${kpi("warn","Extreme / High",byBand.Extreme+byBand.High,"residual fraud exposure")}
     ${kpi("base","Total risks",F.length,"in the register")}
     ${kpi("good","Mitigated",en.filter(f=>f.status==="Mitigated").length,"response complete")}
@@ -761,10 +796,10 @@ function viewFraud(){
   </div>
   <div class="dash2">
     <div class="card"><div class="seclabel">Fraud risk heat map — likelihood × impact (inherent)</div>${fraudHeatHTML(grid)}</div>
-    <div class="card"><div class="seclabel">By scheme category (ACFE)</div>
-      <div class="legend">${FRAUD_CATS.filter(c=>byCat[c]).map(c=>`<div class="li"><span class="lname">${c}</span><span class="lval">${byCat[c]}</span></div>`).join("")||'<div class="hint">—</div>'}</div>
-      <div class="seclabel" style="margin-top:16px">Residual exposure</div>
-      <div class="legend">${BANDS.slice().reverse().map(b=>`<div class="li"><span class="dot" style="background:${BAND_HEX[b]}"></span><span class="lname">${b}</span><span class="lval">${byBand[b]}</span></div>`).join("")}</div>
+    <div class="card acfe-card"><div class="seclabel">By scheme category (ACFE)</div>
+      ${fraudCatHTML(byCat)}
+      <div class="seclabel" style="margin-top:20px">Residual exposure</div>
+      <div class="acfe-residual">${BANDS.slice().reverse().map(b=>`<div class="acfe-res-item"><span class="dot" style="background:${BAND_HEX[b]}"></span><span class="acfe-res-label">${b}</span><span class="acfe-res-val">${byBand[b]}</span></div>`).join("")}</div>
     </div>
   </div>
   <div class="card"><div class="seclabel">Fraud risk register</div>
@@ -777,7 +812,7 @@ function viewFraud(){
       <td>${esc(f.controlStrength||"—")}</td>
       <td><span class="pill" style="background:${hx2rgba(BAND_HEX[f.res],.16)};color:${BAND_HEX[f.res]}">${f.res}</span></td>
       <td>${esc(f.owner||"—")}</td><td>${esc(f.status||"Identified")}</td>
-      <td style="white-space:nowrap"><button class="btn ghost sm" onclick="modalFraud('${f.id}')">Edit</button><button class="btn ghost sm" style="color:var(--crit)" onclick="delFraud('${f.id}')">✕</button></td>
+      <td class="ra-actions-cell">${iconBtn(`modalFraud('${f.id}')`,"✎","Edit")}${iconBtn(`delFraud('${f.id}')`,"✕","Delete",true)}</td>
     </tr>`).join("")}
     </tbody></table>
   </div>`;
@@ -791,11 +826,17 @@ function viewFraud(){
     <div class="hint" style="margin:4px 0 10px">Each fraud risk from the assessment is listed below by residual priority. Add the prevention/response actions that will mitigate it — together they are your fraud prevention plan.</div>
     ${plan?`<div class="txt" style="white-space:pre-wrap;margin:8px 0;padding:10px 12px;background:#f8fafc;border:1px solid var(--line);border-radius:8px">${esc(plan)}</div>`:`<div class="hint" style="margin:8px 0">Add a plan overview (objective, governance, reporting cadence, training, whistleblowing) — or draft it with me.</div>`}
     ${en.slice().sort((a,b)=>BANDS.indexOf(b.res)-BANDS.indexOf(a.res)).map(f=>{ const acts=fraudActions(f); return `
-      <div class="obs-block" style="padding:11px 13px;margin:8px 0;background:${hx2rgba(BAND_HEX[f.res],.1)};border-color:${hx2rgba(BAND_HEX[f.res],.35)}">
-        <div class="row" style="align-items:center;gap:8px"><span class="pill" style="background:${hx2rgba(BAND_HEX[f.res],.16)};color:${BAND_HEX[f.res]}">${f.res}</span><b>${esc(f.scheme)}</b><span class="hint">${esc(f.category)}${f.process?" · "+esc(f.process):""}</span><div class="spacer"></div><button class="btn sec sm" onclick="modalFraudAction('${f.id}')">+ Add action</button></div>
+      <div class="fraud-plan-card">
+        <div class="fraud-plan-head">
+          <span class="pill" style="background:${hx2rgba(BAND_HEX[f.res],.16)};color:${BAND_HEX[f.res]}">${f.res}</span>
+          <b>${esc(f.scheme)}</b>
+          <span class="hint">${esc(f.category)}${f.process?" · "+esc(f.process):""}</span>
+          <div class="spacer"></div>
+          <button class="btn sec sm" onclick="modalFraudAction('${f.id}')">+ Add action</button>
+        </div>
         ${acts.length?`<table style="margin-top:8px"><thead><tr><th>Prevention / response action</th><th>Type</th><th>Owner</th><th>Target</th><th>Status</th><th></th></tr></thead><tbody>
           ${acts.map(a=>`<tr><td>${esc(a.text)}${a.update?`<div class="hint">Update: ${esc(a.update)}</div>`:""}</td><td>${esc(a.type||"—")}</td><td>${esc(a.owner||"—")}</td><td>${esc(a.targetDate||"—")}</td><td><span class="${actStatusClass(a.status)}">${esc(a.status||"Planned")}</span></td>
-            <td style="white-space:nowrap"><button class="btn ghost sm" onclick="modalFraudAction('${f.id}','${a.id}')">Edit</button><button class="btn ghost sm" style="color:var(--crit)" onclick="delFraudAction('${f.id}','${a.id}')">✕</button></td></tr>`).join("")}
+            <td class="ra-actions-cell">${iconBtn(`modalFraudAction('${f.id}','${a.id}')`,"✎","Edit")}${iconBtn(`delFraudAction('${f.id}','${a.id}')`,"✕","Delete",true)}</td></tr>`).join("")}
         </tbody></table>`:`<div class="hint" style="margin-top:6px">No prevention actions yet — click <b>+ Add action</b>, or use <b>✦ Draft actions</b> above.</div>`}
       </div>`; }).join("")}
   </div>`;
@@ -1941,8 +1982,18 @@ function refreshAuditList(){
 function viewAudits(){
   if(!DB.audits.length) return `<div class="card"><div class="empty"><div class="big">▤</div>
     No audits yet.<br><br><button class="btn" onclick="modalAudit()">+ Create your first audit</button></div></div>`;
+  const periods=[...new Set(DB.audits.map(a=>a.period||"").filter(Boolean))].sort((x,y)=>periodKey(y)-periodKey(x));
   const shown=DB.audits.filter(a=>auditMatches(a,(auditFilter.q||"").toLowerCase().trim())).length;
-  return `<div class="audit-list-meta"><span class="hint" id="afCount">${shown} of ${DB.audits.length} audits</span></div>
+  return `<div class="audit-filters-bar filter-row-right anim-fade-in">
+    <span class="hint" id="afCount">${shown} of ${DB.audits.length} audits</span>
+    <div class="spacer"></div>
+    <div class="filter-group"><span class="filter-label">Quarter</span>
+      <select class="field-select field-select-sm" onchange="auditFilter.period=this.value;refreshAuditList()"><option value="All"${auditFilter.period==="All"?" selected":""}>All quarters</option>${periods.map(p=>`<option value="${esc(p)}"${auditFilter.period===p?" selected":""}>${esc(p)}</option>`).join("")}</select></div>
+    <div class="filter-group"><span class="filter-label">Status</span>
+      <select class="field-select field-select-sm" onchange="auditFilter.status=this.value;refreshAuditList()">${["All",...AUDIT_STATUS].map(s=>`<option value="${esc(s)}"${auditFilter.status===s?" selected":""}>${esc(s)}</option>`).join("")}</select></div>
+    <label class="filter-check"><input type="checkbox" ${auditFilter.group?"checked":""} onchange="auditFilter.group=this.checked;refreshAuditList()"> Group by quarter</label>
+    <button class="btn ghost sm" onclick="auditFilter={q:'',status:'All',period:'All',group:auditFilter.group};render()">Clear</button>
+  </div>
   <div id="auditList">${auditListHTML()}</div>`;
 }
 
@@ -1950,8 +2001,8 @@ function viewAudits(){
 function renderAudit(C,T,A){
   const a=audit(curAudit);
   if(!a){ go("audits"); return; }
-  T.textContent=a.name;
-  setTopBack(backBtn("Audits","go('audits')"));
+  T.textContent=pageTitleFor("audits");
+  setTopBack(backBtn("go('audits')"));
   A.innerHTML=`<button class="btn-icon" title="Edit audit" onclick="modalAudit('${a.id}')">✎</button>
     <button class="btn sm dark" onclick="modalTOR('${a.id}')">📄 Terms of Reference</button>
     ${btnDownload(`exportAudit('${a.id}')`,"Download")}`;
@@ -2249,8 +2300,8 @@ function exportPlan(aid){
 function renderReport(C,T,A){
   const a=audit(curAudit); const r=report(a,curReport);
   if(!a||!r){ go("audits"); return; }
-  T.textContent=r.title;
-  setTopBack(backBtn(a.name,"go('audit',{audit:'"+a.id+"'})"));
+  T.textContent=pageTitleFor("audits");
+  setTopBack(backBtn("go('audit',{audit:'"+a.id+"'})"));
   A.innerHTML=`<button class="btn sec sm" onclick="modalReport('${a.id}','${r.id}')">Edit report</button>
     <button class="btn sm dark" onclick="modalImport('${a.id}','${r.id}')">⇪ Paste from Claude</button>
     ${btnDownload(`exportReport('${a.id}','${r.id}')`,"Download")}`;
@@ -2287,8 +2338,7 @@ function renderReport(C,T,A){
       <button class="btn sm" onclick="modalObs('${a.id}','${r.id}')">+ Add observation</button>
       ${r.observations.length?`<button class="btn sec sm" onclick="scanRepeats('${a.id}','${r.id}')">🔁 Scan for repeats</button>`:""}
     </div>
-    ${r.observations.length?`<div class="obs-filters-row">
-      <div class="spacer"></div>
+    ${r.observations.length?`<div class="obs-filters-row obs-filters-left">
       <div class="filter-group"><span class="filter-label">Criticality</span>
         <select class="field-select field-select-sm" onchange="reportObsFilter.crit=this.value;render()">${["All",...CRITS].map(x=>`<option value="${esc(x)}"${reportObsFilter.crit===x?" selected":""}>${esc(x)}</option>`).join("")}</select></div>
       <div class="filter-group"><span class="filter-label">Status</span>
@@ -2437,9 +2487,8 @@ function renderObservation(C,T,A){
   const a=audit(curAudit); const r=report(a,curReport);
   const o=r&&r.observations.find(x=>x.id===curObs);
   if(!a||!r||!o){ go("report",{audit:curAudit,report:curReport}); return; }
-  const title=o.ref?`${o.ref} — ${o.title}`:o.title;
-  T.textContent=title;
-  setTopBack(backBtn(r.title,"go('report',{audit:'"+a.id+"',report:'"+r.id+"'})"));
+  T.textContent=pageTitleFor("audits");
+  setTopBack(backBtn("go('report',{audit:'"+a.id+"',report:'"+r.id+"'})"));
   A.innerHTML=`<button class="btn sec sm" onclick="modalObs('${a.id}','${r.id}','${o.id}')">Edit</button>
     <button class="btn ghost sm danger" onclick="delObs('${a.id}','${r.id}','${o.id}')">Delete</button>`;
   const ec=effectiveClose(o,r); const age=obsAge(o,r); const od=isOverdueObs(o,r);
@@ -2455,7 +2504,7 @@ function renderObservation(C,T,A){
     </header>
     <div class="obs-detail-meta">
       ${o.owner?`<div class="obs-meta-item"><span class="obs-meta-label">Owner</span><span class="obs-meta-value">${esc(o.owner)}</span></div>`:""}
-      ${o.timeline?`<div class="obs-meta-item"><span class="obs-meta-label">Timeline</span><span class="obs-meta-value">${tlPill(o.timeline)}</span></div>`:""}
+      ${o.timeline?`<div class="obs-meta-item"><span class="obs-meta-label">Timeline</span><span class="obs-meta-value">${esc(o.timeline)}</span></div>`:""}
       ${ec?`<div class="obs-meta-item"><span class="obs-meta-label">Expected close</span><span class="obs-meta-value">${fmtDate(ec)}${od?` <span class="pill c-Critical">OVERDUE</span>`:""}</span></div>`:""}
       ${age!=null?`<div class="obs-meta-item"><span class="obs-meta-label">Age</span><span class="obs-meta-value">${age} day${age!==1?"s":""}${o.status==="Closed"?" to close":""}</span></div>`:""}
     </div>
