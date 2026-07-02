@@ -1865,6 +1865,45 @@ td.timeline-cell {
   justify-content: flex-start;
 }
 
+.proc-findings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.proc-finding-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px 16px;
+  background: var(--card);
+}
+
+.proc-finding-title {
+  margin: 10px 0 0;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--text);
+}
+
+.ext-row-clickable {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.ext-row-clickable:hover {
+  background: #f0faf6;
+}
+
+.ext-row-clickable:hover td {
+  background: transparent;
+}
+
+.ext-detail-modal .kv {
+  margin-bottom: 6px;
+}
+
 .filter-row-right {
   justify-content: flex-end;
 }
@@ -2497,6 +2536,10 @@ td.timeline-cell {
   }
 
   .f2 {
+    grid-template-columns: 1fr;
+  }
+
+  .proc-findings-grid {
     grid-template-columns: 1fr;
   }
 }

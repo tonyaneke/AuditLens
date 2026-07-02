@@ -1111,15 +1111,27 @@ function procDetail(p){
     ${p.summary?`<div class="txt" style="white-space:pre-wrap;margin-top:10px">${esc(p.summary)}</div>`:""}</div>`;
   h+=`<div class="card"><div class="row"><div class="seclabel" style="margin:0">Findings (${f.length})</div><div class="spacer"></div><button class="btn ghost sm" onclick="modalProcFinding('${p.id}')">+ Add finding</button></div>`;
   if(!f.length) h+=`<div class="hint" style="margin-top:8px">No findings recorded.</div>`;
-  else PROC_CATS.forEach(([cat,hex])=>{ const items=f.filter(x=>x.category===cat); if(!items.length)return;
-    h+=`<div style="margin-top:14px"><div class="row" style="align-items:center;gap:8px"><span class="dot" style="width:11px;height:11px;border-radius:3px;background:${hex};display:inline-block"></span><div class="seclabel" style="margin:0">${cat}</div><span class="hint">${items.length}</span></div>`;
-    h+=items.map(x=>{ const sh=PROC_SEV_HEX[x.severity]||"#64748b"; return `<div class="obs-block" style="padding:10px 12px;margin:8px 0;background:${hx2rgba(hex,.1)};border-color:${hx2rgba(hex,.35)}">
-      <div class="row" style="align-items:center;gap:8px"><b>${esc(x.title)}</b>${x.severity&&cat!=="Strength"?`<span class="pill" style="background:${hx2rgba(sh,.16)};color:${sh}">${esc(x.severity)}</span>`:""}<div class="spacer"></div><button class="btn ghost sm" onclick="modalProcFinding('${p.id}','${x.id}')">Edit</button>${cat!=="Strength"?`<button class="btn ghost sm" onclick="raiseProcFinding('${p.id}','${x.id}')">→ Observation</button>`:""}<button class="btn ghost sm" style="color:var(--crit)" onclick="delProcFinding('${p.id}','${x.id}')">✕</button></div>
-      ${x.detail?`<div class="obs-field"><div class="ttl">Detail</div><div class="txt">${esc(x.detail)}</div></div>`:""}
-      ${x.recommendation?`<div class="obs-field"><div class="ttl">Recommendation</div><div class="txt">${esc(x.recommendation)}</div></div>`:""}
-    </div>`; }).join("");
+  else {
+    h+=`<div class="proc-findings-grid">`;
+    f.forEach(x=>{
+      const cat=x.category||"Process gap";
+      const sh=PROC_SEV_HEX[x.severity]||"#64748b";
+      h+=`<div class="proc-finding-card">
+        <div class="row" style="align-items:center;gap:8px">
+          <span class="tag">${esc(cat)}</span>
+          ${x.severity&&cat!=="Strength"?`<span class="pill" style="background:${hx2rgba(sh,.16)};color:${sh}">${esc(x.severity)}</span>`:""}
+          <div class="spacer"></div>
+          <button class="btn ghost sm" onclick="modalProcFinding('${p.id}','${x.id}')">Edit</button>
+          ${cat!=="Strength"?`<button class="btn ghost sm" onclick="raiseProcFinding('${p.id}','${x.id}')">→ Observation</button>`:""}
+          ${iconBtn(`modalDelProcFinding('${p.id}','${x.id}')`,"✕","Delete",true)}
+        </div>
+        <h4 class="proc-finding-title">${esc(x.title)}</h4>
+        ${x.detail?`<div class="obs-field"><div class="ttl">Detail</div><div class="txt">${esc(x.detail)}</div></div>`:""}
+        ${x.recommendation?`<div class="obs-field"><div class="ttl">Recommendation</div><div class="txt">${esc(x.recommendation)}</div></div>`:""}
+      </div>`;
+    });
     h+=`</div>`;
-  });
+  }
   h+=`</div>`;
   if((p.keyRecommendations||[]).length){ h+=`<div class="card"><div class="seclabel">Key recommendations</div><ul style="margin:6px 0 0;padding-left:18px">${p.keyRecommendations.map(r=>`<li>${esc(r)}</li>`).join("")}</ul></div>`; }
   const ps=p.proposedSteps||[];
@@ -1216,7 +1228,14 @@ function modalProcFinding(pid,fid){
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveProcFinding('${pid}','${fid||""}')">Save</button>`);
 }
 function saveProcFinding(pid,fid){ const p=procList().find(x=>x.id===pid); if(!p)return; p.findings=p.findings||[]; const title=val("pf_title"); if(!title){alert("Title required");return;} const data={category:val("pf_cat"),severity:val("pf_sev"),title,detail:val("pf_detail"),recommendation:val("pf_rec")}; if(fid){ Object.assign(p.findings.find(y=>y.id===fid),data); } else { p.findings.push({id:uid(),...data}); } save(); closeModal(); render(); }
-function delProcFinding(pid,fid){ if(!confirm("Delete this finding?"))return; const p=procList().find(x=>x.id===pid); if(!p)return; p.findings=(p.findings||[]).filter(y=>y.id!==fid); save(); render(); }
+function modalDelProcFinding(pid,fid){
+  const p=procList().find(x=>x.id===pid);
+  const x=(p.findings||[]).find(y=>y.id===fid);
+  if(!p||!x)return;
+  openModal("Delete finding",`<p>Delete finding <b>${esc(x.title)}</b>? This cannot be undone.</p>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn danger" onclick="delProcFinding('${pid}','${fid}')">Delete</button>`);
+}
+function delProcFinding(pid,fid){ const p=procList().find(x=>x.id===pid); if(!p)return; p.findings=(p.findings||[]).filter(y=>y.id!==fid); save(); closeModal(); render(); }
 function raiseProcFinding(pid,fid){
   const p=procList().find(x=>x.id===pid); if(!p)return; const x=(p.findings||[]).find(y=>y.id===fid); if(!x)return;
   const reports=[]; DB.audits.forEach(a=>a.reports.forEach(r=>reports.push({a,r})));
@@ -1433,9 +1452,7 @@ function iasaMeta(){
 }
 function iasaAssessment(){
   const sa=iaSA(); const st=iasaStats(); const op=overallOpinion(); const eq=eqaDue();
-  let h=`<div class="note">External-quality-assessment-grade self-assessment against the IIA <b>Global Internal Audit Standards (2024)</b>. Every one of the <b>52 standards</b> is rated for conformance and rolled up — per the IIA quality-assessment methodology — to a <b>Generally Conforms / Partially Conforms / Does Not Conform</b> opinion at principle, domain and function level. Maturity (1–5) is judged per principle.</div>`;
-  h+=iasaMeta();
-  h+=`<div class="dash-kpis" style="grid-template-columns:repeat(5,1fr)">
+  let h=`<div class="dash-kpis" style="grid-template-columns:repeat(5,1fr)">
     ${kpi(opTone(op),"Overall opinion",op,"function-level (IIA rollup)")}
     ${kpi("good","Standards conform",st.cnt["Conforms"]+"/"+st.total,st.rated+" of 52 rated")}
     ${kpi("accent","Principles GC",st.prc["Generally Conforms"]+"/15","generally conform")}
@@ -1653,24 +1670,59 @@ function extMatches(f){ const q=(extFilter.q||"").toLowerCase().trim();
   if(q){ const h=(f.title+" "+(f.detail||"")+" "+(f.recommendation||"")+" "+(f.source||"")+" "+(f.sourceRef||"")+" "+(f.ref||"")+" "+(f.theme||"")+" "+(f.year||"")).toLowerCase(); if(!h.includes(q))return false; }
   return true;
 }
+function extStatusCls(s){ return s==="Closed"?"closed":s==="In Progress"?"progress":"open"; }
 function extListBody(){
   const F=extList(); let list=F.filter(extMatches);
   if(!list.length) return `<div class="card"><div class="empty">No findings match the filter.</div></div>`;
   list=list.slice().sort((a,b)=>(extOverdue(b)-extOverdue(a))||String(a.source||"").localeCompare(String(b.source||"")));
   return `<div class="card"><table><thead><tr><th>Source</th><th>Year</th><th>Ref</th><th>Finding</th><th>Theme</th><th>Severity</th><th>Owner</th><th>Target</th><th>Status</th><th></th></tr></thead><tbody>
-    ${list.map(f=>{ const sv=EXT_SEV_HEX[f.severity]||"#64748b"; const od=extOverdue(f); return `<tr>
+    ${list.map(f=>{ const sv=EXT_SEV_HEX[f.severity]||"#64748b"; const od=extOverdue(f); const st=f.status||"Open"; const stCls=extStatusCls(st); const titleShort=f.title.length>72?f.title.slice(0,71)+"…":f.title; return `<tr class="ext-row-clickable" onclick="modalExtDetail('${f.id}')">
       <td>${esc(f.source||"—")}${f.sourceRef?`<div class="hint">${esc(f.sourceRef)}</div>`:""}${f.isRepeat?`<div style="margin-top:3px"><span class="pill" style="background:#efe3f7;color:#6b3fa0">↻ REPEAT</span></div>`:""}</td>
       <td>${esc(f.year||"—")}</td>
       <td>${esc(f.ref||"")}</td>
-      <td><b>${esc(f.title)}</b>${f.recommendation?`<div class="hint">${esc(f.recommendation.length>90?f.recommendation.slice(0,89)+"…":f.recommendation)}</div>`:""}</td>
+      <td><b>${esc(titleShort)}</b></td>
       <td>${esc(f.theme||"—")}</td>
       <td>${f.severity?`<span class="pill" style="background:${hx2rgba(sv,.16)};color:${sv}">${f.severity}</span>`:"—"}</td>
       <td>${esc(f.owner||"—")}</td>
       <td>${esc(f.targetDate||"—")}${od?` <span class="pill c-Critical">overdue</span>`:""}</td>
-      <td><select class="mini" onchange="extSetStatus('${f.id}',this.value)">${STATUSES.map(s=>`<option${(f.status||"Open")===s?" selected":""}>${s}</option>`).join("")}</select></td>
-      <td style="white-space:nowrap"><button class="btn ghost sm" onclick="modalExt('${f.id}')">Edit</button><button class="btn ghost sm" style="color:var(--crit)" onclick="delExt('${f.id}')">✕</button></td>
+      <td onclick="event.stopPropagation()"><select class="status-select status-${stCls}" onchange="extSetStatus('${f.id}',this.value);this.className='status-select status-'+(this.value==='Closed'?'closed':this.value==='In Progress'?'progress':'open')">${STATUSES.map(s=>`<option value="${esc(s)}"${st===s?" selected":""}>${esc(s)}</option>`).join("")}</select></td>
+      <td class="ra-actions-cell" onclick="event.stopPropagation()">${iconBtn(`modalExt('${f.id}')`,"✎","Edit")}${iconBtn(`modalDelExt('${f.id}')`,"✕","Delete",true)}</td>
     </tr>`; }).join("")}
   </tbody></table></div>`;
+}
+function modalExtDetail(id){
+  const f=extList().find(x=>x.id===id); if(!f)return;
+  const sv=EXT_SEV_HEX[f.severity]||"#64748b"; const od=extOverdue(f); const st=f.status||"Open";
+  openModal("External finding",`
+    <div class="ext-detail-modal">
+      <div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:12px">
+        ${f.severity?`<span class="pill" style="background:${hx2rgba(sv,.16)};color:${sv}">${esc(f.severity)}</span>`:""}
+        ${statusPill(st)}
+        ${f.isRepeat?`<span class="pill repeat-pill">↻ REPEAT</span>`:""}
+        ${f.theme?`<span class="tag">${esc(f.theme)}</span>`:""}
+      </div>
+      <h4 style="margin:0 0 14px;font-size:16px;line-height:1.35">${esc(f.title)}</h4>
+      <div class="f3" style="margin-bottom:4px">
+        <div class="kv"><b>Source</b> ${esc(f.source||"—")}${f.sourceRef?` · ${esc(f.sourceRef)}`:""}</div>
+        <div class="kv"><b>Year</b> ${esc(f.year||"—")}</div>
+        <div class="kv"><b>Ref</b> ${esc(f.ref||"—")}</div>
+        <div class="kv"><b>Owner</b> ${esc(f.owner||"—")}</div>
+        <div class="kv"><b>Target</b> ${esc(f.targetDate||"—")}${od?` <span class="pill c-Critical">overdue</span>`:""}</div>
+        <div class="kv"><b>Status</b> ${statusPill(st)}</div>
+      </div>
+      ${field("Detail",f.detail)}
+      ${field("Risk / impact",f.risk)}
+      ${field("Recommendation",f.recommendation)}
+      ${field("Management response",f.managementResponse)}
+      ${f.isRepeat&&f.repeatOf?`<div class="hint" style="margin-top:8px">Repeat of: ${esc(f.repeatOf)}</div>`:""}
+      ${st==="Closed"?`<div class="hint" style="margin-top:8px">Closed${f.closedDateISO?" "+fmtDate(isoToDate(f.closedDateISO)):""}${f.verifiedBy?" · Verified by "+esc(f.verifiedBy):""}${f.closureEvidence?" · Evidence: "+esc(f.closureEvidence):""}</div>`:""}
+    </div>`,
+    `<button class="btn sec" onclick="closeModal()">Close</button><button class="btn" onclick="closeModal();modalExt('${id}')">Edit</button>`);
+}
+function modalDelExt(id){
+  const f=extList().find(x=>x.id===id); if(!f)return;
+  openModal("Delete finding",`<p>Delete finding <b>${esc(f.title)}</b>? This cannot be undone.</p>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn danger" onclick="delExt('${id}')">Delete</button>`);
 }
 function refreshExtList(){ const el=document.getElementById("extListBody"); if(el) el.innerHTML=extListBody(); const c=document.getElementById("extCount"); if(c) c.textContent=extList().filter(extMatches).length+" of "+extList().length; }
 function extSetStatus(id,v){ const f=extList().find(x=>x.id===id); if(!f)return; if(v==="Closed"&&!f.closedDateISO)f.closedDateISO=isoNow(); if(v!=="Closed")f.closedDateISO=""; f.status=v; save(); render(); }
@@ -1766,7 +1818,7 @@ function saveExt(id){
   o.closedDateISO = status==="Closed" ? (cdate||o.closedDateISO||isoNow()) : "";
   save(); closeModal(); render();
 }
-function delExt(id){ if(!confirm("Delete this finding?"))return; DB.extFindings=extList().filter(x=>x.id!==id); save(); render(); }
+function delExt(id){ DB.extFindings=extList().filter(x=>x.id!==id); save(); closeModal(); render(); }
 function modalExtImport(){
   openModal("Import external findings",`
     <p class="hint"><b>A · From a management letter (AI).</b> Choose the source, paste the report text, build the prompt and send it to me; paste my JSON back below.</p>

@@ -40,11 +40,6 @@ const SECTIONS: { label: string; items: NavItem[] }[] = [
       { view: "process", label: "Process Review", icon: WorkflowSquare01Icon },
       { view: "external", label: "External Findings", icon: BookOpen01Icon },
       { view: "iasa", label: "IA Self-Assessment", icon: JusticeScale01Icon },
-    ],
-  },
-  {
-    label: "System",
-    items: [
       { view: "guide", label: "How to use AMS", icon: HelpCircleIcon },
       { view: "settings", label: "Settings & Backup", icon: Settings01Icon },
     ],
