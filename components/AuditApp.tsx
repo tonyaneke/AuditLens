@@ -29,9 +29,12 @@ export default function AuditApp() {
           <div className="main-shell">
             <div className="topbar">
               <div className="topbar-left">
-                <h2 id="pageTitle">Dashboard</h2>
-                <div className="crumbs" id="crumbs" />
+                <div className="topbar-back" id="topBack" />
+                <div className="topbar-title-wrap">
+                  <h2 id="pageTitle">Dashboard</h2>
+                </div>
               </div>
+              <div className="topbar-center" id="topSearch" />
               <div className="topbar-right">
                 <div className="row" id="topActions" />
               </div>

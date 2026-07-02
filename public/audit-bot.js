@@ -99,6 +99,8 @@ let DB = load();
 let view = "dashboard";
 let curAudit = null;   // id
 let curReport = null;  // id
+let curObs = null;     // observation id
+let reportObsFilter={crit:"All",status:"All",q:""};
 let curProc = null;    // process review id
 
 function load(){
@@ -124,8 +126,18 @@ function go(v,opts={}){
   curProc=null;
   if(opts.audit!==undefined) curAudit=opts.audit;
   if(opts.report!==undefined) curReport=opts.report;
-  document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("active",b.dataset.view===v && v!=="report"));
+  if(opts.obs!==undefined) curObs=opts.obs;
+  else if(v!=="observation") curObs=null;
+  document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("active",b.dataset.view===v && v!=="report" && v!=="observation" && v!=="audit"));
   render();
+}
+function backBtn(label,fn){ return `<button class="btn-back" onclick="${fn}"><span aria-hidden="true">←</span> ${esc(label)}</button>`; }
+function btnDownload(fn,label){ return `<button class="btn btn-download" onclick="${fn}"><span class="dl-icon" aria-hidden="true">⤓</span> ${esc(label)}</button>`; }
+function setTopSearch(html){
+  const el=document.getElementById("topSearch"); if(el) el.innerHTML=html||"";
+}
+function setTopBack(html){
+  const el=document.getElementById("topBack"); if(el) el.innerHTML=html||"";
 }
 let bannerDismissed=false;
 function backupBanner(){
@@ -150,17 +162,37 @@ function render(){
   const C=document.getElementById("content");
   const T=document.getElementById("pageTitle");
   const A=document.getElementById("topActions");
-  const CR=document.getElementById("crumbs");
-  A.innerHTML=""; CR.innerHTML="";
-  if(view==="dashboard"){ T.textContent="Dashboard"; CR.innerHTML=`<span class="page-subtitle">CAE / MD portfolio dashboard</span>`; A.innerHTML=`<button class="btn sec sm" onclick="exportDashboard()">⤓ Export dashboard</button><button class="btn sec sm" onclick="modalCaeReport()">⤓ Quarterly BAC report</button><button class="btn" onclick="modalNewObs()">+ New Observation</button>`; C.innerHTML=viewDashboard(); }
+  A.innerHTML=""; setTopSearch(""); setTopBack("");
+  if(view==="dashboard"){ T.textContent="Dashboard"; A.innerHTML=`<button class="btn sec sm" onclick="exportDashboard()">⤓ Export dashboard</button><button class="btn sec sm" onclick="modalCaeReport()">⤓ Quarterly BAC report</button>`; C.innerHTML=viewDashboard(); }
   else if(view==="auditra"){ T.textContent="Audit Risk Assessment"; A.innerHTML=`<button class="btn sec sm" onclick="exportRA()">⤓ Risk assessment (Word)</button><button class="btn sec sm" onclick="exportAuditPlan()">⤓ Audit plan (Word)</button><button class="btn sm dark" onclick="modalRAPrompt()">✦ Recommend audits</button><button class="btn sm" onclick="modalRA()">+ Add unit</button>`; C.innerHTML=viewAuditRA(); }
   else if(view==="fraud"){ T.textContent="Fraud Risk Assessment"; A.innerHTML=`<button class="btn sec sm" onclick="exportFraud()">⤓ Assessment (Word)</button><button class="btn sec sm" onclick="exportFraudPlan()">⤓ Prevention plan (Word)</button><button class="btn sm dark" onclick="modalFraudPrompt()">✦ Build fraud-risk prompt</button><button class="btn sm" onclick="modalFraud()">+ Add fraud risk</button>`; C.innerHTML=viewFraud(); }
   else if(view==="external"){ T.textContent="External & Regulatory Audit Findings"; A.innerHTML=`<button class="btn sec sm" onclick="exportExternal()">⤓ Status report (Word)</button><button class="btn sm dark" onclick="modalExtImport()">⤒ Import findings</button><button class="btn sm" onclick="modalExt()">+ Add finding</button>`; C.innerHTML=viewExternal(); }
   else if(view==="iasa"){ T.textContent="IA Self-Assessment & Maturity"; A.innerHTML=`<button class="btn sec sm" onclick="exportIASA()">⤓ Self-assessment (Word)</button><button class="btn sm dark" onclick="modalIASAPrompt()">✦ Draft with Claude</button>`; C.innerHTML=viewIASA(); }
-  else if(view==="audits"){ T.textContent="Audits & Reports"; A.innerHTML=`<button class="btn" onclick="modalAudit()">+ New Audit</button>`; C.innerHTML=viewAudits(); }
-  else if(view==="audit"){ renderAudit(C,T,A,CR); }
-  else if(view==="report"){ renderReport(C,T,A,CR); }
-  else if(view==="tracker"){ T.textContent="Remediation Tracker"; C.innerHTML=trackerTabs()+(trackerMode==="insights"?viewInsights():viewTracker()); }
+  else if(view==="audits"){
+    T.textContent="Audits & Reports";
+    setTopSearch(`<input id="afq" class="topbar-search" value="${esc(auditFilter.q||"")}" placeholder="Search audits &amp; reports…" oninput="auditFilter.q=this.value;refreshAuditList()">`);
+    const periods=[...new Set(DB.audits.map(a=>a.period||"").filter(Boolean))].sort((x,y)=>periodKey(y)-periodKey(x));
+    A.innerHTML=`<div class="topbar-filters">
+      <div class="filter-group"><span class="filter-label">Quarter</span>
+        <select class="field-select field-select-sm" onchange="auditFilter.period=this.value;refreshAuditList()"><option value="All"${auditFilter.period==="All"?" selected":""}>All quarters</option>${periods.map(p=>`<option value="${esc(p)}"${auditFilter.period===p?" selected":""}>${esc(p)}</option>`).join("")}</select></div>
+      <div class="filter-group"><span class="filter-label">Status</span>
+        <select class="field-select field-select-sm" onchange="auditFilter.status=this.value;refreshAuditList()">${["All",...AUDIT_STATUS].map(s=>`<option value="${esc(s)}"${auditFilter.status===s?" selected":""}>${esc(s)}</option>`).join("")}</select></div>
+      <label class="filter-check"><input type="checkbox" ${auditFilter.group?"checked":""} onchange="auditFilter.group=this.checked;refreshAuditList()"> Group by quarter</label>
+      <button class="btn ghost sm" onclick="auditFilter={q:'',status:'All',period:'All',group:auditFilter.group};render()">Clear</button>
+    </div>
+    <button class="btn" onclick="modalAudit()">+ New Audit</button>`;
+    C.innerHTML=viewAudits();
+  }
+  else if(view==="audit"){ renderAudit(C,T,A); }
+  else if(view==="report"){ renderReport(C,T,A); }
+  else if(view==="observation"){ renderObservation(C,T,A); }
+  else if(view==="tracker"){
+    T.textContent="Remediation Tracker";
+    A.innerHTML=trackerMode==="insights"
+      ? `<button class="btn sec sm" onclick="exportInsights()">⤓ Export insights</button>`
+      : `<button class="btn sec sm" onclick="exportTracker()">⤓ Export tracker</button>`;
+    C.innerHTML=trackerTabs()+(trackerMode==="insights"?viewInsights():viewTracker());
+  }
   else if(view==="process"){ T.textContent="Process & Control Effectiveness Review"; const pp=curProc?procList().find(x=>x.id===curProc):null; A.innerHTML = pp? `<button class="btn sec sm" onclick="curProc=null;render()">← All reviews</button><button class="btn sec sm" onclick="exportProc('${pp.id}')">⤓ Export (Word)</button><button class="btn sm" onclick="modalProcMeta('${pp.id}')">Edit details</button>` : `<button class="btn sm" onclick="modalProcNew()">+ New review</button>`; C.innerHTML=viewProcess(); }
   else if(view==="guide"){ T.textContent="How to use the bot"; C.innerHTML=viewGuide(); }
   else if(view==="settings"){ T.textContent="Settings & Backup"; C.innerHTML=viewSettings(); }
@@ -201,10 +233,16 @@ function viewDashboard(){
   const repeats=obs.filter(o=>o.isRepeat);
   const repeatOpen=repeats.filter(o=>o.status!=="Closed").length;
   const firstName=(DB.signOffName||"Awa Michael").trim().split(/\s+/)[0]||"there";
+  const roleTitle=DB.signOffTitle||"Head, Internal Audit";
 
   return `
   <div class="dash-welcome anim-fade-in">
-    <h1>Welcome, ${esc(firstName)}</h1>
+    <div class="dash-welcome-text">
+      <h1>Welcome, ${esc(firstName)}</h1>
+      <p class="dash-welcome-role">${esc(roleTitle)}</p>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn" onclick="modalNewObs()">+ New Observation</button>
   </div>
 
   <div class="dash-kpis">
@@ -233,9 +271,9 @@ function viewDashboard(){
     </div>
     <div class="card anim-fade-in anim-d3"><div class="seclabel">Due status · open observations</div>
       <div class="tline">
-        <div class="tcell"><div class="tn" style="color:#b00020">${closeB["Overdue"]}</div><div class="tl">Overdue</div></div>
-        <div class="tcell"><div class="tn" style="color:#e8590c">${closeB["≤ 2 weeks"]}</div><div class="tl">Watchlist · ≤2 wks</div></div>
-        <div class="tcell"><div class="tn" style="color:#2e7d32">${closeB["2–4 weeks"]+closeB["1–3 months"]+closeB["> 3 months"]}</div><div class="tl">On track</div></div>
+        <div class="tcell tcell-overdue"><div class="tn">${closeB["Overdue"]}</div><div class="tl">Overdue</div></div>
+        <div class="tcell tcell-watch"><div class="tn">${closeB["≤ 2 weeks"]}</div><div class="tl">Watchlist · ≤2 wks</div></div>
+        <div class="tcell tcell-track"><div class="tn">${closeB["2–4 weeks"]+closeB["1–3 months"]+closeB["> 3 months"]}</div><div class="tl">On track</div></div>
       </div>
       <div class="hint" style="margin-top:11px">By expected close date.${closeNoDate?` ${closeNoDate} open observation(s) have no expected close date (set a target date or timeline + report date).`:""}</div>
     </div>
@@ -322,14 +360,14 @@ function statusPill(s){
   return `<span class="status-pill ${cls}">${esc(k)}</span>`;
 }
 function donut(segs,total,label){
-  const r=54,C=2*Math.PI*r; let off=0;
+  const r=54,C=2*Math.PI*r; let off=0; let idx=0;
   const bg=`<circle cx="70" cy="70" r="${r}" fill="none" stroke="#eef2f7" stroke-width="16"/>`;
-  const arcs=segs.filter(s=>s.value>0).map(s=>{ const len=total?s.value/total*C:0;
-    const el=`<circle cx="70" cy="70" r="${r}" fill="none" stroke="${s.color}" stroke-width="16" stroke-dasharray="${len.toFixed(2)} ${(C-len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 70 70)"/>`;
+  const arcs=segs.filter(s=>s.value>0).map(s=>{ const len=total?s.value/total*C:0; const delay=idx*0.12; idx++;
+    const el=`<circle class="donut-seg" cx="70" cy="70" r="${r}" fill="none" stroke="${s.color}" stroke-width="16" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 70 70)" style="--seg-len:${len.toFixed(2)};--seg-delay:${delay}s"/>`;
     off+=len; return el; }).join("");
-  return `<svg viewBox="0 0 140 140" width="148" height="148" style="flex-shrink:0">${bg}${arcs}
-    <text x="70" y="66" text-anchor="middle" font-size="30" font-weight="700" fill="#0d5a47">${total}</text>
-    <text x="70" y="86" text-anchor="middle" font-size="11" fill="#64748b">${label}</text></svg>`;
+  return `<svg class="donut-chart" viewBox="0 0 140 140" width="148" height="148" style="flex-shrink:0">${bg}${arcs}
+    <text class="donut-center-num" x="70" y="66" text-anchor="middle" font-size="30" font-weight="700" fill="#0d5a47">${total}</text>
+    <text class="donut-center-lbl" x="70" y="86" text-anchor="middle" font-size="11" fill="#64748b">${label}</text></svg>`;
 }
 function tlPill(t){
   const map={"Immediate":"immediate","Short-term":"short","Long-term":"long"};
@@ -340,13 +378,20 @@ function tlPill(t){
 function statusClass(s){ return s==="Closed"?"s-Closed":s==="In Progress"?"s-InProgress":"s-Open"; }
 
 /* ============================ REMEDIATION TRACKER ============================ */
-let trackerFilter={crit:"All",tl:"All",showClosed:false};
+let trackerFilter={crit:"All",tl:"All",status:"All"};
 let trackerMode="actions";
+let expandedObs={};
+function obsExpandKey(aid,rid,oid){ return aid+"|"+rid+"|"+oid; }
+function toggleObsExpand(aid,rid,oid,ev){
+  if(ev&&(ev.target.closest("button")||ev.target.closest("select")||ev.target.closest("a")||ev.target.closest("input"))) return;
+  const k=obsExpandKey(aid,rid,oid);
+  expandedObs[k]=!expandedObs[k];
+  render();
+}
 function trackerTabs(){
   return `<div class="row" style="margin-bottom:14px"><div class="row" style="gap:6px">
     <button class="btn ${trackerMode==="actions"?"":"sec"} sm" onclick="trackerMode='actions';render()">Open Actions</button>
-    <button class="btn ${trackerMode==="insights"?"":"sec"} sm" onclick="trackerMode='insights';render()">Insights</button></div>
-    <div class="spacer"></div><span class="hint">${trackerMode==="insights"?"Thematic analysis across all observations":"Open remediation actions by timeline"}</span></div>`;
+    <button class="btn ${trackerMode==="insights"?"":"sec"} sm" onclick="trackerMode='insights';render()">Insights</button></div></div>`;
 }
 function trackerSet(k,v){ trackerFilter[k]=v; render(); }
 function parseDate(s){ if(!s)return null; const d=new Date(s); return isNaN(d.getTime())?null:d; }
@@ -362,7 +407,9 @@ function viewTracker(){
   const repeats=openAll.filter(o=>o.isRepeat).length;
   const unset=openAll.filter(o=>!TIMELINES.includes(o.timeline)).length;
 
-  let items=obs.filter(o=> trackerFilter.showClosed ? true : o.status!=="Closed");
+  let items=obs.slice();
+  if(trackerFilter.status==="All") items=items.filter(o=>o.status!=="Closed");
+  else items=items.filter(o=>(o.status||"Open")===trackerFilter.status);
   if(trackerFilter.crit!=="All") items=items.filter(o=>o.criticality===trackerFilter.crit);
   if(trackerFilter.tl!=="All") items=items.filter(o=>(TIMELINES.includes(o.timeline)?o.timeline:"Unspecified")===trackerFilter.tl);
 
@@ -374,13 +421,13 @@ function viewTracker(){
     ${kpi("accent","Repeat findings",repeats,"recur from prior audits")}
     ${kpi("base","No timeline",unset,"need a timeframe set")}
   </div>
-  <div class="card" style="padding:13px 18px"><div class="row" style="gap:8px">
-    <span class="hint" style="font-weight:700">Filter</span>
-    <select class="mini" onchange="trackerSet('tl',this.value)">${["All",...TIMELINES,"Unspecified"].map(x=>`<option${trackerFilter.tl===x?" selected":""}>${x}</option>`).join("")}</select>
-    <select class="mini" onchange="trackerSet('crit',this.value)">${["All",...CRITS].map(x=>`<option${trackerFilter.crit===x?" selected":""}>${x}</option>`).join("")}</select>
-    <label style="display:flex;align-items:center;gap:6px;margin:0;font-weight:400;color:#475569"><input type="checkbox" style="width:auto" ${trackerFilter.showClosed?"checked":""} onchange="trackerSet('showClosed',this.checked)"> show closed</label>
-    <div class="spacer"></div>
-    <button class="btn sec sm" onclick="exportTracker()">⤓ Export tracker (Word)</button>
+  <div class="card tracker-filters"><div class="filter-row filter-row-right">
+    <div class="filter-group"><span class="filter-label">Timeline</span>
+      <select class="field-select field-select-sm" onchange="trackerSet('tl',this.value)">${["All",...TIMELINES,"Unspecified"].map(x=>`<option value="${esc(x)}"${trackerFilter.tl===x?" selected":""}>${esc(x)}</option>`).join("")}</select></div>
+    <div class="filter-group"><span class="filter-label">Criticality</span>
+      <select class="field-select field-select-sm" onchange="trackerSet('crit',this.value)">${["All",...CRITS].map(x=>`<option value="${esc(x)}"${trackerFilter.crit===x?" selected":""}>${esc(x)}</option>`).join("")}</select></div>
+    <div class="filter-group"><span class="filter-label">Status</span>
+      <select class="field-select field-select-sm" onchange="trackerSet('status',this.value)">${["All",...STATUSES].map(x=>`<option value="${esc(x)}"${trackerFilter.status===x?" selected":""}>${esc(x)}</option>`).join("")}</select></div>
   </div></div>`;
 
   const crank=o=>CRITS.indexOf(o.criticality);
@@ -395,18 +442,19 @@ function viewTracker(){
       <span class="dot" style="width:11px;height:11px;border-radius:3px;background:${tcol[g]};display:inline-block"></span>
       <div class="seclabel" style="margin:0">${g==="Unspecified"?"No timeline set":g}</div>
       <div class="hint">${rows.length} action${rows.length!==1?"s":""}</div></div>
-      <table><thead><tr><th>Criticality</th><th>Action / observation</th><th>Audit · Report</th><th>Owner</th><th>Expected close</th><th>Age</th><th>Status</th><th></th></tr></thead><tbody>
+      <table><thead><tr><th>Criticality</th><th>Action / observation</th><th>Audit · Report</th><th>Owner</th><th>Expected close</th><th>Age</th><th>Status</th></tr></thead><tbody>
       ${rows.map(o=>{
         const od=isOverdue(o); const ec=effectiveClose(o,o._r); const age=obsAge(o,o._r);
-        return `<tr>
+        const st=o.status||"Open";
+        const stCls=st==="Closed"?"closed":st==="In Progress"?"progress":"open";
+        return `<tr class="tracker-row" onclick="go('observation',{audit:'${o._a.id}',report:'${o._r.id}',obs:'${o.id}'})" title="Open observation">
           <td><span class="pill c-${ck(o.criticality)}">${o.criticality}</span>${o.isRepeat?`<div style="margin-top:4px"><span class="pill" style="background:#efe3f7;color:#6b3fa0">↻ REPEAT</span></div>`:""}</td>
           <td><b>${esc(o.title)}</b>${o.recommendation?`<div class="hint">${esc(o.recommendation.length>120?o.recommendation.slice(0,119)+"…":o.recommendation)}</div>`:""}</td>
           <td>${esc(o._a.name)}<div class="hint">${esc(o._r.title)}${o._a.area?" · "+esc(o._a.area):""}</div></td>
           <td>${esc(o.owner||"—")}</td>
           <td>${ec?`${fmtDate(ec)}${od?` <span class="pill c-Critical">overdue</span>`:""}`:`<span class="hint">—</span>`}</td>
           <td>${age!=null?`${age}d`:`<span class="hint">—</span>`}</td>
-          <td><select class="mini" onchange="updateObsStatus('${o._a.id}','${o._r.id}','${o.id}',this.value)">${STATUSES.map(s=>`<option${ (o.status||"Open")===s?" selected":""}>${s}</option>`).join("")}</select></td>
-          <td><button class="btn ghost sm" onclick="go('report',{audit:'${o._a.id}',report:'${o._r.id}'})">Open</button></td>
+          <td onclick="event.stopPropagation()"><select class="status-select status-${stCls}" onchange="updateObsStatus('${o._a.id}','${o._r.id}','${o.id}',this.value);this.className='status-select status-'+(this.value==='Closed'?'closed':this.value==='In Progress'?'progress':'open')">${STATUSES.map(s=>`<option value="${esc(s)}"${st===s?" selected":""}>${esc(s)}</option>`).join("")}</select></td>
         </tr>`;
       }).join("")}
       </tbody></table></div>`;
@@ -449,7 +497,6 @@ function viewInsights(){
   const maxCell=Math.max(1,...areaRows.flatMap(([,v])=>CRITS.map(c=>v[c])));
   const colLab={Critical:"Critical",High:"High",Moderate:"Moderate",Low:"Low","Process Improvement":"Proc. Improve"};
   return `
-  <div class="row" style="margin-bottom:18px"><div style="font-size:13px;color:var(--muted)">Thematic analysis across all audits — where control breakdowns recur and risk concentrates.</div><div class="spacer"></div><button class="btn sec sm" onclick="exportInsights()">⤓ Export insights (Word)</button></div>
   <div class="card"><div class="seclabel">Recurring root-cause themes</div>
     <p class="hint" style="margin-top:-6px">How often each underlying cause appears across observations (a finding can map to more than one theme). The longest bars are your systemic focus areas.</p>
     ${themeRows.map(([t,v])=>`<div class="rcrow"><div class="nm" title="${[...(themeAreas[t]||[])].map(esc).join(", ")}">${esc(t)}</div><div class="track"><div class="fill" style="width:${v/maxTheme*100}%"></div></div><div class="vv">${v}</div></div>`).join("")}
@@ -1798,13 +1845,75 @@ function periodKey(p){ p=p||""; const ym=p.match(/(20\d{2})/); const qm=p.match(
 function auditCard(a){
   const obs=a.reports.flatMap(r=>r.observations); const c=zc(); obs.forEach(o=>c[o.criticality]++);
   const sh=AUDIT_STATUS_HEX[a.status]||"#64748b";
-  return `<div class="listcard" onclick="go('audit',{audit:'${a.id}'})">
-    <div class="row"><div class="t">${esc(a.name)}</div><div class="spacer"></div>
-      ${a.status?`<span class="pill" style="background:${hx2rgba(sh,.16)};color:${sh}">${esc(a.status)}</span>`:""}
-      <span class="tag">${esc(a.type==="department"?"Department":"Process")}</span>
-      <span class="tag">${a.reports.length} report${a.reports.length!==1?"s":""}</span></div>
-    <div class="m">${esc(a.area||"")}${a.period?" · "+esc(a.period):""}${a.leadAuditor?" · Lead: "+esc(a.leadAuditor):""}</div>
-    <div class="mini-tiles">${obs.length? CRITS.filter(k=>c[k]).map(k=>`<span class="mini-tile c-${ck(k)}">${c[k]} ${k}</span>`).join("") : `<span class="hint">No observations yet</span>`}</div>
+  const open=obs.filter(o=>o.status!=="Closed").length;
+  return `<div class="entity-card" onclick="go('audit',{audit:'${a.id}'})">
+    <div class="entity-card-head">
+      <div class="entity-card-icon audit-icon" aria-hidden="true">▤</div>
+      <div class="entity-card-main">
+        <div class="entity-card-title">${esc(a.name)}</div>
+        <div class="entity-card-meta">${esc(a.area||"—")}${a.period?" · "+esc(a.period):""}${a.leadAuditor?" · Lead: "+esc(a.leadAuditor):""}</div>
+      </div>
+      <div class="entity-card-tags">
+        ${a.status?`<span class="pill" style="background:${hx2rgba(sh,.16)};color:${sh}">${esc(a.status)}</span>`:""}
+        <span class="tag">${esc(a.type==="department"?"Department":"Process")}</span>
+        <span class="tag">${a.reports.length} report${a.reports.length!==1?"s":""}</span>
+        ${obs.length?`<span class="tag">${obs.length} obs.</span>`:""}
+      </div>
+    </div>
+    <div class="entity-card-foot">${obs.length?`<div class="mini-tiles">${CRITS.filter(k=>c[k]).map(k=>`<span class="mini-tile c-${ck(k)}">${c[k]} ${k}</span>`).join("")}${open?`<span class="tag">${open} open</span>`:""}</div>`:`<span class="hint">No observations yet</span>`}</div>
+  </div>`;
+}
+function reportCard(a,r){
+  const c=zc(); r.observations.forEach(o=>c[o.criticality]++);
+  const open=r.observations.filter(o=>o.status!=="Closed").length;
+  return `<div class="entity-card" onclick="go('report',{audit:'${a.id}',report:'${r.id}'})">
+    <div class="entity-card-head">
+      <div class="entity-card-icon report-icon" aria-hidden="true">▥</div>
+      <div class="entity-card-main">
+        <div class="entity-card-title">${esc(r.title)}</div>
+        <div class="entity-card-meta">${r.refNo?"Ref: "+esc(r.refNo)+" · ":""}${esc(r.period||"—")}</div>
+      </div>
+      <div class="entity-card-tags">
+        <span class="tag">${esc(r.status||"Draft")}</span>
+        <span class="tag">${r.observations.length} obs.</span>
+        ${open?`<span class="tag">${open} open</span>`:""}
+      </div>
+    </div>
+    <div class="entity-card-foot">${r.observations.length?`<div class="mini-tiles">${CRITS.filter(k=>c[k]).map(k=>`<span class="mini-tile c-${ck(k)}">${c[k]} ${k}</span>`).join("")}</div>`:`<span class="hint">No observations yet</span>`}</div>
+  </div>`;
+}
+function auditFindingsSummary(a){
+  const obs=a.reports.flatMap(r=>r.observations); const c=zc(); obs.forEach(o=>c[o.criticality]++);
+  const open=obs.filter(o=>o.status!=="Closed").length;
+  const overall=worst(c,obs.length);
+  return {obs,c,open,overall,total:obs.length};
+}
+function auditSummaryHTML(a){
+  const s=auditFindingsSummary(a);
+  if(!s.total) return `<div class="findings-summary anim-fade-in"><h3 class="findings-summary-title">Summary of findings</h3><p class="hint">No observations across reports yet.</p></div>`;
+  return `<div class="findings-summary anim-fade-in">
+    <h3 class="findings-summary-title">Summary of findings</h3>
+    <div class="findings-summary-cards">
+      ${kpi("base","Observations",s.total,s.open+" open · "+(s.total-s.open)+" closed","obs")}
+      ${kpi("warn","Key exposures",(s.c["Critical"]||0)+(s.c["High"]||0),"Critical &amp; High","alert")}
+      ${kpi("accent","Open actions",s.open,"in progress across reports","audit")}
+      ${kpi(s.overall==="Critical"||s.overall==="High"?"warn":"good","Residual risk",s.overall,"portfolio posture","check")}
+    </div>
+  </div>`;
+}
+function reportSummaryHTML(r){
+  const obs=r.observations; const c=zc(); obs.forEach(o=>c[o.criticality]++);
+  const open=obs.filter(o=>o.status!=="Closed").length;
+  const overall=worst(c,obs.length);
+  if(!obs.length) return `<div class="findings-summary"><h3 class="findings-summary-title">Summary of findings</h3><p class="hint">No observations in this report yet.</p></div>`;
+  return `<div class="findings-summary">
+    <h3 class="findings-summary-title">Summary of findings</h3>
+    <div class="findings-summary-cards">
+      ${kpi("base","Observations",obs.length,open+" open · "+(obs.length-open)+" closed","obs")}
+      ${kpi("warn","Key exposures",(c["Critical"]||0)+(c["High"]||0),"Critical &amp; High","alert")}
+      ${kpi("accent","Open actions",open,"in progress","audit")}
+      ${kpi(overall==="Critical"||overall==="High"?"warn":"good","Residual risk",overall,"report posture","check")}
+    </div>
   </div>`;
 }
 function auditMatches(a,q){
@@ -1817,45 +1926,36 @@ function auditListHTML(){
   const q=(auditFilter.q||"").toLowerCase().trim();
   const list=DB.audits.filter(a=>auditMatches(a,q));
   if(!list.length) return `<div class="card"><div class="empty">No audits match the current filter.</div></div>`;
-  if(!auditFilter.group) return list.slice().sort((a,b)=>periodKey(b.period)-periodKey(a.period)||a.name.localeCompare(b.name)).map(auditCard).join("");
+  if(!auditFilter.group) return `<div class="entity-card-grid">${list.slice().sort((a,b)=>periodKey(b.period)-periodKey(a.period)||a.name.localeCompare(b.name)).map(auditCard).join("")}</div>`;
   const groups={}; list.forEach(a=>{ const k=a.period||"— Unscheduled —"; (groups[k]=groups[k]||[]).push(a); });
   const keys=Object.keys(groups).sort((x,y)=>{ if(x==="— Unscheduled —")return 1; if(y==="— Unscheduled —")return -1; return periodKey(y)-periodKey(x)||x.localeCompare(y); });
   return keys.map(k=>{ const items=groups[k].sort((a,b)=>a.name.localeCompare(b.name));
-    return `<div style="margin:16px 0 6px"><div class="seclabel" style="margin:0">${esc(k)} <span class="hint">· ${items.length} audit${items.length!==1?"s":""}</span></div></div>${items.map(auditCard).join("")}`;
+    return `<div class="audit-group"><div class="audit-group-label">${esc(k)} <span class="audit-group-count">· ${items.length} audit${items.length!==1?"s":""}</span></div><div class="entity-card-grid">${items.map(auditCard).join("")}</div></div>`;
   }).join("");
 }
-function refreshAuditList(){ const el=document.getElementById("auditList"); if(el) el.innerHTML=auditListHTML(); const cnt=document.getElementById("afCount"); if(cnt){ const q=(auditFilter.q||"").toLowerCase().trim(); cnt.textContent=DB.audits.filter(a=>auditMatches(a,q)).length+" of "+DB.audits.length; } }
+function refreshAuditList(){
+  const el=document.getElementById("auditList"); if(el) el.innerHTML=auditListHTML();
+  const cnt=document.getElementById("afCount"); if(cnt){ const q=(auditFilter.q||"").toLowerCase().trim(); cnt.textContent=DB.audits.filter(a=>auditMatches(a,q)).length+" of "+DB.audits.length; }
+  const qEl=document.getElementById("afq"); if(qEl && qEl.value!==(auditFilter.q||"")) qEl.value=auditFilter.q||"";
+}
 function viewAudits(){
   if(!DB.audits.length) return `<div class="card"><div class="empty"><div class="big">▤</div>
     No audits yet.<br><br><button class="btn" onclick="modalAudit()">+ Create your first audit</button></div></div>`;
-  const periods=[...new Set(DB.audits.map(a=>a.period||"").filter(Boolean))].sort((x,y)=>periodKey(y)-periodKey(x));
-  const statuses=[...new Set(DB.audits.map(a=>a.status).filter(Boolean))];
-  const statusOpts=["All",...AUDIT_STATUS,...statuses.filter(s=>!AUDIT_STATUS.includes(s))];
   const shown=DB.audits.filter(a=>auditMatches(a,(auditFilter.q||"").toLowerCase().trim())).length;
-  return `<div class="card" style="padding:12px 16px"><div class="row" style="gap:8px">
-    <input id="afq" value="${esc(auditFilter.q||"")}" placeholder="Search audits &amp; reports…" style="max-width:260px" oninput="auditFilter.q=this.value;refreshAuditList()">
-    <select class="mini" onchange="auditFilter.status=this.value;refreshAuditList()">${statusOpts.map(s=>`<option${auditFilter.status===s?" selected":""}>${esc(s)}</option>`).join("")}</select>
-    <select class="mini" onchange="auditFilter.period=this.value;refreshAuditList()"><option${auditFilter.period==="All"?" selected":""}>All</option>${periods.map(p=>`<option${auditFilter.period===p?" selected":""}>${esc(p)}</option>`).join("")}</select>
-    <label style="display:flex;align-items:center;gap:6px;margin:0;font-weight:400;color:#475569"><input type="checkbox" style="width:auto" ${auditFilter.group?"checked":""} onchange="auditFilter.group=this.checked;refreshAuditList()"> group by quarter</label>
-    <div class="spacer"></div>
-    <span class="hint" id="afCount" style="margin-right:6px">${shown} of ${DB.audits.length}</span>
-    <button class="btn ghost sm" onclick="auditFilter={q:'',status:'All',period:'All',group:auditFilter.group};render()">Clear filters</button>
-  </div></div>
+  return `<div class="audit-list-meta"><span class="hint" id="afCount">${shown} of ${DB.audits.length} audits</span></div>
   <div id="auditList">${auditListHTML()}</div>`;
 }
 
 /* ============================ AUDIT DETAIL ============================ */
-function renderAudit(C,T,A,CR){
+function renderAudit(C,T,A){
   const a=audit(curAudit);
   if(!a){ go("audits"); return; }
   T.textContent=a.name;
-  CR.innerHTML=`<span onclick="go('audits')">Audits</span> › ${esc(a.name)}`;
-  A.innerHTML=`<button class="btn sec sm" onclick="modalAudit('${a.id}')">Edit audit</button>
+  setTopBack(backBtn("Audits","go('audits')"));
+  A.innerHTML=`<button class="btn-icon" title="Edit audit" onclick="modalAudit('${a.id}')">✎</button>
     <button class="btn sm dark" onclick="modalTOR('${a.id}')">📄 Terms of Reference</button>
-    <button class="btn sm" onclick="exportAudit('${a.id}')">⤓ Export full audit (Word)</button>
-    <button class="btn sec sm" onclick="exportAuditData('${a.id}')">⤓ Share data (JSON)</button>
-    <button class="btn sm" onclick="modalReport('${a.id}')">+ New Report</button>`;
-  let html=`<div class="card"><div class="f3">
+    ${btnDownload(`exportAudit('${a.id}')`,"Download")}`;
+  let html=`<div class="card anim-fade-in"><div class="f3">
     <div class="kv"><b>Type</b> ${esc(a.type==="department"?"Department audit":"Process audit")}</div>
     <div class="kv"><b>Process / Dept</b> ${esc(a.area||"—")}</div>
     <div class="kv"><b>Period</b> ${esc(a.period||"—")}</div>
@@ -1863,22 +1963,21 @@ function renderAudit(C,T,A,CR){
     <div class="kv"><b>Status</b> ${esc(a.status||"In progress")}</div>
     <div class="kv"><b>Reports</b> ${a.reports.length}</div>
   </div></div>`;
+  html+=auditSummaryHTML(a);
   html+=planCard(a);
+  html+=`<div class="section-block anim-fade-in">
+    <div class="section-header">
+      <h3 class="section-title">Reports</h3>
+      <div class="spacer"></div>
+      <button class="btn sm" onclick="modalReport('${a.id}')">+ New Report</button>
+    </div>`;
   if(!a.reports.length){
     html+=`<div class="card"><div class="empty"><div class="big">▥</div>No reports in this audit yet.<br><br>
       <button class="btn" onclick="modalReport('${a.id}')">+ Add a report</button></div></div>`;
   }else{
-    html+=a.reports.map(r=>{
-      const c=zc(); r.observations.forEach(o=>c[o.criticality]++);
-      return `<div class="listcard" onclick="go('report',{audit:'${a.id}',report:'${r.id}'})">
-        <div class="row"><div class="t">${esc(r.title)}</div><div class="spacer"></div>
-          <span class="tag">${esc(r.status||"Draft")}</span>
-          <span class="tag">${r.observations.length} obs.</span></div>
-        <div class="m">${r.refNo?"Ref: "+esc(r.refNo)+" · ":""}${esc(r.period||"")}</div>
-        <div class="mini-tiles">${r.observations.length? CRITS.filter(k=>c[k]).map(k=>`<span class="mini-tile c-${ck(k)}">${c[k]} ${k}</span>`).join(""):`<span class="hint">No observations yet</span>`}</div>
-      </div>`;
-    }).join("");
+    html+=`<div class="entity-card-grid">${a.reports.map(r=>reportCard(a,r)).join("")}</div>`;
   }
+  html+=`</div>`;
   C.innerHTML=html;
 }
 
@@ -2147,20 +2246,25 @@ function exportPlan(aid){
 }
 
 /* ============================ REPORT DETAIL ============================ */
-function renderReport(C,T,A,CR){
+function renderReport(C,T,A){
   const a=audit(curAudit); const r=report(a,curReport);
   if(!a||!r){ go("audits"); return; }
   T.textContent=r.title;
-  CR.innerHTML=`<span onclick="go('audits')">Audits</span> › <span onclick="go('audit',{audit:'${a.id}'})">${esc(a.name)}</span> › ${esc(r.title)}`;
+  setTopBack(backBtn(a.name,"go('audit',{audit:'"+a.id+"'})"));
   A.innerHTML=`<button class="btn sec sm" onclick="modalReport('${a.id}','${r.id}')">Edit report</button>
     <button class="btn sm dark" onclick="modalImport('${a.id}','${r.id}')">⇪ Paste from Claude</button>
-    <button class="btn sm" onclick="modalObs('${a.id}','${r.id}')">+ Add observation</button>
-    <button class="btn sm" onclick="exportReport('${a.id}','${r.id}')">⤓ Export report (Word)</button>`;
+    ${btnDownload(`exportReport('${a.id}','${r.id}')`,"Download")}`;
 
   const obs=r.observations.slice().sort((x,y)=>CRITS.indexOf(x.criticality)-CRITS.indexOf(y.criticality));
-  const c=zc(); r.observations.forEach(o=>c[o.criticality]++);
+  const filteredObs=obs.filter(o=>{
+    if(reportObsFilter.crit!=="All" && o.criticality!==reportObsFilter.crit) return false;
+    if(reportObsFilter.status!=="All" && (o.status||"Open")!==reportObsFilter.status) return false;
+    const q=(reportObsFilter.q||"").toLowerCase().trim();
+    if(q){ const hay=(o.title+" "+(o.ref||"")+" "+(o.category||"")+" "+(o.description||"")).toLowerCase(); if(!hay.includes(q)) return false; }
+    return true;
+  });
 
-  let html=`<div class="card"><div class="f3">
+  let html=`<div class="card anim-fade-in"><div class="f3">
     <div class="kv"><b>Reference</b> ${esc(r.refNo||"—")}</div>
     <div class="kv"><b>Period</b> ${esc(r.period||"—")}</div>
     <div class="kv"><b>Status</b> ${esc(r.status||"Draft")}</div>
@@ -2168,19 +2272,36 @@ function renderReport(C,T,A,CR){
   </div>${r.scope?`<div class="kv"><b>Scope</b> ${esc(r.scope)}</div>`:""}</div>`;
 
   // exec summary
-  html+=`<div class="card"><div class="row"><h3 style="margin:0">Executive Summary</h3><div class="spacer"></div>
+  html+=`<div class="card anim-fade-in"><div class="row"><h3 style="margin:0">Executive Summary</h3><div class="spacer"></div>
     <button class="btn ghost sm" onclick="modalExecPrompt('${a.id}','${r.id}')">✦ Build exec-summary prompt</button>
     <button class="btn ghost sm" onclick="modalImportExec('${a.id}','${r.id}')">⇪ Paste exec summary</button>
     <button class="btn ghost sm" onclick="modalFrontMatter('${a.id}','${r.id}')">Edit</button></div>
-    <div style="margin:12px 0">${execSummaryHTML(r)}</div></div>`;
+    <div style="margin:12px 0">${reportSummaryHTML(r)}${execSummaryHTML(r)}</div></div>`;
 
   // observations
-  html+=`<div class="card"><div class="row"><h3 style="margin:0">Observations (${r.observations.length})</h3><div class="spacer"></div>${r.observations.length?`<button class="btn sec sm" onclick="scanRepeats('${a.id}','${r.id}')">🔁 Scan for repeats</button>`:""}</div>`;
+  html+=`<div class="card report-obs-section anim-fade-in">
+    <div class="obs-section-top">
+      <h3 class="section-title">Observations (${r.observations.length})</h3>
+      <div class="spacer"></div>
+      ${r.observations.length?`<input class="field-input obs-filter-search" value="${esc(reportObsFilter.q||"")}" placeholder="Search observations…" oninput="reportObsFilter.q=this.value;render()">`:""}
+      <button class="btn sm" onclick="modalObs('${a.id}','${r.id}')">+ Add observation</button>
+      ${r.observations.length?`<button class="btn sec sm" onclick="scanRepeats('${a.id}','${r.id}')">🔁 Scan for repeats</button>`:""}
+    </div>
+    ${r.observations.length?`<div class="obs-filters-row">
+      <div class="spacer"></div>
+      <div class="filter-group"><span class="filter-label">Criticality</span>
+        <select class="field-select field-select-sm" onchange="reportObsFilter.crit=this.value;render()">${["All",...CRITS].map(x=>`<option value="${esc(x)}"${reportObsFilter.crit===x?" selected":""}>${esc(x)}</option>`).join("")}</select></div>
+      <div class="filter-group"><span class="filter-label">Status</span>
+        <select class="field-select field-select-sm" onchange="reportObsFilter.status=this.value;render()">${["All",...STATUSES].map(x=>`<option value="${esc(x)}"${reportObsFilter.status===x?" selected":""}>${esc(x)}</option>`).join("")}</select></div>
+    </div>`:""}
+  `;
   if(!r.observations.length){
     html+=`<div class="empty"><div class="big">✎</div>No observations yet.<br>
       Use <b>Paste from Claude</b> after I draft one for you, or <b>Add observation</b> to type it manually.</div>`;
+  }else if(!filteredObs.length){
+    html+=`<div class="empty">No observations match the current filter.</div>`;
   }else{
-    html+=obs.map((o,i)=>obsBlock(a,r,o)).join("");
+    html+=`<div class="obs-grid">${filteredObs.map(o=>obsGridCard(a,r,o)).join("")}</div>`;
   }
   html+=`</div>`;
   // proposed SOP updates roll-up
@@ -2188,7 +2309,7 @@ function renderReport(C,T,A,CR){
   const sopMissing=obs.filter(o=>!(o.sopUpdate||"").trim()).length;
   html+=`<div class="card"><div class="row"><h3 style="margin:0">Proposed SOP updates (${sopObs.length})</h3><div class="spacer"></div>${obs.length?`<button class="btn sec sm" onclick="modalSopBulk('${a.id}','${r.id}')">✦ Draft${sopMissing?" missing ("+sopMissing+")":" with Claude"}</button>`:""}${sopObs.length?`<button class="btn sec sm" onclick="exportSopUpdates('${a.id}','${r.id}')">⤓ Export change-list (Word)</button>`:""}</div>`;
   if(!sopObs.length){ html+=`<div class="hint" style="margin-top:8px">No proposed SOP updates yet. Add a <b>Proposed SOP update</b> to an observation and it rolls up here as a consolidated change-list for process owners.</div>`; }
-  else { html+=`<p class="hint" style="margin:2px 0 0">Consolidated procedure revisions arising from this report's observations.</p>`+sopObs.map(o=>`<div class="obs-block lc-${ck(o.criticality)}" style="padding:11px 13px;margin:8px 0">
+  else { html+=`<p class="hint" style="margin:2px 0 0">Consolidated procedure revisions arising from this report's observations.</p>`+sopObs.map(o=>`<div class="sop-card">
     <div class="row" style="align-items:center;gap:8px"><span class="pill c-${ck(o.criticality)}">${o.criticality}</span><b>${esc(o.ref?o.ref+" — ":"")}${esc(o.title)}</b></div>
     <div class="obs-field"><div class="ttl">Proposed SOP update</div><div class="txt">${esc(o.sopUpdate)}</div></div>
   </div>`).join(""); }
@@ -2282,14 +2403,8 @@ function doImportSopBulk(aid,rid){
 function bullets(text){ const items=(text||"").split("\n").map(s=>s.trim()).filter(Boolean); return items.length?`<ul style="margin:6px 0 0;padding-left:18px">${items.map(i=>`<li>${esc(i)}</li>`).join("")}</ul>`:""; }
 function sumSection(t,body){ return body?`<div class="obs-field"><div class="ttl">${t}</div>${body}</div>`:""; }
 function execSummaryHTML(r){
-  const obs=r.observations; const c=zc(); obs.forEach(o=>c[o.criticality]++);
-  const open=obs.filter(o=>o.status!=="Closed").length;
-  const overall = worst(c,obs.length);
-  let h=`<div class="note" style="margin-bottom:14px"><b>Summary of findings:</b> <b>${obs.length}</b> observation${obs.length!==1?"s":""}`;
-  if(obs.length){ h+=` — `+CRITS.filter(k=>c[k]).map(k=>`<span class="pill c-${ck(k)}">${c[k]} ${k}</span>`).join(" ")+`. <b>${open}</b> open/in-progress. Overall residual risk: <span class="pill c-${ck(overall)}">${overall}</span>.`; } else h+=`.`;
-  h+=`</div>`;
   const txt=v=>v?`<div class="txt" style="white-space:pre-wrap">${esc(v)}</div>`:"";
-  h+=sumSection("1.1 Audit objective &amp; scope", txt(r.objective||r.scope));
+  let h=sumSection("1.1 Audit objective &amp; scope", txt(r.objective||r.scope));
   h+=sumSection("Areas out of scope", bullets(r.outOfScope));
   h+=sumSection("1.2 Highlights of strengths", bullets(r.strengths));
   h+=sumSection("1.3 Areas for strategic improvement", bullets(r.areasForImprovement));
@@ -2300,30 +2415,60 @@ function execSummaryHTML(r){
   }
   return h;
 }
-function obsBlock(a,r,o){
-  return `<div class="obs-block lc-${ck(o.criticality)}">
-    <div class="row"><span class="pill c-${ck(o.criticality)}">${o.criticality}</span>
-      ${o.isRepeat?`<span class="pill" style="background:#efe3f7;color:#6b3fa0" title="${esc(o.repeatOf||"Repeat finding")}">↻ REPEAT</span>`:""}
-      <h4 style="margin:0">${esc(o.ref?o.ref+" — ":"")}${esc(o.title)}</h4>
-      <div class="spacer"></div>
-      <span class="${statusClass(o.status)}" style="font-size:12px">${esc(o.status||"Open")}</span>
-      <button class="btn ghost sm" onclick="modalObs('${a.id}','${r.id}','${o.id}')">Edit</button>
-      <button class="btn ghost sm" style="color:var(--crit)" onclick="delObs('${a.id}','${r.id}','${o.id}')">Delete</button>
+function obsGridCard(a,r,o){
+  const preview=(o.description||o.recommendation||"").trim();
+  const previewShort=preview.length>90?preview.slice(0,89)+"…":preview;
+  return `<div class="obs-grid-card lc-${ck(o.criticality)}" onclick="go('observation',{audit:'${a.id}',report:'${r.id}',obs:'${o.id}'})" role="button" tabindex="0">
+    <div class="obs-grid-head">
+      <span class="pill c-${ck(o.criticality)}">${o.criticality}</span>
+      ${statusPill(o.status||"Open")}
     </div>
-    ${o.category?`<div style="margin:6px 0"><span class="tag">${esc(o.category)}</span></div>`:""}
-    ${field("Detailed description",o.description)}
-    ${field("Criteria / expectation",o.criteria)}
-    ${field("Impact / risk",o.risk)}
-    ${field("Possible root cause",o.rootCause)}
-    ${field("Recommendation",o.recommendation)}
-    ${field("Proposed SOP update",o.sopUpdate)}
-    ${field("Management response",o.managementResponse)}
-    <div class="row" style="margin-top:8px;align-items:center">
-      ${o.owner?`<span class="hint"><b>Owner:</b> ${esc(o.owner)}</span>`:""}
-      ${o.timeline?`<span class="hint"><b>Timeline:</b></span> ${tlPill(o.timeline)}`:""}
-      ${(()=>{ const ec=effectiveClose(o,r); const age=obsAge(o,r); const od=isOverdueObs(o,r); return `${ec?`<span class="hint"><b>Expected close:</b> ${fmtDate(ec)}</span>`:""}${age!=null?`<span class="hint"><b>Age:</b> ${age} day${age!==1?"s":""}${o.status==="Closed"?" to close":""}</span>`:""}${od?`<span class="pill c-Critical">OVERDUE</span>`:""}`; })()}
+    <h4 class="obs-grid-title">${esc(o.ref?o.ref+" — ":"")}${esc(o.title)}</h4>
+    ${o.category?`<span class="tag">${esc(o.category)}</span>`:""}
+    ${previewShort?`<p class="obs-grid-preview">${esc(previewShort)}</p>`:""}
+    ${o.isRepeat?`<span class="pill repeat-pill">↻ REPEAT</span>`:""}
+  </div>`;
+}
+function detailSection(t,v){
+  if(!v) return "";
+  return `<section class="obs-detail-section"><h4 class="obs-detail-label">${t}</h4><div class="obs-detail-content">${esc(v)}</div></section>`;
+}
+function renderObservation(C,T,A){
+  const a=audit(curAudit); const r=report(a,curReport);
+  const o=r&&r.observations.find(x=>x.id===curObs);
+  if(!a||!r||!o){ go("report",{audit:curAudit,report:curReport}); return; }
+  const title=o.ref?`${o.ref} — ${o.title}`:o.title;
+  T.textContent=title;
+  setTopBack(backBtn(r.title,"go('report',{audit:'"+a.id+"',report:'"+r.id+"'})"));
+  A.innerHTML=`<button class="btn sec sm" onclick="modalObs('${a.id}','${r.id}','${o.id}')">Edit</button>
+    <button class="btn ghost sm danger" onclick="delObs('${a.id}','${r.id}','${o.id}')">Delete</button>`;
+  const ec=effectiveClose(o,r); const age=obsAge(o,r); const od=isOverdueObs(o,r);
+  C.innerHTML=`<div class="obs-detail-page anim-fade-in">
+    <header class="obs-detail-hero">
+      <div class="obs-detail-badges">
+        <span class="pill c-${ck(o.criticality)}">${o.criticality}</span>
+        ${statusPill(o.status||"Open")}
+        ${o.isRepeat?`<span class="pill repeat-pill" title="${esc(o.repeatOf||"Repeat finding")}">↻ REPEAT</span>`:""}
+        ${o.category?`<span class="tag">${esc(o.category)}</span>`:""}
+      </div>
+      <h2 class="obs-detail-title">${esc(o.ref?o.ref+" — ":"")}${esc(o.title)}</h2>
+    </header>
+    <div class="obs-detail-meta">
+      ${o.owner?`<div class="obs-meta-item"><span class="obs-meta-label">Owner</span><span class="obs-meta-value">${esc(o.owner)}</span></div>`:""}
+      ${o.timeline?`<div class="obs-meta-item"><span class="obs-meta-label">Timeline</span><span class="obs-meta-value">${tlPill(o.timeline)}</span></div>`:""}
+      ${ec?`<div class="obs-meta-item"><span class="obs-meta-label">Expected close</span><span class="obs-meta-value">${fmtDate(ec)}${od?` <span class="pill c-Critical">OVERDUE</span>`:""}</span></div>`:""}
+      ${age!=null?`<div class="obs-meta-item"><span class="obs-meta-label">Age</span><span class="obs-meta-value">${age} day${age!==1?"s":""}${o.status==="Closed"?" to close":""}</span></div>`:""}
     </div>
-    ${o.status==="Closed"?`<div class="hint" style="margin-top:6px;color:var(--low)">✓ Closed${o.closedDateISO?" "+fmtDate(isoToDate(o.closedDateISO)):""}${o.verifiedBy?" · Verified by "+esc(o.verifiedBy):""}${o.closureEvidence?" · Evidence: "+esc(o.closureEvidence):""}${o.closureNote?" — "+esc(o.closureNote):""}</div>`:""}
+    <div class="obs-detail-sections">
+      ${detailSection("Detailed description",o.description)}
+      ${detailSection("Criteria / expectation",o.criteria)}
+      ${detailSection("Impact / risk",o.risk)}
+      ${detailSection("Possible root cause",o.rootCause)}
+      ${detailSection("Recommendation",o.recommendation)}
+      ${detailSection("Proposed SOP update",o.sopUpdate)}
+      ${detailSection("Management response",o.managementResponse)}
+    </div>
+    ${o.status==="Closed"?`<div class="obs-detail-closure hint">✓ Closed${o.closedDateISO?" "+fmtDate(isoToDate(o.closedDateISO)):""}${o.verifiedBy?" · Verified by "+esc(o.verifiedBy):""}${o.closureEvidence?" · Evidence: "+esc(o.closureEvidence):""}${o.closureNote?" — "+esc(o.closureNote):""}</div>`:""}
   </div>`;
 }
 function field(t,v){ if(!v)return""; return `<div class="obs-field"><div class="ttl">${t}</div><div class="txt">${esc(v)}</div></div>`; }
@@ -2749,7 +2894,9 @@ function saveObs(aid,rid,oid){
 }
 function delObs(aid,rid,oid){
   if(!confirm("Delete this observation?"))return;
-  const r=report(audit(aid),rid); r.observations=r.observations.filter(x=>x.id!==oid); save(); render();
+  const r=report(audit(aid),rid); r.observations=r.observations.filter(x=>x.id!==oid); save();
+  if(view==="observation") go("report",{audit:aid,report:rid});
+  else render();
 }
 
 /* ---- Repeat auto-suggest (fuzzy title match across other reports) ---- */
@@ -3015,9 +3162,7 @@ function exportAudit(aid){
 function modalTOR(aid){
   const a=audit(aid); a.tor=a.tor||{addressee:"",timing:"",background:"",outOfScope:"",infoRequired:"",reportingTo:"",date:""};
   const t=a.tor; const p=a.plan||{};
-  const thin=(!p.scope && !(p.objectives||[]).length && !(p.keyRisks||[]).length);
   openModal("Audit Terms of Reference",`
-    <p class="hint">The objective, scope and key risks are taken from this audit's <b>Planning</b> section. Add the engagement details below, then export the Terms of Reference to send to the auditee.${thin?` <b style="color:var(--crit)">This audit has no plan yet — build it first (audit page → Build planning prompt) so scope / objectives / key risks are populated.</b>`:""}</p>
     <div class="f2">
       <div><label>Addressed to (auditee)</label><input id="t_addr" value="${esc(t.addressee)}" placeholder="e.g. Head, Credit Operations"></div>
       <div><label>ToR date</label><input type="date" id="t_date" value="${esc(t.date||"")}"></div>
