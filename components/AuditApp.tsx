@@ -17,12 +17,6 @@ export default function AuditApp() {
           </div>
 
           <SidebarNav />
-
-          <div className="foot">
-            Data stored in this browser only.
-            <br />
-            Back up via Settings.
-          </div>
         </aside>
 
         <main className="main">

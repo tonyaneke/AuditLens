@@ -4,13 +4,10 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Alert02Icon,
   Analytics01Icon,
-  Audit01Icon,
   BookOpen01Icon,
   DashboardSquare01Icon,
   File01Icon,
-  HelpCircleIcon,
   JusticeScale01Icon,
-  Settings01Icon,
   TaskDaily01Icon,
   WorkflowSquare01Icon,
 } from "@hugeicons/core-free-icons";
@@ -40,8 +37,6 @@ const SECTIONS: { label: string; items: NavItem[] }[] = [
       { view: "process", label: "Process Review", icon: WorkflowSquare01Icon },
       { view: "external", label: "External Findings", icon: BookOpen01Icon },
       { view: "iasa", label: "IA Self-Assessment", icon: JusticeScale01Icon },
-      { view: "guide", label: "How to use AMS", icon: HelpCircleIcon },
-      { view: "settings", label: "Settings & Backup", icon: Settings01Icon },
     ],
   },
 ];

@@ -622,8 +622,8 @@ function viewAuditRA(){
     <div class="hint" style="margin-top:8px">Risk score = weighted average of factors (1–5). Frequency: Critical/High = annual · Medium = 2 yrs · Low = 3 yrs. “Due” = last audited + cycle ≤ plan year (or never audited).</div>
   </div>
   <div class="card"><div class="row"><div class="seclabel" style="margin:0">Annual Audit Plan — ${esc(planYear())}</div><div class="spacer"></div><span class="hint">${planned.length} engagement(s) · ${doneOcc}/${totalOcc} quarter-reviews done (${pctPlan}%)</span></div>
-    ${planned.length?`<table class="ra-plan-table" style="margin-top:6px"><thead><tr><th>#</th><th>Auditable unit</th><th>Rating</th><th class="ra-timing-col">Timing</th><th>Status</th><th>Linked audit</th><th>Rationale</th></tr></thead><tbody>
-      ${planned.map((e,i)=>`<tr><td>${i+1}</td><td><b>${esc(e.name)}</b><div class="hint">${esc(e.freq)}</div></td><td><span class="pill" style="background:${hx2rgba(RA_HEX[e.band],.16)};color:${RA_HEX[e.band]}">${e.band}</span></td>
+    ${planned.length?`<table class="ra-plan-table" style="margin-top:6px"><thead><tr><th class="ra-plan-num-col">#</th><th>Auditable unit</th><th>Rating</th><th class="ra-timing-col">Timing</th><th>Status</th><th>Linked audit</th><th>Rationale</th></tr></thead><tbody>
+      ${planned.map((e,i)=>`<tr><td class="ra-plan-num-col">${i+1}</td><td><b>${esc(e.name)}</b><div class="hint">${esc(e.freq)}</div></td><td><span class="pill" style="background:${hx2rgba(RA_HEX[e.band],.16)};color:${RA_HEX[e.band]}">${e.band}</span></td>
         <td class="ra-timing-col">${raTimingSelect(e)}</td>
         <td>${engStatusCell(e)}</td>
         <td>${auditLinksCell(e)}</td>
@@ -1105,33 +1105,57 @@ function viewProcess(){
         <div class="mini-tiles">${PROC_CATS.filter(([c])=>counts[c]).map(([c,hex])=>`<span class="mini-tile" style="background:${hx2rgba(hex,.16)};color:${hex}">${counts[c]} ${c}</span>`).join("")||`<span class="hint">No findings</span>`}</div>
       </div>`; }).join("");
 }
+function iasaKpiIcon(cls){
+  const icons={
+    good:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M20 6 9 17l-5-5"/></svg>`,
+    mid:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>`,
+    bad:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="9"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>`,
+    accent:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M4 19h16"/><path d="M7 16V8"/><path d="M12 16V5"/><path d="M17 16v-4"/></svg>`,
+    base:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 3v18"/><path d="M3 12h18"/><circle cx="12" cy="12" r="9"/></svg>`
+  };
+  return icons[cls]||icons.base;
+}
+function iasaKpi(cls,lab,num,sub){
+  const compact=String(num).length>14?" num-compact":"";
+  return `<div class="kpi iasa-kpi ${cls}"><div class="kpi-head"><span class="kpi-icon">${iasaKpiIcon(cls)}</span><div class="lab">${lab}</div></div><div class="num${compact}">${num}</div><div class="sub">${sub}</div></div>`;
+}
+function procFindingCard(p,x){
+  const cat=x.category||"Process gap";
+  const catEntry=PROC_CATS.find(c=>c[0]===cat)||["Process gap","#64748b"];
+  const hex=catEntry[1];
+  const sh=PROC_SEV_HEX[x.severity]||"#64748b";
+  return `<article class="proc-finding-card">
+    <div class="proc-finding-top">
+      <span class="proc-cat-pill" style="--cat-color:${hex}">${esc(cat)}</span>
+      ${x.severity&&cat!=="Strength"?`<span class="pill" style="background:${hx2rgba(sh,.12)};color:${sh}">${esc(x.severity)}</span>`:""}
+    </div>
+    <h4 class="proc-finding-title">${esc(x.title)}</h4>
+    ${x.detail?`<p class="proc-finding-text">${esc(x.detail)}</p>`:""}
+    ${x.recommendation?`<div class="proc-finding-rec"><span class="proc-finding-rec-label">Recommendation</span><p class="proc-finding-text">${esc(x.recommendation)}</p></div>`:""}
+    <div class="proc-finding-actions">
+      <button class="btn ghost sm" type="button" onclick="modalProcFinding('${p.id}','${x.id}')">Edit</button>
+      ${cat!=="Strength"?`<button class="btn ghost sm" type="button" onclick="raiseProcFinding('${p.id}','${x.id}')">Raise observation</button>`:""}
+      ${iconBtn(`modalDelProcFinding('${p.id}','${x.id}')`,"✕","Delete",true)}
+    </div>
+  </article>`;
+}
 function procDetail(p){
   const f=p.findings||[]; const rh=PROC_RATING_HEX[p.overallRating]||"#64748b";
+  const counts={}; PROC_CATS.forEach(([c])=>counts[c]=f.filter(x=>x.category===c).length);
   let h=`<div class="card"><div class="row" style="align-items:flex-start"><div><h3 style="margin:0">${esc(p.unit||"(unit)")}</h3><div class="hint" style="margin-top:3px">${esc(p.sopTitle||"")}${p.period?" · "+esc(p.period):""}</div></div><div class="spacer"></div><span class="pill" style="background:${hx2rgba(rh,.16)};color:${rh};font-size:13px">Effectiveness: ${esc(p.overallRating||"—")}</span></div>
     ${p.summary?`<div class="txt" style="white-space:pre-wrap;margin-top:10px">${esc(p.summary)}</div>`:""}</div>`;
-  h+=`<div class="card"><div class="row"><div class="seclabel" style="margin:0">Findings (${f.length})</div><div class="spacer"></div><button class="btn ghost sm" onclick="modalProcFinding('${p.id}')">+ Add finding</button></div>`;
-  if(!f.length) h+=`<div class="hint" style="margin-top:8px">No findings recorded.</div>`;
-  else {
-    h+=`<div class="proc-findings-grid">`;
-    f.forEach(x=>{
-      const cat=x.category||"Process gap";
-      const sh=PROC_SEV_HEX[x.severity]||"#64748b";
-      h+=`<div class="proc-finding-card">
-        <div class="row" style="align-items:center;gap:8px">
-          <span class="tag">${esc(cat)}</span>
-          ${x.severity&&cat!=="Strength"?`<span class="pill" style="background:${hx2rgba(sh,.16)};color:${sh}">${esc(x.severity)}</span>`:""}
-          <div class="spacer"></div>
-          <button class="btn ghost sm" onclick="modalProcFinding('${p.id}','${x.id}')">Edit</button>
-          ${cat!=="Strength"?`<button class="btn ghost sm" onclick="raiseProcFinding('${p.id}','${x.id}')">→ Observation</button>`:""}
-          ${iconBtn(`modalDelProcFinding('${p.id}','${x.id}')`,"✕","Delete",true)}
-        </div>
-        <h4 class="proc-finding-title">${esc(x.title)}</h4>
-        ${x.detail?`<div class="obs-field"><div class="ttl">Detail</div><div class="txt">${esc(x.detail)}</div></div>`:""}
-        ${x.recommendation?`<div class="obs-field"><div class="ttl">Recommendation</div><div class="txt">${esc(x.recommendation)}</div></div>`:""}
-      </div>`;
-    });
-    h+=`</div>`;
-  }
+  h+=`<div class="card proc-findings-section">
+    <div class="proc-findings-head">
+      <div>
+        <div class="seclabel" style="margin:0">Findings</div>
+        <div class="proc-findings-count">${f.length} item${f.length===1?"":"s"}</div>
+      </div>
+      <div class="spacer"></div>
+      ${f.length?`<div class="proc-findings-chips">${PROC_CATS.filter(([c])=>counts[c]).map(([c,hex])=>`<span class="proc-findings-chip" style="--chip-color:${hex}"><strong>${counts[c]}</strong> ${esc(c)}</span>`).join("")}</div>`:""}
+      <button class="btn sm" type="button" onclick="modalProcFinding('${p.id}')">+ Add finding</button>
+    </div>`;
+  if(!f.length) h+=`<div class="proc-findings-empty">No findings recorded yet.</div>`;
+  else h+=`<div class="proc-findings-grid">${f.map(x=>procFindingCard(p,x)).join("")}</div>`;
   h+=`</div>`;
   if((p.keyRecommendations||[]).length){ h+=`<div class="card"><div class="seclabel">Key recommendations</div><ul style="margin:6px 0 0;padding-left:18px">${p.keyRecommendations.map(r=>`<li>${esc(r)}</li>`).join("")}</ul></div>`; }
   const ps=p.proposedSteps||[];
@@ -1432,10 +1456,13 @@ function iasaStats(){
 }
 function opTone(op){ return op==="Generally Conforms"?"good":op==="Partially Conforms"?"mid":op==="Does Not Conform"?"bad":"base"; }
 function viewIASA(){
-  const sub=`<div class="row" style="margin-bottom:14px"><div class="row" style="gap:6px">
-    <button class="btn ${iasaMode==="assessment"?"":"sec"} sm" onclick="iasaMode='assessment';render()">Assessment</button>
-    <button class="btn ${iasaMode==="insights"?"":"sec"} sm" onclick="iasaMode='insights';render()">Insights</button></div>
-    <div class="spacer"></div><span class="hint">GIAS 2024 · 5 domains · 15 principles · 52 standards</span></div>`;
+  const sub=`<div class="iasa-tabs anim-fade-in">
+    <div class="iasa-tab-group">
+      <button class="iasa-tab${iasaMode==="assessment"?" active":""}" type="button" onclick="iasaMode='assessment';render()">Assessment</button>
+      <button class="iasa-tab${iasaMode==="insights"?" active":""}" type="button" onclick="iasaMode='insights';render()">Insights</button>
+    </div>
+    <span class="iasa-tab-meta">GIAS 2024 · 5 domains · 52 standards</span>
+  </div>`;
   return sub + (iasaMode==="insights"? iasaInsights() : iasaAssessment());
 }
 function iasaMeta(){
@@ -1452,41 +1479,42 @@ function iasaMeta(){
 }
 function iasaAssessment(){
   const sa=iaSA(); const st=iasaStats(); const op=overallOpinion(); const eq=eqaDue();
-  let h=`<div class="dash-kpis" style="grid-template-columns:repeat(5,1fr)">
-    ${kpi(opTone(op),"Overall opinion",op,"function-level (IIA rollup)")}
-    ${kpi("good","Standards conform",st.cnt["Conforms"]+"/"+st.total,st.rated+" of 52 rated")}
-    ${kpi("accent","Principles GC",st.prc["Generally Conforms"]+"/15","generally conform")}
-    ${kpi("base","Avg maturity",st.avgMat?st.avgMat.toFixed(1)+" / 5":"—","across principles")}
-    ${kpi(eq.tone,"External QA",eq.txt,eq.sub)}
+  let h=`<div class="dash-kpis iasa-kpis anim-fade-in">
+    ${iasaKpi(opTone(op),"Overall opinion",op,"Function-level rollup")}
+    ${iasaKpi("good","Standards conform",st.cnt["Conforms"]+"/"+st.total,st.rated+" of 52 rated")}
+    ${iasaKpi("accent","Principles GC",st.prc["Generally Conforms"]+"/15","Generally conform")}
+    ${iasaKpi("base","Avg maturity",st.avgMat?st.avgMat.toFixed(1)+" / 5":"—","Across principles")}
+    ${iasaKpi(eq.tone,"External QA",eq.txt,eq.sub)}
   </div>`;
   GIAS.forEach(g=>{
-    h+=`<div class="card"><div class="seclabel">Domain ${g.d} · ${esc(g.dt)}</div>`;
+    h+=`<div class="card iasa-domain-card anim-fade-in"><div class="iasa-domain-head"><span class="iasa-domain-num">Domain ${g.d}</span><span class="iasa-domain-title">${esc(g.dt)}</span></div>`;
     g.ps.forEach(p=>{
       const roll=rollupPrinc(p.n); const rc=CONF_HEX[roll]||"#94a3b8"; const mat=princMaturity(p.n); const it=iaSA().items[p.n]||{};
-      h+=`<div style="margin-top:10px;border:1px solid var(--line);border-radius:9px;overflow:hidden">
-        <div class="row" style="align-items:center;gap:10px;padding:9px 12px;background:#f6f9f8">
-          <b style="font-size:13px">Principle ${p.n} · ${esc(p.t)}</b>
-          <span class="pill" style="background:${rc}22;color:${rc};font-weight:700">${roll}</span>
+      h+=`<div class="iasa-principle">
+        <div class="iasa-principle-head">
+          <div class="iasa-principle-title"><span class="iasa-principle-num">P${p.n}</span><span>${esc(p.t)}</span></div>
+          <span class="pill iasa-roll-pill" style="background:${rc}22;color:${rc}">${roll}</span>
           <div class="spacer"></div>
-          <span class="hint">Maturity</span>
-          <select class="mini" onchange="iasaSet(${p.n},'maturity',this.value)">${MATURITY.map((m,i)=>`<option value="${i}"${mat===i?" selected":""}>${m}</option>`).join("")}</select>
-          <button class="btn ghost sm" onclick="modalPrinc(${p.n})">✎ Principle note</button>
+          <label class="iasa-maturity-label">Maturity
+            <select class="field-select field-select-sm" onchange="iasaSet(${p.n},'maturity',this.value)">${MATURITY.map((m,i)=>`<option value="${i}"${mat===i?" selected":""}>${m}</option>`).join("")}</select>
+          </label>
+          <button class="btn ghost sm" type="button" onclick="modalPrinc(${p.n})">Note</button>
         </div>
-        ${it.notes?`<div class="hint" style="padding:2px 12px 0">${esc(sclip(it.notes,160))}</div>`:""}
-        <table style="margin:0"><thead><tr><th style="width:48px">Std</th><th>Standard</th><th style="width:170px">Conformance</th><th>Evidence / gap / action</th><th style="width:56px"></th></tr></thead><tbody>
+        ${it.notes?`<div class="iasa-principle-note">${esc(sclip(it.notes,160))}</div>`:""}
+        <table class="iasa-std-table"><thead><tr><th class="iasa-std-num">Std</th><th>Standard</th><th class="iasa-std-conf">Conformance</th><th>Evidence / gap / action</th><th class="iasa-std-act"></th></tr></thead><tbody>
         ${p.s.map(([num,title])=>{ const iu=stdItem(num); const c=iu.conf||"Not rated"; const ch=CONF_HEX[c]||"#94a3b8"; return `<tr>
-          <td><b>${num}</b></td>
+          <td class="iasa-std-num"><b>${num}</b></td>
           <td>${esc(title)}</td>
-          <td><select class="mini" style="color:${ch};font-weight:600" onchange="stdSet('${num}','conf',this.value)">${STD_CONF.map(o=>`<option${c===o?" selected":""}>${o}</option>`).join("")}</select></td>
-          <td class="hint">${iu.evidence?esc(sclip(iu.evidence,80)):(c==="Not rated"?"—":"")}${iu.gap?`<div style="color:#b00020">△ ${esc(sclip(iu.gap,80))}</div>`:""}${iu.action?`<div>↳ ${esc(sclip(iu.action,80))}${iu.owner?" · "+esc(iu.owner):""}</div>`:""}</td>
-          <td><button class="btn ghost sm" onclick="modalStd('${num}')">✎</button></td>
+          <td><select class="field-select field-select-sm iasa-conf-select" style="color:${ch}" onchange="stdSet('${num}','conf',this.value);this.style.color=''">${STD_CONF.map(o=>`<option${c===o?" selected":""}>${o}</option>`).join("")}</select></td>
+          <td class="iasa-std-evidence">${iu.evidence?esc(sclip(iu.evidence,80)):(c==="Not rated"?"—":"")}${iu.gap?`<div class="iasa-gap">△ ${esc(sclip(iu.gap,80))}</div>`:""}${iu.action?`<div class="iasa-action">↳ ${esc(sclip(iu.action,80))}${iu.owner?" · "+esc(iu.owner):""}</div>`:""}</td>
+          <td class="iasa-std-act">${iconBtn(`modalStd('${num}')`,"✎","Edit standard")}</td>
         </tr>`; }).join("")}
         </tbody></table></div>`;
     });
     h+=`</div>`;
   });
-  h+=`<div class="card"><div class="row"><div class="seclabel" style="margin:0">Overall conclusion / EQA opinion statement</div><div class="spacer"></div><button class="btn ghost sm" onclick="modalIASACommentary()">✦ Draft with Claude</button></div>
-    <textarea style="min-height:110px;margin-top:8px" onchange="iaSA().commentary=this.value;save()">${esc(sa.commentary||"")}</textarea></div>`;
+  h+=`<div class="card iasa-conclusion anim-fade-in"><div class="row"><div class="seclabel" style="margin:0">Overall conclusion</div><div class="spacer"></div><button class="btn ghost sm" type="button" onclick="modalIASACommentary()">✦ Draft with Claude</button></div>
+    <textarea class="iasa-conclusion-input" placeholder="EQA opinion statement…" onchange="iaSA().commentary=this.value;save()">${esc(sa.commentary||"")}</textarea></div>`;
   return h;
 }
 function iasaInsights(){
@@ -1497,12 +1525,12 @@ function iasaInsights(){
     .sort((a,b)=>(a.c==="Does Not Conform"?0:1)-(b.c==="Does Not Conform"?0:1));
   const actions=stds.map(s=>({...s,it:stdItem(s.num),c:stdConf(s.num)})).filter(s=>s.it.action);
   const cmap=[["Conforms","#2e7d32"],["Partially Conforms","#c9a300"],["Does Not Conform","#b00020"],["Not rated","#94a3b8"]];
-  let h=`<div class="dash-kpis" style="grid-template-columns:repeat(5,1fr)">
-    ${kpi(opTone(op),"Overall opinion",op,"per IIA rollup")}
-    ${kpi("bad","Non-conformities",st.cnt["Does Not Conform"],"standards DNC")}
-    ${kpi("mid","Partial conformance",st.cnt["Partially Conforms"],"standards PC")}
-    ${kpi("base","Improvement actions",actions.length,"in the roadmap")}
-    ${kpi(eq.tone,"External QA",eq.txt,eq.sub)}
+  let h=`<div class="dash-kpis iasa-kpis anim-fade-in">
+    ${iasaKpi(opTone(op),"Overall opinion",op,"Per IIA rollup")}
+    ${iasaKpi("bad","Non-conformities",st.cnt["Does Not Conform"],"Standards DNC")}
+    ${iasaKpi("mid","Partial conformance",st.cnt["Partially Conforms"],"Standards PC")}
+    ${iasaKpi("base","Improvement actions",actions.length,"In the roadmap")}
+    ${iasaKpi(eq.tone,"External QA",eq.txt,eq.sub)}
   </div>
   <div class="dash2">
     <div class="card"><div class="seclabel">Conformance heat map — domain × rating</div>
