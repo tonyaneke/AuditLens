@@ -145,7 +145,6 @@ function backupBanner(){
 function render(){
   const org=DB.org||"Internal Audit";
   const _on=document.getElementById("orgName"); if(_on) _on.textContent=org;
-  const _oc=document.getElementById("orgChip"); if(_oc) _oc.textContent=org;
   const _lg=document.getElementById("brandLogo"); if(_lg){ const s=logoSrc(); if(s){ _lg.src=s; _lg.style.display="block"; } else { _lg.style.display="none"; } }
   const _b=document.getElementById("banner"); if(_b) _b.innerHTML=backupBanner();
   const C=document.getElementById("content");
@@ -153,7 +152,7 @@ function render(){
   const A=document.getElementById("topActions");
   const CR=document.getElementById("crumbs");
   A.innerHTML=""; CR.innerHTML="";
-  if(view==="dashboard"){ T.textContent="CAE / MD Dashboard"; A.innerHTML=`<button class="btn" onclick="modalNewObs()">+ New Observation</button>`; C.innerHTML=viewDashboard(); }
+  if(view==="dashboard"){ T.textContent="Dashboard"; CR.innerHTML=`<span class="page-subtitle">CAE / MD portfolio dashboard</span>`; A.innerHTML=`<button class="btn sec sm" onclick="exportDashboard()">⤓ Export dashboard</button><button class="btn sec sm" onclick="modalCaeReport()">⤓ Quarterly BAC report</button><button class="btn" onclick="modalNewObs()">+ New Observation</button>`; C.innerHTML=viewDashboard(); }
   else if(view==="auditra"){ T.textContent="Audit Risk Assessment"; A.innerHTML=`<button class="btn sec sm" onclick="exportRA()">⤓ Risk assessment (Word)</button><button class="btn sec sm" onclick="exportAuditPlan()">⤓ Audit plan (Word)</button><button class="btn sm dark" onclick="modalRAPrompt()">✦ Recommend audits</button><button class="btn sm" onclick="modalRA()">+ Add unit</button>`; C.innerHTML=viewAuditRA(); }
   else if(view==="fraud"){ T.textContent="Fraud Risk Assessment"; A.innerHTML=`<button class="btn sec sm" onclick="exportFraud()">⤓ Assessment (Word)</button><button class="btn sec sm" onclick="exportFraudPlan()">⤓ Prevention plan (Word)</button><button class="btn sm dark" onclick="modalFraudPrompt()">✦ Build fraud-risk prompt</button><button class="btn sm" onclick="modalFraud()">+ Add fraud risk</button>`; C.innerHTML=viewFraud(); }
   else if(view==="external"){ T.textContent="External & Regulatory Audit Findings"; A.innerHTML=`<button class="btn sec sm" onclick="exportExternal()">⤓ Status report (Word)</button><button class="btn sm dark" onclick="modalExtImport()">⤒ Import findings</button><button class="btn sm" onclick="modalExt()">+ Add finding</button>`; C.innerHTML=viewExternal(); }
@@ -201,64 +200,80 @@ function viewDashboard(){
   const maxCloseB=Math.max(1,...CLOSE_BUCKETS.map(b=>closeB[b]));
   const repeats=obs.filter(o=>o.isRepeat);
   const repeatOpen=repeats.filter(o=>o.status!=="Closed").length;
+  const firstName=(DB.signOffName||"Awa Michael").trim().split(/\s+/)[0]||"there";
 
   return `
-  <div class="row" style="margin-bottom:20px;align-items:flex-start">
-    <div><div style="font-size:13px;color:var(--muted)">Portfolio overview · all audits &amp; reports</div>
-      <div style="margin-top:7px;font-size:13px">Overall residual risk posture: <span class="pill c-${ck(overall)}">${overall}</span></div></div>
-    <div class="spacer"></div>
-    <button class="btn sec sm" onclick="exportDashboard()">⤓ Export dashboard (Word)</button>
-    <button class="btn sm dark" onclick="modalCaeReport()">⤓ Quarterly BAC report</button>
+  <div class="dash-welcome anim-fade-in">
+    <h1>Welcome, ${esc(firstName)}</h1>
   </div>
 
   <div class="dash-kpis">
-    ${kpi("base","Audits",nAudits,nReports+" report"+(nReports!==1?"s":""))}
-    ${kpi("accent","Observations",total,open+" open · "+closed+" closed")}
-    ${kpi("warn","Key exposures",keyExp,"open Critical &amp; High")}
-    ${kpi("good","Remediation rate",remRate+"%",closed+" of "+total+" closed")}
+    ${kpi("base","Audits",nAudits,nReports+" report"+(nReports!==1?"s":""),"audit")}
+    ${kpi("accent","Observations",total,open+" open · "+closed+" closed","obs")}
+    ${kpi("warn","Key exposures",keyExp,"open Critical &amp; High","alert")}
+    ${kpi("good","Remediation rate",remRate+"%",closed+" of "+total+" closed","check")}
+  </div>
+
+  <div class="card remed-card anim-fade-in anim-d2">
+    <div class="seclabel">Remediation status</div>
+    <div class="remed-grid">
+      ${Object.keys(st).map(s=>{
+        const cls=s==="Closed"?"closed":s==="In Progress"?"progress":"open";
+        return `<div class="remed-item ${cls}"><div class="remed-num">${st[s]}</div><div class="remed-lbl">${esc(s)}</div><div class="remed-pct">${total?Math.round(st[s]/total*100):0}% of portfolio</div></div>`;
+      }).join("")}
+    </div>
+    <div class="miniheat">${Object.keys(st).map(s=>st[s]?`<div style="width:${st[s]/total*100}%;background:${STC[s]}"></div>`:"").join("")}</div>
   </div>
 
   <div class="dash2">
-    <div class="card"><div class="seclabel">Observations by criticality</div>
+    <div class="card chart-card anim-fade-in anim-d2"><div class="seclabel">Observations by criticality</div>
       <div class="donutwrap">${donut(segs,total,"total")}
         <div class="legend" style="flex:1">${CRITS.map(c=>`<div class="li"><span class="dot" style="background:${HEX[c]}"></span><span class="lname">${c}</span><span class="lval">${byC[c]}</span><span class="lpct">${total?Math.round(byC[c]/total*100):0}%</span></div>`).join("")}</div>
       </div>
     </div>
-    <div class="card"><div class="seclabel">Due status · open observations</div>
+    <div class="card anim-fade-in anim-d3"><div class="seclabel">Due status · open observations</div>
       <div class="tline">
-        <div class="tcell" style="border-top:3px solid #b00020"><div class="tn" style="color:#b00020">${closeB["Overdue"]}</div><div class="tl">Overdue</div></div>
-        <div class="tcell" style="border-top:3px solid #e8590c"><div class="tn" style="color:#e8590c">${closeB["≤ 2 weeks"]}</div><div class="tl">Watchlist · ≤2 wks</div></div>
-        <div class="tcell" style="border-top:3px solid #2e7d32"><div class="tn" style="color:#2e7d32">${closeB["2–4 weeks"]+closeB["1–3 months"]+closeB["> 3 months"]}</div><div class="tl">On track</div></div>
+        <div class="tcell"><div class="tn" style="color:#b00020">${closeB["Overdue"]}</div><div class="tl">Overdue</div></div>
+        <div class="tcell"><div class="tn" style="color:#e8590c">${closeB["≤ 2 weeks"]}</div><div class="tl">Watchlist · ≤2 wks</div></div>
+        <div class="tcell"><div class="tn" style="color:#2e7d32">${closeB["2–4 weeks"]+closeB["1–3 months"]+closeB["> 3 months"]}</div><div class="tl">On track</div></div>
       </div>
       <div class="hint" style="margin-top:11px">By expected close date.${closeNoDate?` ${closeNoDate} open observation(s) have no expected close date (set a target date or timeline + report date).`:""}</div>
     </div>
   </div>
 
-  <div class="dash2">
-    <div class="card"><div class="seclabel">Remediation status</div>
-      <div class="legend">${Object.keys(st).map(s=>`<div class="li"><span class="dot" style="background:${STC[s]}"></span><span class="lname">${s}</span><span class="lval">${st[s]}</span><span class="lpct">${total?Math.round(st[s]/total*100):0}%</span></div>`).join("")}</div>
-      <div class="miniheat">${Object.keys(st).map(s=>st[s]?`<div style="width:${st[s]/total*100}%;background:${STC[s]}"></div>`:"").join("")}</div>
-    </div>
-    <div class="card"><div class="seclabel">Risk by process / department</div>
+  <div class="card anim-fade-in anim-d3"><div class="seclabel">Risk by process / department</div>
       ${areaRows.length?`<table style="margin-top:-2px"><thead><tr><th>Area</th>${CRITS.map(c=>`<th style="text-align:center" title="${c}">${({Critical:"Crit",High:"High",Moderate:"Mod",Low:"Low","Process Improvement":"PI"})[c]}</th>`).join("")}<th style="text-align:right">Total</th></tr></thead><tbody>
         ${areaRows.slice(0,6).map(([k,v])=>`<tr><td>${esc(k)}</td>
           ${CRITS.map(c=>`<td style="text-align:center;color:${HEX[c]};font-weight:${v[c]?700:400}">${v[c]||"·"}</td>`).join("")}
           <td style="text-align:right"><b>${v.t}</b></td></tr>`).join("")}
       </tbody></table>${areaRows.length>6?`<div class="hint" style="margin-top:8px">Showing top 6 of ${areaRows.length} areas.</div>`:""}`:`<div class="empty">No observations yet.</div>`}
-    </div>
   </div>
 
-  <div class="dash2">
-    <div class="card"><div class="seclabel">Open observations — time to expected close</div>
-      <div class="barchart">
-        ${CLOSE_BUCKETS.map(b=>`<div class="barrow"><div class="nm">${b}</div><div class="track"><div class="fill" style="width:${closeB[b]/maxCloseB*100}%;background:${CLOSEB_HEX[b]}"></div></div><div class="vv">${closeB[b]}</div></div>`).join("")}
+  <div class="dash2 anim-fade-in anim-d4">
+    <div class="card obs-close-card">
+      <div class="card-head">
+        <div>
+          <div class="seclabel" style="margin:0">Open observations</div>
+          <div class="card-sub">Expected close timeline across the portfolio</div>
+        </div>
+        <div class="obs-close-stats">
+          <span class="obs-close-stat overdue">${overdueN} overdue</span>
+          <span class="obs-close-stat watch">${closeB["≤ 2 weeks"]} due ≤2 wks</span>
+          <span class="obs-close-stat track">${closeB["2–4 weeks"]+closeB["1–3 months"]+closeB["> 3 months"]} on track</span>
+        </div>
       </div>
-      <div class="hint" style="margin-top:10px"><b style="color:var(--crit)">${overdueN}</b> overdue${closeNoDate?` · ${closeNoDate} with no expected close date`:""}.</div>
+      <div class="obs-close-grid">
+        ${CLOSE_BUCKETS.map(b=>{
+          const cls=b==="Overdue"?"overdue":b==="≤ 2 weeks"?"soon":b==="2–4 weeks"?"mid":b==="1–3 months"?"plan":"ok";
+          return `<div class="obs-close-item ${cls}"><div class="val">${closeB[b]}</div><div class="lbl">${esc(b)}</div></div>`;
+        }).join("")}
+      </div>
+      ${closeNoDate?`<div class="hint" style="margin-top:14px">${closeNoDate} open observation(s) have no expected close date. Set a target date or timeline plus report date.</div>`:""}
     </div>
     <div class="card"><div class="seclabel">Repeat findings</div>
       <div class="row" style="align-items:baseline;gap:8px"><div style="font-size:34px;font-weight:700;color:#6b3fa0">${repeats.length}</div><div class="hint">recurring from prior audits · ${repeatOpen} still open</div></div>
       ${repeats.length?`<table style="margin-top:8px"><thead><tr><th>Observation</th><th>Audit</th><th>Prior ref</th><th>Status</th></tr></thead><tbody>
-        ${repeats.slice(0,5).map(o=>`<tr><td>${esc(o.title)}</td><td>${esc(o._a.name)}</td><td>${esc(o.repeatOf||"—")}</td><td><span class="${statusClass(o.status)}">${esc(o.status||"Open")}</span></td></tr>`).join("")}</tbody></table>${repeats.length>5?`<div class="hint" style="margin-top:6px">Showing 5 of ${repeats.length}.</div>`:""}`
+        ${repeats.slice(0,5).map(o=>`<tr><td>${esc(o.title)}</td><td>${esc(o._a.name)}</td><td>${esc(o.repeatOf||"—")}</td><td>${statusPill(o.status)}</td></tr>`).join("")}</tbody></table>${repeats.length>5?`<div class="hint" style="margin-top:6px">Showing 5 of ${repeats.length}.</div>`:""}`
         :`<div class="hint" style="margin-top:8px">No repeat findings flagged yet. Tick “Repeat observation” when editing an observation.</div>`}
     </div>
   </div>
@@ -272,7 +287,7 @@ function viewDashboard(){
         <td><b>${esc(o.title)}</b></td>
         <td>${esc(o._a.name)}<div class="hint">${esc(o._a.area||"")}</div></td>
         <td>${esc(o.owner||"—")}</td>
-        <td><span class="${statusClass(o.status)}">${esc(o.status||"Open")}</span></td>
+        <td>${statusPill(o.status)}</td>
       </tr>`; }).join("")+`</tbody></table>`+(watchlist.length>15?`<div class="hint" style="margin-top:8px">Showing 15 of ${watchlist.length}.</div>`:"")
       :`<div class="empty">No open observations due within 2 weeks.</div>`}
   </div>
@@ -285,13 +300,27 @@ function viewDashboard(){
         <td><b>${esc(o.title)}</b></td>
         <td>${esc(o._a.name)}<div class="hint">${esc(o._a.area||"")}</div></td>
         <td>${esc(o.owner||"—")}</td>
-        <td>${tlPill(o.timeline)}</td>
-        <td><span class="${statusClass(o.status)}">${esc(o.status||"Open")}</span></td>
+        <td class="timeline-cell">${tlPill(o.timeline)}</td>
+        <td>${statusPill(o.status)}</td>
       </tr>`).join("")+`</tbody></table>`+(critical.length>12?`<div class="hint" style="margin-top:8px">Showing 12 of ${critical.length} open key exposures.</div>`:"")
       :`<div class="empty">No open Critical or High observations.</div>`}
   </div>`;
 }
-function kpi(cls,lab,num,sub){ return `<div class="kpi ${cls}"><div class="lab">${lab}</div><div class="num">${num}</div><div class="sub">${sub}</div></div>`; }
+function kpi(cls,lab,num,sub,icon){
+  const icons={
+    audit:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M8 7V5h8v2"/></svg>`,
+    obs:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M9 5H7a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>`,
+    alert:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>`,
+    check:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M20 6 9 17l-5-5"/></svg>`
+  };
+  const ic=icons[icon]||icons.audit;
+  return `<div class="kpi ${cls}"><div class="kpi-head"><span class="kpi-icon">${ic}</span><div class="lab">${lab}</div></div><div class="num">${num}</div><div class="sub">${sub}</div></div>`;
+}
+function statusPill(s){
+  const k=s||"Open";
+  const cls=k==="Closed"?"closed":k==="In Progress"?"progress":"open";
+  return `<span class="status-pill ${cls}">${esc(k)}</span>`;
+}
 function donut(segs,total,label){
   const r=54,C=2*Math.PI*r; let off=0;
   const bg=`<circle cx="70" cy="70" r="${r}" fill="none" stroke="#eef2f7" stroke-width="16"/>`;
@@ -302,7 +331,12 @@ function donut(segs,total,label){
     <text x="70" y="66" text-anchor="middle" font-size="30" font-weight="700" fill="#0d5a47">${total}</text>
     <text x="70" y="86" text-anchor="middle" font-size="11" fill="#64748b">${label}</text></svg>`;
 }
-function tlPill(t){ const C={"Immediate":"#b00020","Short-term":"#c98a00","Long-term":"#2c5f8a"}; if(!C[t])return '<span class="hint">—</span>'; return `<span class="pill" style="background:${C[t]}1a;color:${C[t]}">${t}</span>`; }
+function tlPill(t){
+  const map={"Immediate":"immediate","Short-term":"short","Long-term":"long"};
+  const cls=map[t];
+  if(!cls) return `<span class="timeline-pill empty">—</span>`;
+  return `<span class="timeline-pill ${cls}">${esc(t)}</span>`;
+}
 function statusClass(s){ return s==="Closed"?"s-Closed":s==="In Progress"?"s-InProgress":"s-Open"; }
 
 /* ============================ REMEDIATION TRACKER ============================ */

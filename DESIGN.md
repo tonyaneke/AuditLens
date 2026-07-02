@@ -25,8 +25,8 @@ Semantic risk colors (do not change): Critical `#7a0012`, High `#b00020`, Modera
 
 ## Layout
 
-- **Sidebar:** 200px, dark `--brand-900`, grouped nav (MAIN / ASSESSMENT / SYSTEM)
-- **Main:** Full width, no max-width cap. Padding `24px 32px`.
+- **Sidebar:** 260px, dark `--brand-900`, grouped nav with Hugeicons (MAIN / ASSESSMENT / SYSTEM)
+- **Main:** Rounded white shell (`main-shell`) on tinted background with outer padding. Full width inside shell.
 - **Topbar:** White sticky, soft shadow, page title left, actions right.
 
 ## Components
