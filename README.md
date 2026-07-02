@@ -1,8 +1,8 @@
-# Audit Reporting Bot (Next.js)
+# AMS — Audit Management System
 
-Next.js port of the CREDICORP Internal Audit Reporting Bot. All features from the original single-page HTML app are preserved — dashboard, audits, observations, remediation tracker, fraud risk, process review, and Word exports.
+Next.js port of the CREDICORP Internal Audit workspace. Dashboard, audits, observations, remediation tracking, fraud risk, process review, and Word exports.
 
-Data is still stored in the browser via `localStorage` (key: `auditBotData`).
+Data is stored in the browser via `localStorage` (key: `auditBotData`).
 
 ## Getting started
 
@@ -14,24 +14,30 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+## Design
+
+- **Typography:** Plus Jakarta Sans
+- **Colors:** CREDICORP logo greens/teals (see `DESIGN.md`)
+- **Layout:** 200px dark sidebar + full-width main canvas
+- **New Observation:** Dashboard button opens a wide modal
+
 ## Project structure
 
 | Path | Purpose |
 |------|---------|
 | `app/` | Next.js App Router (layout, page, global CSS) |
-| `components/AuditApp.tsx` | App shell (sidebar, main content, modal) |
-| `public/audit-bot.js` | Application logic extracted from the original HTML |
-| `scripts/extract-html.mjs` | Re-syncs CSS/JS from `../Audit-Reporting-Bot (1).html` |
+| `components/AuditApp.tsx` | AMS shell (sidebar, main content, modal) |
+| `public/audit-bot.js` | Application logic |
+| `scripts/extract-html.mjs` | Re-syncs JS from HTML (CSS preserved in `app/globals.css`) |
+| `PRODUCT.md` / `DESIGN.md` | Brand and design tokens |
 
 ## Updating from the HTML source
-
-If you edit the original HTML file, re-run:
 
 ```bash
 npm run extract
 ```
 
-Then restart the dev server.
+CSS is **not** overwritten. Edit `app/globals.css` directly for design changes.
 
 ## Production build
 

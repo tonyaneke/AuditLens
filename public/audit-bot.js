@@ -118,6 +118,7 @@ function reportObs(r){ return r.observations; }
 
 /* ============================ ROUTER ============================ */
 function go(v,opts={}){
+  if(v==="newobs"){ modalNewObs(); return; }
   if(v==="insights"){ trackerMode="insights"; v="tracker"; }
   view=v;
   curProc=null;
@@ -142,7 +143,9 @@ function backupBanner(){
   </div>`;
 }
 function render(){
-  document.getElementById("orgName").textContent = (DB.org||"Internal Audit");
+  const org=DB.org||"Internal Audit";
+  const _on=document.getElementById("orgName"); if(_on) _on.textContent=org;
+  const _oc=document.getElementById("orgChip"); if(_oc) _oc.textContent=org;
   const _lg=document.getElementById("brandLogo"); if(_lg){ const s=logoSrc(); if(s){ _lg.src=s; _lg.style.display="block"; } else { _lg.style.display="none"; } }
   const _b=document.getElementById("banner"); if(_b) _b.innerHTML=backupBanner();
   const C=document.getElementById("content");
@@ -150,7 +153,7 @@ function render(){
   const A=document.getElementById("topActions");
   const CR=document.getElementById("crumbs");
   A.innerHTML=""; CR.innerHTML="";
-  if(view==="dashboard"){ T.textContent="CAE / MD Dashboard"; C.innerHTML=viewDashboard(); }
+  if(view==="dashboard"){ T.textContent="CAE / MD Dashboard"; A.innerHTML=`<button class="btn" onclick="modalNewObs()">+ New Observation</button>`; C.innerHTML=viewDashboard(); }
   else if(view==="auditra"){ T.textContent="Audit Risk Assessment"; A.innerHTML=`<button class="btn sec sm" onclick="exportRA()">⤓ Risk assessment (Word)</button><button class="btn sec sm" onclick="exportAuditPlan()">⤓ Audit plan (Word)</button><button class="btn sm dark" onclick="modalRAPrompt()">✦ Recommend audits</button><button class="btn sm" onclick="modalRA()">+ Add unit</button>`; C.innerHTML=viewAuditRA(); }
   else if(view==="fraud"){ T.textContent="Fraud Risk Assessment"; A.innerHTML=`<button class="btn sec sm" onclick="exportFraud()">⤓ Assessment (Word)</button><button class="btn sec sm" onclick="exportFraudPlan()">⤓ Prevention plan (Word)</button><button class="btn sm dark" onclick="modalFraudPrompt()">✦ Build fraud-risk prompt</button><button class="btn sm" onclick="modalFraud()">+ Add fraud risk</button>`; C.innerHTML=viewFraud(); }
   else if(view==="external"){ T.textContent="External & Regulatory Audit Findings"; A.innerHTML=`<button class="btn sec sm" onclick="exportExternal()">⤓ Status report (Word)</button><button class="btn sm dark" onclick="modalExtImport()">⤒ Import findings</button><button class="btn sm" onclick="modalExt()">+ Add finding</button>`; C.innerHTML=viewExternal(); }
@@ -158,7 +161,6 @@ function render(){
   else if(view==="audits"){ T.textContent="Audits & Reports"; A.innerHTML=`<button class="btn" onclick="modalAudit()">+ New Audit</button>`; C.innerHTML=viewAudits(); }
   else if(view==="audit"){ renderAudit(C,T,A,CR); }
   else if(view==="report"){ renderReport(C,T,A,CR); }
-  else if(view==="newobs"){ T.textContent="New Observation"; C.innerHTML=viewNewObs(); }
   else if(view==="tracker"){ T.textContent="Remediation Tracker"; C.innerHTML=trackerTabs()+(trackerMode==="insights"?viewInsights():viewTracker()); }
   else if(view==="process"){ T.textContent="Process & Control Effectiveness Review"; const pp=curProc?procList().find(x=>x.id===curProc):null; A.innerHTML = pp? `<button class="btn sec sm" onclick="curProc=null;render()">← All reviews</button><button class="btn sec sm" onclick="exportProc('${pp.id}')">⤓ Export (Word)</button><button class="btn sm" onclick="modalProcMeta('${pp.id}')">Edit details</button>` : `<button class="btn sm" onclick="modalProcNew()">+ New review</button>`; C.innerHTML=viewProcess(); }
   else if(view==="guide"){ T.textContent="How to use the bot"; C.innerHTML=viewGuide(); }
@@ -420,7 +422,7 @@ function viewInsights(){
   </div>
   <div class="card"><div class="seclabel">Recurring specific root causes</div>
     ${clusters.length? clusters.map(cl=>`
-      <div class="obs-block" style="padding:11px 13px;margin-bottom:10px;border-left:4px solid var(--accent)">
+      <div class="obs-block" style="padding:11px 13px;margin-bottom:10px;background:#e9f8f2;border-color:#c6e9df">
         <div class="row" style="align-items:flex-start"><b style="flex:1">${esc(cl.rep)}</b><span class="pill" style="background:#eef2f7;color:#334155">×${cl.items.length}</span></div>
         <div class="hint" style="margin-top:5px">Recurs in: ${cl.items.map(i=>esc(i._a.name)+(i._a.area?" ("+esc(i._a.area)+")":"")).filter((v,ix,arr)=>arr.indexOf(v)===ix).join(" · ")}</div>
       </div>`).join("")
@@ -708,7 +710,7 @@ function viewFraud(){
     <div class="hint" style="margin:4px 0 10px">Each fraud risk from the assessment is listed below by residual priority. Add the prevention/response actions that will mitigate it — together they are your fraud prevention plan.</div>
     ${plan?`<div class="txt" style="white-space:pre-wrap;margin:8px 0;padding:10px 12px;background:#f8fafc;border:1px solid var(--line);border-radius:8px">${esc(plan)}</div>`:`<div class="hint" style="margin:8px 0">Add a plan overview (objective, governance, reporting cadence, training, whistleblowing) — or draft it with me.</div>`}
     ${en.slice().sort((a,b)=>BANDS.indexOf(b.res)-BANDS.indexOf(a.res)).map(f=>{ const acts=fraudActions(f); return `
-      <div class="obs-block" style="padding:11px 13px;margin:8px 0;border-left:4px solid ${BAND_HEX[f.res]}">
+      <div class="obs-block" style="padding:11px 13px;margin:8px 0;background:${hx2rgba(BAND_HEX[f.res],.1)};border-color:${hx2rgba(BAND_HEX[f.res],.35)}">
         <div class="row" style="align-items:center;gap:8px"><span class="pill" style="background:${hx2rgba(BAND_HEX[f.res],.16)};color:${BAND_HEX[f.res]}">${f.res}</span><b>${esc(f.scheme)}</b><span class="hint">${esc(f.category)}${f.process?" · "+esc(f.process):""}</span><div class="spacer"></div><button class="btn sec sm" onclick="modalFraudAction('${f.id}')">+ Add action</button></div>
         ${acts.length?`<table style="margin-top:8px"><thead><tr><th>Prevention / response action</th><th>Type</th><th>Owner</th><th>Target</th><th>Status</th><th></th></tr></thead><tbody>
           ${acts.map(a=>`<tr><td>${esc(a.text)}${a.update?`<div class="hint">Update: ${esc(a.update)}</div>`:""}</td><td>${esc(a.type||"—")}</td><td>${esc(a.owner||"—")}</td><td>${esc(a.targetDate||"—")}</td><td><span class="${actStatusClass(a.status)}">${esc(a.status||"Planned")}</span></td>
@@ -989,7 +991,7 @@ function procDetail(p){
   if(!f.length) h+=`<div class="hint" style="margin-top:8px">No findings recorded.</div>`;
   else PROC_CATS.forEach(([cat,hex])=>{ const items=f.filter(x=>x.category===cat); if(!items.length)return;
     h+=`<div style="margin-top:14px"><div class="row" style="align-items:center;gap:8px"><span class="dot" style="width:11px;height:11px;border-radius:3px;background:${hex};display:inline-block"></span><div class="seclabel" style="margin:0">${cat}</div><span class="hint">${items.length}</span></div>`;
-    h+=items.map(x=>{ const sh=PROC_SEV_HEX[x.severity]||"#64748b"; return `<div class="obs-block" style="padding:10px 12px;margin:8px 0;border-left:4px solid ${hex}">
+    h+=items.map(x=>{ const sh=PROC_SEV_HEX[x.severity]||"#64748b"; return `<div class="obs-block" style="padding:10px 12px;margin:8px 0;background:${hx2rgba(hex,.1)};border-color:${hx2rgba(hex,.35)}">
       <div class="row" style="align-items:center;gap:8px"><b>${esc(x.title)}</b>${x.severity&&cat!=="Strength"?`<span class="pill" style="background:${hx2rgba(sh,.16)};color:${sh}">${esc(x.severity)}</span>`:""}<div class="spacer"></div><button class="btn ghost sm" onclick="modalProcFinding('${p.id}','${x.id}')">Edit</button>${cat!=="Strength"?`<button class="btn ghost sm" onclick="raiseProcFinding('${p.id}','${x.id}')">→ Observation</button>`:""}<button class="btn ghost sm" style="color:var(--crit)" onclick="delProcFinding('${p.id}','${x.id}')">✕</button></div>
       ${x.detail?`<div class="obs-field"><div class="ttl">Detail</div><div class="txt">${esc(x.detail)}</div></div>`:""}
       ${x.recommendation?`<div class="obs-field"><div class="ttl">Recommendation</div><div class="txt">${esc(x.recommendation)}</div></div>`:""}
@@ -1378,7 +1380,7 @@ function iasaInsights(){
     </div>
   </div>
   <div class="card"><div class="seclabel">Priority non-conformances (Does Not Conform → Partially Conforms)</div>
-    ${gaps.length? gaps.map(x=>`<div class="obs-block" style="padding:11px 13px;margin-bottom:10px;border-left:4px solid ${CONF_HEX[x.c]}">
+    ${gaps.length? gaps.map(x=>`<div class="obs-block" style="padding:11px 13px;margin-bottom:10px;background:${hx2rgba(CONF_HEX[x.c],.1)};border-color:${hx2rgba(CONF_HEX[x.c],.35)}">
       <div class="row" style="align-items:flex-start"><b style="flex:1">${x.num} · ${esc(x.title)}</b><span class="pill" style="background:${CONF_HEX[x.c]}22;color:${CONF_HEX[x.c]};font-weight:700">${x.c}</span></div>
       <div class="hint" style="margin-top:4px">Principle ${x.pn} · ${esc(x.pt)} — Domain ${x.d}</div>
       ${x.it.gap?`<div style="margin-top:6px;font-size:12.5px"><b>Gap:</b> ${esc(x.it.gap)}</div>`:""}
@@ -1579,7 +1581,7 @@ function extInsights(){
     </tbody></table>
   </div>
   <div class="card"><div class="seclabel">Repeat / recurring findings</div>
-    ${clusters.length?clusters.map(cl=>`<div class="obs-block" style="padding:11px 13px;margin-bottom:10px;border-left:4px solid #6b3fa0">
+    ${clusters.length?clusters.map(cl=>`<div class="obs-block" style="padding:11px 13px;margin-bottom:10px;background:#f3eef8;border-color:#d4c4e8">
       <div class="row"><b style="flex:1">${esc(cl.rep)}</b><span class="pill" style="background:#efe3f7;color:#6b3fa0">×${cl.items.length}</span></div>
       <div class="hint" style="margin-top:5px">Raised by: ${cl.items.map(i=>esc(i.source||"?")+(i.year?" "+esc(i.year):"")).filter((v,ix,ar)=>ar.indexOf(v)===ix).join(" · ")}</div></div>`).join("")
       :`<div class="hint">No recurring findings detected yet (auto-detected by fuzzy match). Flag known repeats on each finding, or they'll cluster here as more are added.</div>`}
@@ -2433,8 +2435,8 @@ function viewGuide(){
     <ol style="line-height:1.9;padding-left:18px">
       <li><b>Set up structure once.</b> In <b>Audits &amp; Reports</b>, create an audit (by process or department). Add one or more reports under it.</li>
       <li><b>Plan the audit.</b> Open the audit and use <b>Build planning prompt</b> → send it to me → <b>Paste plan from Claude</b>. You get a recommended scope, objectives, key risks and a full test programme you can edit and export to Word.</li>
-      <li><b>Draft with Claude.</b> Go to <b>New Observation</b>, enter your one-liner, click <b>Build prompt</b>, copy it, and paste it to me in chat. I return a JSON observation with description, impact/risk, root cause, recommendation and a recommended criticality.</li>
-      <li><b>Paste it in.</b> Use <b>Paste from Claude</b> (inside a report, or from the New Observation page) to drop the JSON in. It’s added automatically. Edit anything you like.</li>
+      <li><b>Draft with Claude.</b> On the <b>Dashboard</b>, click <b>+ New Observation</b>, enter your one-liner, click <b>Build prompt</b>, copy it, and paste it to me in chat. I return a JSON observation with description, impact/risk, root cause, recommendation and a recommended criticality.</li>
+      <li><b>Paste it in.</b> Use <b>Paste from Claude</b> (inside a report, or from the New Observation modal) to drop the JSON in. It’s added automatically. Edit anything you like.</li>
       <li><b>Report &amp; brief.</b> Each report builds an <b>Executive Summary</b>; the <b>CAE/MD Dashboard</b> rolls everything up. Export any report or the whole audit to <b>Word</b>.</li>
     </ol>
   </div>
@@ -2512,7 +2514,24 @@ function openModal(title,body,foot){
   document.getElementById("modalFoot").innerHTML=foot;
   ov.classList.add("show");
 }
-function closeModal(){ ov.classList.remove("show"); }
+function openModal(title,body,foot){
+  const m=document.getElementById("modal");
+  if(m) m.classList.remove("wide");
+  document.getElementById("modalTitle").textContent=title;
+  document.getElementById("modalBody").innerHTML=body;
+  document.getElementById("modalFoot").innerHTML=foot;
+  ov.classList.add("show");
+}
+function closeModal(){
+  ov.classList.remove("show");
+  const m=document.getElementById("modal");
+  if(m) m.classList.remove("wide");
+}
+function modalNewObs(){
+  openModal("New Observation", viewNewObs(), `<button class="btn sec" onclick="closeModal()">Close</button>`);
+  const m=document.getElementById("modal");
+  if(m) m.classList.add("wide");
+}
 
 
 function modalAudit(id){
