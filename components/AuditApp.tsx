@@ -1,7 +1,6 @@
 "use client";
 
 import Script from "next/script";
-import type { SessionUser } from "@/lib/permissions";
 import AuthGate from "./AuthGate";
 import SidebarNav from "./SidebarNav";
 
@@ -35,20 +34,6 @@ export default function AuditApp() {
                   <div className="topbar-center" id="topSearch" />
                   <div className="topbar-right">
                     <div className="row" id="topActions" />
-                    <div className="topbar-user">
-                      <span className="topbar-user-name">{user.name}</span>
-                      <span className="topbar-user-role">{formatRole(user.role)}</span>
-                      <button
-                        className="btn ghost sm"
-                        type="button"
-                        onClick={async () => {
-                          await fetch("/api/auth/logout", { method: "POST" });
-                          window.location.href = "/login";
-                        }}
-                      >
-                        Sign out
-                      </button>
-                    </div>
                   </div>
                 </div>
                 <div id="banner" />
@@ -88,11 +73,6 @@ export default function AuditApp() {
       )}
     </AuthGate>
   );
-}
-
-function formatRole(role: string) {
-  if (role === "head_of_audit") return "Head of Audit";
-  return "Audit Staff";
 }
 
 type AuditBotWindow = Window & {

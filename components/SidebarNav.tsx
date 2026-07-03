@@ -8,15 +8,13 @@ import {
   DashboardSquare01Icon,
   File01Icon,
   JusticeScale01Icon,
+  Logout01Icon,
   Settings01Icon,
   TaskDaily01Icon,
   WorkflowSquare01Icon,
 } from "@hugeicons/core-free-icons";
 import type { SessionUser } from "@/lib/permissions";
-import {
-  ASSESSMENT_VIEWS,
-  MAIN_VIEWS,
-} from "@/lib/permissions";
+import { ASSESSMENT_VIEWS, MAIN_VIEWS } from "@/lib/permissions";
 
 const ICON_SIZE = 20;
 
@@ -51,53 +49,108 @@ type SidebarNavProps = {
   user: SessionUser;
 };
 
-export default function SidebarNav({ user }: SidebarNavProps) {
-  const access = new Set<string>([
-    ...MAIN_VIEWS,
-    ...(user.sidebarAccess || []),
-  ]);
-  if (user.role === "head_of_audit") access.add("settings");
-
-  return (
-    <nav className="nav" id="nav">
-      {SECTIONS.map((section) => {
-        const items = section.items.filter((item) => access.has(item.view));
-        if (!items.length) return null;
-        return (
-          <div className="nav-section" key={section.label}>
-            <div className="nav-label">{section.label}</div>
-            {items.map((item) => (
-              <button
-                key={item.view}
-                type="button"
-                data-view={item.view}
-                className={item.view === "dashboard" ? "active" : undefined}
-              >
-                <span className="ic">
-                  <HugeiconsIcon icon={item.icon} size={ICON_SIZE} strokeWidth={1.75} />
-                </span>
-                {item.label}
-              </button>
-            ))}
-          </div>
-        );
-      })}
-      {user.role === "head_of_audit" ? (
-        <>
-          <div className="nav-spacer" aria-hidden="true" />
-          <div className="nav-section nav-section-footer">
-            <div className="nav-label">System</div>
-            <button type="button" data-view="settings">
-              <span className="ic">
-                <HugeiconsIcon icon={Settings01Icon} size={ICON_SIZE} strokeWidth={1.75} />
-              </span>
-              Settings
-            </button>
-          </div>
-        </>
-      ) : null}
-    </nav>
-  );
+function formatRole(role: string) {
+  if (role === "head_of_audit") return "Head of Audit";
+  return "Audit Staff";
 }
 
-export { ASSESSMENT_VIEWS };
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function navigate(view: string) {
+  const w = window as Window & { go?: (v: string) => void };
+  if (typeof w.go === "function") {
+    w.go(view);
+    return;
+  }
+  const btn = document.querySelector(
+    `#nav button[data-view="${view}"]`,
+  ) as HTMLButtonElement | null;
+  btn?.click();
+}
+
+async function signOut() {
+  await fetch("/api/auth/logout", { method: "POST" });
+  window.location.href = "/login";
+}
+
+export default function SidebarNav({ user }: SidebarNavProps) {
+  const isHead = user.role === "head_of_audit";
+  const access = isHead
+    ? new Set<string>([...MAIN_VIEWS, ...ASSESSMENT_VIEWS])
+    : new Set<string>([...MAIN_VIEWS, ...(user.sidebarAccess || [])]);
+
+  return (
+    <>
+      <nav className="nav" id="nav">
+        {SECTIONS.map((section) => {
+          const items = section.items.filter((item) => access.has(item.view));
+          if (!items.length) return null;
+          return (
+            <div className="nav-section" key={section.label}>
+              <div className="nav-label">{section.label}</div>
+              {items.map((item) => (
+                <button
+                  key={item.view}
+                  type="button"
+                  data-view={item.view}
+                  className={item.view === "dashboard" ? "active" : undefined}
+                >
+                  <span className="ic">
+                    <HugeiconsIcon
+                      icon={item.icon}
+                      size={ICON_SIZE}
+                      strokeWidth={1.75}
+                    />
+                  </span>
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          );
+        })}
+        <div className="nav-spacer" aria-hidden="true" />
+      </nav>
+
+      <div className="sidebar-profile">
+        <div className="sidebar-profile-head">
+          <div className="sidebar-profile-avatar" aria-hidden="true">
+            {initials(user.name)}
+          </div>
+          <div className="sidebar-profile-meta">
+            <div className="sidebar-profile-name">{user.name}</div>
+            <div className="sidebar-profile-role">{formatRole(user.role)}</div>
+          </div>
+          {isHead ? (
+            <div className="sidebar-profile-dropdown">
+              <button
+                type="button"
+                className="sidebar-profile-dropdown-item"
+                onClick={() => navigate("settings")}
+              >
+                <HugeiconsIcon
+                  icon={Settings01Icon}
+                  size={16}
+                  strokeWidth={1.75}
+                />
+                Settings
+              </button>
+            </div>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          className="sidebar-signout"
+          onClick={() => void signOut()}
+        >
+          <HugeiconsIcon icon={Logout01Icon} size={16} strokeWidth={1.75} />
+          Sign out
+        </button>
+      </div>
+    </>
+  );
+}

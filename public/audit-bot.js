@@ -131,8 +131,12 @@ function saveNow(){
 function canAccessView(v){
   const u = window.AMS_USER;
   if(!u) return ["dashboard","audits","tracker","audit","report","observation","newobs","insights","guide"].includes(v);
+  if(u.role==="head_of_audit"){
+    if(["dashboard","audits","tracker","auditra","fraud","process","external","iasa","settings","audit","report","observation","newobs","insights","guide"].includes(v)) return true;
+    return false;
+  }
   if(["dashboard","audits","tracker","audit","report","observation","newobs","insights","guide"].includes(v)) return true;
-  if(v==="settings") return u.role==="head_of_audit";
+  if(v==="settings") return false;
   return (u.sidebarAccess||[]).includes(v);
 }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
@@ -3553,6 +3557,7 @@ function exportCaeReport(){
 
 /* ============================ INIT ============================ */
 function initAuditBot(){
+  window.go = go;
   ov = document.getElementById("overlay");
   if (ov) ov.addEventListener("click", (e) => { if (e.target === ov) closeModal(); });
   document.getElementById("nav").addEventListener("click", (e) => {

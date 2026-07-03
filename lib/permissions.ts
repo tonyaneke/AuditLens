@@ -32,16 +32,31 @@ export function normalizeSidebarAccess(raw: unknown): string[] {
 }
 
 export function canAccessView(user: SessionUser, view: string): boolean {
+  if (user.role === "head_of_audit") {
+    if (
+      [
+        "audit",
+        "report",
+        "observation",
+        "newobs",
+        "insights",
+        "guide",
+      ].includes(view)
+    ) {
+      return true;
+    }
+    return (ALL_VIEWS as readonly string[]).includes(view);
+  }
   if ((MAIN_VIEWS as readonly string[]).includes(view)) return true;
-  if (view === "settings") return user.role === "head_of_audit";
+  if (view === "settings") return false;
   return user.sidebarAccess.includes(view);
 }
 
 export function allowedViews(user: SessionUser): string[] {
+  if (user.role === "head_of_audit") return [...ALL_VIEWS];
   const views: string[] = [...MAIN_VIEWS];
   for (const v of user.sidebarAccess) {
     if ((ASSESSMENT_VIEWS as readonly string[]).includes(v)) views.push(v);
   }
-  if (user.role === "head_of_audit") views.push("settings");
   return views;
 }
