@@ -95,7 +95,7 @@ function daysToClose(o,r){ const c=effectiveClose(o,r); return c?daysBetween(tod
 function closeBucket(d){ if(d==null)return null; if(d<0)return "Overdue"; if(d<=14)return "≤ 2 weeks"; if(d<=30)return "2–4 weeks"; if(d<=90)return "1–3 months"; return "> 3 months"; }
 function isoNow(){ const d=new Date(); return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2); }
 function stampClosed(o,status){ if(status==="Closed"){ if(!o.closedDateISO) o.closedDateISO=isoNow(); } else { o.closedDateISO=""; } }
-let DB = load();
+let DB = { org:"Nigerian Consumer Credit Corporation (CREDICORP)", audits:[] };
 let view = "dashboard";
 let curAudit = null;   // id
 let curReport = null;  // id
@@ -103,14 +103,38 @@ let curObs = null;     // observation id
 let reportObsFilter={crit:"All",status:"All",q:""};
 let curProc = null;    // process review id
 
-function load(){
-  try{
-    const raw = localStorage.getItem("auditBotData");
-    if(raw) return JSON.parse(raw);
-  }catch(e){}
-  return { org:"Nigerian Consumer Credit Corporation (CREDICORP)", audits:[] };
+let _saveTimer = null;
+let _dataReady = false;
+
+function defaultDB(){
+  return { org:"Nigerian Consumer Credit Corporation (CREDICORP)", signOffName:"Awa Michael", signOffTitle:"Head, Internal Audit", audits:[] };
 }
-function save(){ localStorage.setItem("auditBotData", JSON.stringify(DB)); }
+async function loadFromServer(){
+  try{
+    const res = await fetch("/api/data");
+    if(res.ok){
+      const json = await res.json();
+      if(json.data) DB = json.data;
+    }
+  }catch(e){}
+  if(!DB || !Array.isArray(DB.audits)) DB = defaultDB();
+  _dataReady = true;
+}
+function save(){
+  if(!_dataReady) return;
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(()=>{ saveNow().catch(()=>{}); }, 400);
+}
+function saveNow(){
+  return fetch("/api/data", { method:"PUT", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ data: DB }) });
+}
+function canAccessView(v){
+  const u = window.AMS_USER;
+  if(!u) return ["dashboard","audits","tracker","audit","report","observation","newobs","insights","guide"].includes(v);
+  if(["dashboard","audits","tracker","audit","report","observation","newobs","insights","guide"].includes(v)) return true;
+  if(v==="settings") return u.role==="head_of_audit";
+  return (u.sidebarAccess||[]).includes(v);
+}
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 function esc(s){ return (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 function audit(id){ return DB.audits.find(a=>a.id===id); }
@@ -122,6 +146,8 @@ function reportObs(r){ return r.observations; }
 function go(v,opts={}){
   if(v==="newobs"){ modalNewObs(); return; }
   if(v==="insights"){ trackerMode="insights"; v="tracker"; }
+  const gated=["dashboard","audits","tracker","auditra","fraud","process","external","iasa","settings","guide"];
+  if(gated.includes(v) && !canAccessView(v)){ go("dashboard"); return; }
   view=v;
   curProc=null;
   if(opts.audit!==undefined) curAudit=opts.audit;
@@ -132,9 +158,11 @@ function go(v,opts={}){
   render();
 }
 function backBtn(fn){ return `<button class="btn-back" onclick="${fn}" title="Back"><span aria-hidden="true">←</span> Back</button>`; }
+const ICON_TRASH=`<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>`;
 function iconBtn(fn,icon,title,danger){ return `<button type="button" class="btn-icon-action${danger?" danger":""}" title="${esc(title)}" onclick="${fn}">${icon}</button>`; }
+function delBtn(fn,title){ return iconBtn(fn,ICON_TRASH,title||"Delete",true); }
 function pageTitleFor(v){
-  const map={dashboard:"Dashboard",audits:"Audits & Reports",tracker:"Remediation Tracker",auditra:"Audit Risk Assessment",fraud:"Fraud Risk",process:"Process Review",external:"External Findings",iasa:"IA Self-Assessment",guide:"How to use AMS",settings:"Settings & Backup"};
+  const map={dashboard:"Dashboard",audits:"Audits & Reports",tracker:"Remediation Tracker",auditra:"Audit Risk Assessment",fraud:"Fraud Risk",process:"Process Review",external:"External Findings",iasa:"IA Self-Assessment",guide:"How to use AMS",settings:"Settings"};
   return map[v]||"AMS";
 }
 function planYearOptions(selected){
@@ -191,7 +219,7 @@ function backupBanner(){
   if(days!=null && days<7) return "";
   const msg = last? `It's been ${days} day${days!==1?"s":""} since your last backup.` : `You haven't backed up your data yet.`;
   return `<div style="background:#fdf6e3;border-bottom:1px solid #f0d98a;padding:9px 26px;display:flex;align-items:center;gap:12px;font-size:13px;color:#7a5b00">
-    <span>⚠ ${msg} Data lives only in this browser — download a backup to be safe.</span>
+    <span>⚠ ${msg} Download a backup regularly.</span>
     <button class="btn sm" onclick="exportData()">⤓ Download backup now</button>
     <div style="flex:1"></div>
     <button class="btn ghost sm" style="color:#7a5b00" onclick="bannerDismissed=true;document.getElementById('banner').innerHTML='';">Dismiss</button>
@@ -229,7 +257,12 @@ function render(){
   }
   else if(view==="process"){ T.textContent=pageTitleFor("process"); const pp=curProc?procList().find(x=>x.id===curProc):null; A.innerHTML = pp? `<button class="btn sec sm" onclick="curProc=null;render()">← All reviews</button><button class="btn sec sm" onclick="exportProc('${pp.id}')">⤓ Export (Word)</button><button class="btn sm" onclick="modalProcMeta('${pp.id}')">Edit details</button>` : `<button class="btn sm" onclick="modalProcNew()">+ New review</button>`; C.innerHTML=viewProcess(); }
   else if(view==="guide"){ T.textContent=pageTitleFor("guide"); C.innerHTML=viewGuide(); }
-  else if(view==="settings"){ T.textContent=pageTitleFor("settings"); C.innerHTML=viewSettings(); }
+  else if(view==="settings"){
+    if(!canAccessView("settings")){ go("dashboard"); return; }
+    T.textContent=pageTitleFor("settings");
+    A.innerHTML=`<button class="btn sec sm" onclick="exportData()">⤓ Download backup</button><label class="btn sec sm" style="display:inline-block;margin:0">⤒ Import backup<input type="file" accept="application/json" style="display:none" onchange="importData(event)"></label>`;
+    C.innerHTML=viewSettings();
+  }
 }
 
 /* ============================ DASHBOARD ============================ */
@@ -238,11 +271,6 @@ function viewDashboard(){
   const total=obs.length;
   const nAudits=DB.audits.length;
   const nReports=DB.audits.reduce((s,a)=>s+a.reports.length,0);
-  if(total===0 && nAudits===0){
-    return `<div class="card"><div class="empty"><div class="big">▦</div>
-      No data yet. Start by creating an audit, then add reports and observations.<br><br>
-      <button class="btn" onclick="go('audits')">Go to Audits &amp; Reports</button></div></div>`;
-  }
   const HEX={Critical:"#7a0012",High:"#b00020",Moderate:"#e8590c",Low:"#2e7d32","Process Improvement":"#2c5f8a"};
   const STC={Open:"#b00020","In Progress":"#c98a00",Closed:"#2e7d32"};
   const TLC={"Immediate":"#b00020","Short-term":"#c98a00","Long-term":"#2c5f8a"};
@@ -266,8 +294,8 @@ function viewDashboard(){
   const maxCloseB=Math.max(1,...CLOSE_BUCKETS.map(b=>closeB[b]));
   const repeats=obs.filter(o=>o.isRepeat);
   const repeatOpen=repeats.filter(o=>o.status!=="Closed").length;
-  const firstName=(DB.signOffName||"Awa Michael").trim().split(/\s+/)[0]||"there";
-  const roleTitle=DB.signOffTitle||"Head, Internal Audit";
+  const firstName=(window.AMS_USER&&window.AMS_USER.name?window.AMS_USER.name:DB.signOffName||"Awa Michael").trim().split(/\s+/)[0]||"there";
+  const roleTitle=window.AMS_USER&&window.AMS_USER.role==="head_of_audit"?"Head of Audit":(window.AMS_USER&&window.AMS_USER.department?window.AMS_USER.department:(DB.signOffTitle||"Head, Internal Audit"));
 
   return `
   <div class="dash-welcome anim-fade-in">
@@ -294,7 +322,7 @@ function viewDashboard(){
         return `<div class="remed-item ${cls}"><div class="remed-num">${st[s]}</div><div class="remed-lbl">${esc(s)}</div><div class="remed-pct">${total?Math.round(st[s]/total*100):0}% of portfolio</div></div>`;
       }).join("")}
     </div>
-    <div class="miniheat">${Object.keys(st).map(s=>st[s]?`<div style="width:${st[s]/total*100}%;background:${STC[s]}"></div>`:"").join("")}</div>
+    <div class="miniheat">${total?Object.keys(st).map(s=>st[s]?`<div style="width:${st[s]/total*100}%;background:${STC[s]}"></div>`:"").join(""):""}</div>
   </div>
 
   <div class="dash2">
@@ -583,8 +611,7 @@ function exportInsights(){
 function viewAuditRA(){
   const U=auditUniverse();
   if(!U.length){
-    return `<div class="note">The annual <b>audit risk assessment</b> ranks the audit universe by risk to build a risk-based annual audit plan (IIA Standard 2010). Each auditable unit is scored on weighted risk factors; the composite rating drives the recommended <b>audit frequency</b> and whether it enters this year's plan.</div>
-    <div class="card"><div class="empty"><div class="big">◈</div>No auditable units yet.<br><br>
+    return `<div class="card"><div class="empty"><div class="big">◈</div>No auditable units yet.<br><br>
       <button class="btn dark ai-generate-btn" onclick="modalRAPrompt()">Generate audit universe</button> &nbsp; <button class="btn" onclick="modalRA()">+ Add auditable unit</button></div></div>`;
   }
   const py=+planYear();
@@ -606,7 +633,7 @@ function viewAuditRA(){
     ${kpi("good","Plan delivered",pctPlan+"%",doneOcc+" of "+totalOcc+" reviews done")}
   </div>
   <div class="card"><div class="seclabel">Risk-ranked audit universe</div>
-    <table class="ra-universe-table" style="margin-top:6px"><thead><tr><th>Auditable unit</th><th>Category</th><th>Risk score</th><th>Rating</th><th>Last audited</th><th>Frequency</th><th>Due</th><th>In plan</th><th></th></tr></thead><tbody>
+    <table class="ra-universe-table" style="margin-top:6px"><thead><tr><th>Auditable unit</th><th>Category</th><th>Risk score</th><th>Rating</th><th>Last audited</th><th>Frequency</th><th>Due</th><th></th></tr></thead><tbody>
     ${en.map(e=>`<tr>
       <td><b>${esc(e.name)}</b>${e.owner?`<div class="hint">${esc(e.owner)}</div>`:""}</td>
       <td>${esc(e.category||"—")}</td>
@@ -615,8 +642,7 @@ function viewAuditRA(){
       <td style="text-align:center">${esc(e.lastAudited||"—")}</td>
       <td>${esc(e.freq)}</td>
       <td style="text-align:center">${raDueDisplay(e,e.band,e.due)}</td>
-      <td class="ra-inplan-cell" onclick="raToggle('${e.id}')"><input type="checkbox" style="width:auto;pointer-events:none" ${e.incl?"checked":""}></td>
-      <td class="ra-actions-cell">${iconBtn(`modalRA('${e.id}')`,"✎","Edit")}${iconBtn(`delRA('${e.id}')`,"✕","Delete",true)}</td>
+      <td class="ra-actions-cell">${iconBtn(`modalRA('${e.id}')`,"✎","Edit")}${delBtn(`delRA('${e.id}')`)}</td>
     </tr>`).join("")}
     </tbody></table>
     <div class="hint" style="margin-top:8px">Risk score = weighted average of factors (1–5). Frequency: Critical/High = annual · Medium = 2 yrs · Low = 3 yrs. “Due” = last audited + cycle ≤ plan year (or never audited).</div>
@@ -628,7 +654,7 @@ function viewAuditRA(){
         <td>${engStatusCell(e)}</td>
         <td>${auditLinksCell(e)}</td>
         <td class="hint">${esc(e.rationale||(e.due?"Due per "+e.freq.toLowerCase()+" cycle":e.band+" risk"))}</td></tr>`).join("")}
-    </tbody></table>`:`<div class="hint" style="margin:8px 0">No units selected. Tick “In plan” above — high-risk and due units are pre-selected automatically.</div>`}
+    </tbody></table>`:`<div class="hint" style="margin:8px 0">No units in plan for this year.</div>`}
   </div>`;
   return h;
 }
@@ -637,7 +663,7 @@ function auditLinksCell(e){
   const ids=raLinkIds(e);
   const linked=ids.map(id=>DB.audits.find(a=>a.id===id)).filter(Boolean);
   const avail=DB.audits.filter(a=>!ids.includes(a.id));
-  return `${linked.map(a=>`<span class="tag" style="cursor:pointer;margin-bottom:3px;display:inline-block" title="Open audit" onclick="go('audit',{audit:'${a.id}'})">${esc(a.name.length>20?a.name.slice(0,19)+"…":a.name)} <span style="color:var(--crit)" title="Unlink" onclick="event.stopPropagation();raLinkRemove('${e.id}','${a.id}')">✕</span></span>`).join(" ")}${avail.length?`<select class="mini" onchange="raLinkAdd('${e.id}',this.value)"><option value="">${linked.length?"+ link another…":"+ link audit…"}</option>${avail.map(a=>`<option value="${a.id}">${esc(a.name.length>22?a.name.slice(0,21)+"…":a.name)}</option>`).join("")}</select>`:(linked.length?"":`<span class="hint">no audits yet</span>`)}`;
+  return `${linked.map(a=>`<span class="tag" style="cursor:pointer;margin-bottom:3px;display:inline-block" title="Open audit" onclick="go('audit',{audit:'${a.id}'})">${esc(a.name.length>20?a.name.slice(0,19)+"…":a.name)} <span class="tag-unlink" title="Unlink" onclick="event.stopPropagation();raLinkRemove('${e.id}','${a.id}')">${ICON_TRASH}</span></span>`).join(" ")}${avail.length?`<select class="mini" onchange="raLinkAdd('${e.id}',this.value)"><option value="">${linked.length?"+ link another…":"+ link audit…"}</option>${avail.map(a=>`<option value="${a.id}">${esc(a.name.length>22?a.name.slice(0,21)+"…":a.name)}</option>`).join("")}</select>`:(linked.length?"":`<span class="hint">no audits yet</span>`)}`;
 }
 function raLinkAdd(id,aid){ if(!aid)return; const e=auditUniverse().find(x=>x.id===id); if(!e)return; const ids=raLinkIds(e).slice(); if(!ids.includes(aid))ids.push(aid); e.linkedAuditIds=ids; delete e.linkedAuditId; save(); render(); }
 function raLinkRemove(id,aid){ const e=auditUniverse().find(x=>x.id===id); if(!e)return; e.linkedAuditIds=raLinkIds(e).filter(x=>x!==aid); delete e.linkedAuditId; save(); render(); }
@@ -696,7 +722,6 @@ function saveRA(id){
 function delRA(id){ if(!confirm("Delete this auditable unit?"))return; DB.auditUniverse=auditUniverse().filter(x=>x.id!==id); save(); render(); }
 function modalRAPrompt(){
   openModal("Generate audit universe",`
-    <p class="hint">Describe the organisation / list its key departments, processes and functions (and any known risk context). AI will propose the audit universe, score each unit on the risk factors, and recommend an audit frequency.</p>
     <label>Organisation context / areas</label><textarea id="rap_ctx" style="min-height:90px" placeholder="e.g. CREDICORP: Credit Operations, Treasury, Finance, IT, HR, Procurement, Risk & Compliance, Internal Control. New core banking go-live 2026; regulated by CBN."></textarea>
     <div id="raImpErr"></div>`,
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark ai-generate-btn" onclick="generateRAUniverse()">Generate audit universe</button>`);
@@ -775,8 +800,7 @@ function actStatusClass(s){ return s==="Implemented"?"s-Closed":s==="In Progress
 function viewFraud(){
   const F=fraudList(); const plan=DB.fraudPlanNarrative||"";
   if(!F.length){
-    return `<div class="note">A fraud risk assessment is conducted <b>annually</b> to identify, assess and respond to fraud risks across the Corporation — aligned to the <b>ACFE Fraud Tree</b> (asset misappropriation, corruption, financial statement fraud) and <b>COSO fraud risk management</b> principles. Its output drives the <b>Fraud Prevention Plan</b>.</div>
-    <div class="card"><div class="empty"><div class="big">⚠</div>No fraud risks captured yet.<br><br>
+    return `<div class="card"><div class="empty"><div class="big">⚠</div>No fraud risks captured yet.<br><br>
       <button class="btn dark ai-generate-btn" onclick="modalFraudPrompt()">Generate fraud risks</button> &nbsp; <button class="btn" onclick="modalFraud()">+ Add fraud risk manually</button></div></div>`;
   }
   migrateFraudActions();
@@ -808,7 +832,7 @@ function viewFraud(){
       <td>${esc(f.controlStrength||"—")}</td>
       <td><span class="pill" style="background:${hx2rgba(BAND_HEX[f.res],.16)};color:${BAND_HEX[f.res]}">${f.res}</span></td>
       <td>${esc(f.owner||"—")}</td><td>${esc(f.status||"Identified")}</td>
-      <td class="ra-actions-cell">${iconBtn(`modalFraud('${f.id}')`,"✎","Edit")}${iconBtn(`delFraud('${f.id}')`,"✕","Delete",true)}</td>
+      <td class="ra-actions-cell">${iconBtn(`modalFraud('${f.id}')`,"✎","Edit")}${delBtn(`delFraud('${f.id}')`)}</td>
     </tr>`).join("")}
     </tbody></table>
   </div>`;
@@ -820,7 +844,7 @@ function viewFraud(){
     <button class="btn ghost sm" onclick="modalFraudUpdate()">📅 Quarterly update</button>
     <button class="btn ghost sm" onclick="modalFraudPlan()">Edit overview</button></div>
     <div class="hint" style="margin:4px 0 10px">Each fraud risk from the assessment is listed below by residual priority. Add the prevention/response actions that will mitigate it — together they are your fraud prevention plan.</div>
-    ${plan?`<div class="txt" style="white-space:pre-wrap;margin:8px 0;padding:10px 12px;background:#f8fafc;border:1px solid var(--line);border-radius:8px">${esc(plan)}</div>`:`<div class="hint" style="margin:8px 0">Add a plan overview (objective, governance, reporting cadence, training, whistleblowing) — or draft it with me.</div>`}
+    ${plan?`<div class="txt" style="white-space:pre-wrap;margin:8px 0;padding:10px 12px;background:#f8fafc;border:1px solid var(--line);border-radius:8px">${esc(plan)}</div>`:`<div class="hint" style="margin:8px 0">No plan overview yet.</div>`}
     ${en.slice().sort((a,b)=>BANDS.indexOf(b.res)-BANDS.indexOf(a.res)).map(f=>{ const acts=fraudActions(f); return `
       <div class="fraud-plan-card">
         <div class="fraud-plan-head">
@@ -832,7 +856,7 @@ function viewFraud(){
         </div>
         ${acts.length?`<table style="margin-top:8px"><thead><tr><th>Prevention / response action</th><th>Type</th><th>Owner</th><th>Target</th><th>Status</th><th></th></tr></thead><tbody>
           ${acts.map(a=>`<tr><td>${esc(a.text)}${a.update?`<div class="hint">Update: ${esc(a.update)}</div>`:""}</td><td>${esc(a.type||"—")}</td><td>${esc(a.owner||"—")}</td><td>${esc(a.targetDate||"—")}</td><td><span class="${actStatusClass(a.status)}">${esc(a.status||"Planned")}</span></td>
-            <td class="ra-actions-cell">${iconBtn(`modalFraudAction('${f.id}','${a.id}')`,"✎","Edit")}${iconBtn(`delFraudAction('${f.id}','${a.id}')`,"✕","Delete",true)}</td></tr>`).join("")}
+            <td class="ra-actions-cell">${iconBtn(`modalFraudAction('${f.id}','${a.id}')`,"✎","Edit")}${delBtn(`delFraudAction('${f.id}','${a.id}')`)}</td></tr>`).join("")}
         </tbody></table>`:`<div class="hint" style="margin-top:6px">No prevention actions yet — click <b>+ Add action</b>, or use <b>✦ Draft actions</b> above.</div>`}
       </div>`; }).join("")}
   </div>`;
@@ -909,7 +933,7 @@ function saveFraudAction(rid,aid){
 }
 function delFraudAction(rid,aid){ const f=fraudList().find(x=>x.id===rid); if(!f)return; f.actions=(f.actions||[]).filter(x=>x.id!==aid); rollupFraud(f); save(); render(); }
 function modalFraudActionsPrompt(){
-  openModal("Generate prevention actions",`<p class="hint">AI will recommend prevention / response actions for each fraud risk in the register (matched by title).</p><div id="faImpErr"></div>`,
+  openModal("Generate prevention actions",`<div id="faImpErr"></div>`,
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark ai-generate-btn" onclick="generateFraudActions()">Generate actions</button>`);
 }
 function buildFraudActionsPrompt(){
@@ -943,7 +967,6 @@ function doImportFraudActions(raw){
 }
 function modalFraudPrompt(){
   openModal("Generate fraud risks",`
-    <p class="hint">Name a process/department (and any context). AI will return fraud risks — schemes, likelihood/impact, existing-control assessment and prevention actions — per ACFE/COSO best practice.</p>
     <label>Process / Department</label><input id="frp_proc" placeholder="e.g. Credit Operations / Loan disbursement">
     <label>Context (optional)</label><textarea id="frp_ctx" placeholder="e.g. manual disbursement approvals; PFIs onboarded without bureau checks"></textarea>
     <div id="frImpErr" style="margin-top:10px"></div>`,
@@ -994,12 +1017,11 @@ function doImportFraud(raw){
 }
 function modalFraudPlan(){
   openModal("Fraud Prevention Plan — overview",`
-    <p class="hint">The narrative framing of the plan (objective, governance, reporting cadence, training, whistleblowing). The action table is generated from the register.</p>
     <textarea id="fp_plan" style="min-height:220px">${esc(DB.fraudPlanNarrative||"")}</textarea>`,
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="DB.fraudPlanNarrative=val('fp_plan');save();closeModal();render();">Save</button>`);
 }
 function modalFraudPlanPrompt(){
-  openModal("Generate Fraud Prevention Plan overview",`<p class="hint">AI will draft the overview narrative based on fraud risks in the register. You can edit it afterward via <b>Edit overview</b>.</p><div id="fpErr"></div>`,
+  openModal("Generate Fraud Prevention Plan overview",`<div id="fpErr"></div>`,
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark ai-generate-btn" onclick="generateFraudPlanNarrative()">Generate overview</button>`);
 }
 function buildFraudPlanPrompt(){
@@ -1051,7 +1073,6 @@ function modalFraudUpdate(){
   DB.fraudUpdate=DB.fraudUpdate||{period:"",commentary:""}; const u=DB.fraudUpdate;
   if(!fraudList().length){ openModal("Quarterly update",`<p>No fraud risks/plan captured yet. Build the assessment and prevention actions first.</p>`,`<button class="btn sec" onclick="closeModal()">Close</button>`); return; }
   openModal("Quarterly fraud prevention plan update (Board Audit Committee)",`
-    <p class="hint">Set the reporting period and an executive commentary, then export the implementation update for the Board Audit Committee. Per-action progress notes are entered on each action in the plan (Edit action → Progress update).</p>
     <div class="f2">
       <div><label>Reporting period</label><input id="fu_period" value="${esc(u.period||"")}" placeholder="e.g. Q2 2026"></div>
       <div><label>&nbsp;</label><button class="btn sec ai-generate-btn" style="width:100%" onclick="generateFraudUpdateCommentary()">Generate commentary</button></div>
@@ -1100,8 +1121,7 @@ function exportFraudUpdate(){
 function viewProcess(){
   const P=procList();
   if(curProc){ const p=P.find(x=>x.id===curProc); if(p) return procDetail(p); curProc=null; }
-  if(!P.length) return `<div class="note">Paste a <b>Standard Operating Procedure</b> for a business unit and use AI to assess its <b>process effectiveness</b> — identifying <b>control gaps</b>, <b>process gaps</b>, <b>redundant / duplicate tasks</b> and <b>efficiency opportunities</b>, with an overall rating and recommendations. Each finding can be raised as an audit observation.</div>
-    <div class="card"><div class="empty"><div class="big">◫</div>No process reviews yet.<br><br><button class="btn dark" onclick="modalProcNew()">+ New process review</button></div></div>`;
+  if(!P.length) return `<div class="card"><div class="empty"><div class="big">◫</div>No process reviews yet.<br><br><button class="btn dark" onclick="modalProcNew()">+ New process review</button></div></div>`;
   return `<div class="row" style="margin-bottom:14px"><div style="font-size:13px;color:var(--muted)">${P.length} process review(s)</div></div>`+
     P.slice().reverse().map(p=>{ const f=p.findings||[]; const counts={}; PROC_CATS.forEach(([c])=>counts[c]=f.filter(x=>x.category===c).length); const rh=PROC_RATING_HEX[p.overallRating]||"#64748b";
       return `<div class="listcard" onclick="curProc='${p.id}';render()">
@@ -1138,9 +1158,9 @@ function procFindingCard(p,x){
     ${x.detail?`<p class="proc-finding-text">${esc(x.detail)}</p>`:""}
     ${x.recommendation?`<div class="proc-finding-rec"><span class="proc-finding-rec-label">Recommendation</span><p class="proc-finding-text">${esc(x.recommendation)}</p></div>`:""}
     <div class="proc-finding-actions">
-      <button class="btn ghost sm" type="button" onclick="modalProcFinding('${p.id}','${x.id}')">Edit</button>
-      ${cat!=="Strength"?`<button class="btn ghost sm" type="button" onclick="raiseProcFinding('${p.id}','${x.id}')">Raise observation</button>`:""}
-      ${iconBtn(`modalDelProcFinding('${p.id}','${x.id}')`,"✕","Delete",true)}
+      <button class="btn sm" type="button" onclick="modalProcFinding('${p.id}','${x.id}')">Edit</button>
+      ${cat!=="Strength"?`<button class="btn sm" type="button" onclick="raiseProcFinding('${p.id}','${x.id}')">Raise observation</button>`:""}
+      ${delBtn(`modalDelProcFinding('${p.id}','${x.id}')`)}
     </div>
   </article>`;
 }
@@ -1170,14 +1190,13 @@ function procDetail(p){
     ${p.proposedSummary?`<div class="txt" style="white-space:pre-wrap;margin:8px 0">${esc(p.proposedSummary)}</div>`:""}
     ${ps.length?`<div style="overflow:auto;margin-top:10px;border:1px solid var(--line);border-radius:10px;padding:14px;background:#fafbfc">${flowchartSVG(ps)}</div>
       <div class="seclabel" style="margin-top:14px">Process steps</div>
-      <div>${ps.map((s,i)=>{ const c=procStepHex(s.type); return `<div class="row" style="align-items:center;gap:8px;border-top:1px solid var(--line);padding:7px 0"><span class="hint" style="width:20px;text-align:right">${i+1}</span><span class="pill" style="background:${hx2rgba(c,.16)};color:${c}">${esc(s.type)}</span><div style="flex:1">${s.actor?`<b>${esc(s.actor)}:</b> `:""}${esc(s.action)}${s.note?`<span class="hint"> — ${esc(s.note)}</span>`:""}</div><button class="btn ghost sm" onclick="modalProcStep('${p.id}','${s.id}')">Edit</button><button class="btn ghost sm" style="color:var(--crit)" onclick="delProcStep('${p.id}','${s.id}')">✕</button></div>`; }).join("")}</div>`
+      <div>${ps.map((s,i)=>{ const c=procStepHex(s.type); return `<div class="row" style="align-items:center;gap:8px;border-top:1px solid var(--line);padding:7px 0"><span class="hint" style="width:20px;text-align:right">${i+1}</span><span class="pill" style="background:${hx2rgba(c,.16)};color:${c}">${esc(s.type)}</span><div style="flex:1">${s.actor?`<b>${esc(s.actor)}:</b> `:""}${esc(s.action)}${s.note?`<span class="hint"> — ${esc(s.note)}</span>`:""}</div><button class="btn ghost sm" onclick="modalProcStep('${p.id}','${s.id}')">Edit</button>${delBtn(`delProcStep('${p.id}','${s.id}')`)}</div>`; }).join("")}</div>`
       : (p.proposedSummary?"":`<div class="hint" style="margin:8px 0">Resolve the findings into a redesigned, controlled, efficient process — with a flowchart. Click <b>✦ Generate</b>.</div>`)}
   </div>`;
   return h;
 }
 function modalProcNew(){
   openModal("New process review",`
-    <p class="hint">Enter the unit and paste the SOP text. AI will assess process effectiveness and return findings you can edit.</p>
     <div class="f3">
       <div><label>Business unit *</label><input id="pc_unit" placeholder="e.g. Credit Operations"></div>
       <div><label>SOP title</label><input id="pc_sop" placeholder="e.g. Loan Disbursement SOP v2"></div>
@@ -1271,8 +1290,7 @@ function raiseProcFinding(pid,fid){
   const opts=reports.map(({a,r})=>`<option value="${r.id}">${esc(a.name)} → ${esc(r.title)}</option>`).join("");
   openModal("Raise finding as observation",`
     <div class="note"><b>${esc(x.title)}</b> · ${esc(x.category)}${x.severity?" · "+esc(x.severity):""}</div>
-    <label>Target report</label><select id="rpf_rep">${opts}</select>
-    <div class="hint" style="margin-top:8px">Creates an observation pre-filled from this finding (severity maps to criticality). Refine it in the report afterwards.</div>`,
+    <label>Target report</label><select id="rpf_rep">${opts}</select>`,
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark" onclick="doRaiseProcFinding('${pid}','${fid}')">Add to report</button>`);
 }
 function doRaiseProcFinding(pid,fid){
@@ -1327,7 +1345,6 @@ function downloadFlowchart(pid){ const p=procList().find(x=>x.id===pid); if(!p||
 function modalProposeProcess(pid){
   const p=procList().find(x=>x.id===pid); if(!p)return;
   openModal("Generate proposed updated process",`
-    <p class="hint">AI will redesign the process to resolve the flagged findings — producing a proposed updated process plus a flowchart. Optionally paste the original SOP for closer rewriting.</p>
     <label>Original SOP text <span class="hint">(optional)</span> <label class="btn sec sm" style="display:inline-block;margin:0">load .txt<input type="file" accept=".txt,text/plain" style="display:none" onchange="loadCsvInto(event,'pp_sop')"></label></label>
     <textarea id="pp_sop" style="min-height:80px" placeholder="(optional) paste the SOP for closer rewriting..."></textarea>
     <div id="ppErr" style="margin-top:10px"></div>`,
@@ -1521,7 +1538,7 @@ function iasaAssessment(){
 }
 function iasaInsights(){
   const st=iasaStats(); const stds=allStandards(); const op=overallOpinion(); const eq=eqaDue();
-  if(!st.rated) return `<div class="card"><div class="empty"><div class="big">⚖</div>No standards rated yet. Rate the 52 standards on the <b>Assessment</b> tab (or generate with AI), and this tab surfaces the conformance heat map, gap themes, the remediation roadmap and EQA readiness.</div></div>`;
+  if(!st.rated) return `<div class="card"><div class="empty"><div class="big">⚖</div>No standards rated yet. Rate the 52 standards on the <b>Assessment</b> tab.</div></div>`;
   const gaps=stds.filter(s=>["Partially Conforms","Does Not Conform"].includes(stdConf(s.num)))
     .map(s=>({...s,c:stdConf(s.num),it:stdItem(s.num)}))
     .sort((a,b)=>(a.c==="Does Not Conform"?0:1)-(b.c==="Does Not Conform"?0:1));
@@ -1595,7 +1612,6 @@ function modalPrinc(n){
 function savePrinc(n){ const s=iaSA(); s.items[n]=s.items[n]||{}; s.items[n].maturity=+val("pr_mat")||0; s.items[n].notes=val("pr_notes"); s.items[n].action=val("pr_action"); save(); closeModal(); render(); }
 function modalIASAPrompt(){
   openModal("Generate IA self-assessment",`
-    <p class="hint">Describe your Internal Audit function (size, charter status, reporting line, methodology, QA/EQA history, recent achievements and gaps). AI will assess conformance against each of the <b>15 principles</b> in the IIA Global Internal Audit Standards.</p>
     <label>Context about the IA function</label><textarea id="iap_ctx" style="min-height:120px" placeholder="e.g. one-person in-house function (Head of Internal Audit); board-approved IA charter; functionally reports to the Board Audit Committee, administratively to the MD/CEO; risk-based annual plan approved; uses IIA methodology; whistleblowing programme; no external quality assessment yet; recruitment of 2 staff underway; ..."></textarea>
     <div id="iapErr" style="margin-top:10px"></div>`,
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark ai-generate-btn" onclick="generateIASA()">Generate assessment</button>`);
@@ -1625,7 +1641,7 @@ function doImportIASA(raw){
   save(); closeModal(); render(); return true;
 }
 function modalIASACommentary(){
-  openModal("Generate overall conclusion",`<p class="hint">AI will draft a concise overall conclusion based on your self-assessment results.</p><div id="iacErr"></div>`,
+  openModal("Generate overall conclusion",`<div id="iacErr"></div>`,
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark ai-generate-btn" onclick="generateIASACommentary()">Generate conclusion</button>`);
 }
 function buildIASACommentaryPrompt(){
@@ -1667,8 +1683,7 @@ function extOverdue(f){ if(f.status==="Closed")return false; const d=looseDate(f
 function viewExternal(){
   const F=extList();
   if(!F.length){
-    return `<div class="note">Track findings raised by external and regulatory auditors (statutory, CBN, ICPC, ISO, NDPC, AML/CFT, tax, donor) — import them, monitor closure, and surface the <b>recurring areas of concern</b> and insights for the Board Audit Committee.</div>
-      <div class="card"><div class="empty"><div class="big">❖</div>No external findings yet.<br><br><button class="btn dark" onclick="modalExtImport()">⤒ Import findings</button> &nbsp; <button class="btn" onclick="modalExt()">+ Add finding</button></div></div>`;
+    return `<div class="card"><div class="empty"><div class="big">❖</div>No external findings yet.<br><br><button class="btn dark" onclick="modalExtImport()">⤒ Import findings</button> &nbsp; <button class="btn" onclick="modalExt()">+ Add finding</button></div></div>`;
   }
   return `<div class="row" style="margin-bottom:14px"><div class="row" style="gap:6px">
     <button class="btn ${extMode==="register"?"":"sec"} sm" onclick="extMode='register';render()">Register</button>
@@ -1721,7 +1736,7 @@ function extListBody(){
       <td>${esc(f.owner||"—")}</td>
       <td>${esc(f.targetDate||"—")}${od?` <span class="pill c-Critical">overdue</span>`:""}</td>
       <td onclick="event.stopPropagation()"><select class="status-select status-${stCls}" onchange="extSetStatus('${f.id}',this.value);this.className='status-select status-'+(this.value==='Closed'?'closed':this.value==='In Progress'?'progress':'open')">${STATUSES.map(s=>`<option value="${esc(s)}"${st===s?" selected":""}>${esc(s)}</option>`).join("")}</select></td>
-      <td class="ra-actions-cell" onclick="event.stopPropagation()">${iconBtn(`modalExt('${f.id}')`,"✎","Edit")}${iconBtn(`modalDelExt('${f.id}')`,"✕","Delete",true)}</td>
+      <td class="ra-actions-cell" onclick="event.stopPropagation()">${iconBtn(`modalExt('${f.id}')`,"✎","Edit")}${delBtn(`modalDelExt('${f.id}')`)}</td>
     </tr>`; }).join("")}
   </tbody></table></div>`;
 }
@@ -1856,14 +1871,12 @@ function saveExt(id){
 function delExt(id){ DB.extFindings=extList().filter(x=>x.id!==id); save(); closeModal(); render(); }
 function modalExtImport(){
   openModal("Import external findings",`
-    <p class="hint"><b>A · From a management letter (AI).</b> Choose the source, paste the report text, and click Generate to extract structured findings.</p>
     <div class="f2"><div><label>Source</label><select id="xi_src">${EXT_SOURCES.map(s=>`<option>${s}</option>`).join("")}</select></div>
     <div><label>Source report / ref</label><input id="xi_sref" placeholder="e.g. 2024 Statutory Mgmt Letter"></div></div>
     <label>Report text</label><textarea id="xi_text" style="min-height:90px" placeholder="Paste the external/regulatory audit findings text…"></textarea>
     <div id="xi_err" style="margin-top:10px"></div>
     <div class="row" style="margin-top:10px"><button class="btn dark ai-generate-btn sm" onclick="generateExtFindings()">Generate findings</button></div>
     <hr style="margin:14px 0;border:none;border-top:1px solid var(--line)">
-    <p class="hint"><b>B · From a spreadsheet (CSV).</b> Download the template, fill one finding per row, then paste or upload.</p>
     <div class="row"><button class="btn sec sm" onclick="downloadExtTemplate()">⤓ CSV template</button>
       <label class="btn sec sm" style="display:inline-block;margin:0">⤒ Load CSV<input type="file" accept=".csv,text/csv" style="display:none" onchange="loadCsvInto(event,'xi_csv')"></label></div>
     <textarea id="xi_csv" style="min-height:90px;font-family:Consolas,monospace;font-size:12px;margin-top:8px" placeholder="Source,SourceRef,Year,Ref,Title,…"></textarea>
@@ -1926,7 +1939,6 @@ function doImportExtCSV(){
 }
 function modalExtCommentary(){
   openModal("External findings — insight commentary",`
-    <p class="hint">A strategic narrative on recurring external concerns for the Board Audit Committee.</p>
     <textarea id="xc_text" style="min-height:150px">${esc(DB.extCommentary||"")}</textarea>
     <div id="xc_err" style="margin-top:10px"></div>`,
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn sec ai-generate-btn" onclick="generateExtCommentary()">Generate</button><button class="btn" onclick="DB.extCommentary=val('xc_text');save();closeModal();render();">Save</button>`);
@@ -1970,7 +1982,7 @@ function exportExternal(){
 /* ============================ AUDITS LIST ============================ */
 const AUDIT_STATUS=["Planned","In progress","Completed","On hold"];
 const AUDIT_STATUS_HEX={"Planned":"#64748b","In progress":"#c9a300","Completed":"#2e7d32","On hold":"#b00020"};
-let auditFilter={q:"",status:"All",period:"All",group:true};
+let auditFilter={q:"",status:"All",period:"All"};
 function periodKey(p){ p=p||""; const ym=p.match(/(20\d{2})/); const qm=p.match(/Q\s*([1-4])/i); return (ym?+ym[1]:0)*10+(qm?+qm[1]:0); }
 function auditCard(a){
   const obs=a.reports.flatMap(r=>r.observations); const c=zc(); obs.forEach(o=>c[o.criticality]++);
@@ -2056,12 +2068,7 @@ function auditListHTML(){
   const q=(auditFilter.q||"").toLowerCase().trim();
   const list=DB.audits.filter(a=>auditMatches(a,q));
   if(!list.length) return `<div class="card"><div class="empty">No audits match the current filter.</div></div>`;
-  if(!auditFilter.group) return `<div class="entity-card-grid">${list.slice().sort((a,b)=>periodKey(b.period)-periodKey(a.period)||a.name.localeCompare(b.name)).map(auditCard).join("")}</div>`;
-  const groups={}; list.forEach(a=>{ const k=a.period||"— Unscheduled —"; (groups[k]=groups[k]||[]).push(a); });
-  const keys=Object.keys(groups).sort((x,y)=>{ if(x==="— Unscheduled —")return 1; if(y==="— Unscheduled —")return -1; return periodKey(y)-periodKey(x)||x.localeCompare(y); });
-  return keys.map(k=>{ const items=groups[k].sort((a,b)=>a.name.localeCompare(b.name));
-    return `<div class="audit-group"><div class="audit-group-label">${esc(k)} <span class="audit-group-count">· ${items.length} audit${items.length!==1?"s":""}</span></div><div class="entity-card-grid">${items.map(auditCard).join("")}</div></div>`;
-  }).join("");
+  return `<div class="entity-card-grid">${list.slice().sort((a,b)=>periodKey(b.period)-periodKey(a.period)||a.name.localeCompare(b.name)).map(auditCard).join("")}</div>`;
 }
 function refreshAuditList(){
   const el=document.getElementById("auditList"); if(el) el.innerHTML=auditListHTML();
@@ -2080,8 +2087,7 @@ function viewAudits(){
       <select class="field-select field-select-sm" onchange="auditFilter.period=this.value;refreshAuditList()"><option value="All"${auditFilter.period==="All"?" selected":""}>All quarters</option>${periods.map(p=>`<option value="${esc(p)}"${auditFilter.period===p?" selected":""}>${esc(p)}</option>`).join("")}</select></div>
     <div class="filter-group"><span class="filter-label">Status</span>
       <select class="field-select field-select-sm" onchange="auditFilter.status=this.value;refreshAuditList()">${["All",...AUDIT_STATUS].map(s=>`<option value="${esc(s)}"${auditFilter.status===s?" selected":""}>${esc(s)}</option>`).join("")}</select></div>
-    <label class="filter-check"><input type="checkbox" ${auditFilter.group?"checked":""} onchange="auditFilter.group=this.checked;refreshAuditList()"> Group by quarter</label>
-    <button class="btn ghost sm" onclick="auditFilter={q:'',status:'All',period:'All',group:auditFilter.group};render()">Clear</button>
+    <button class="btn ghost sm" onclick="auditFilter={q:'',status:'All',period:'All'};render()">Clear</button>
   </div>
   <div id="auditList">${auditListHTML()}</div>`;
 }
@@ -2134,8 +2140,7 @@ function planCard(a){
 function planHTML(a){
   const p=a.plan;
   if(!p||(!p.scope && !(p.tests||[]).length && !(p.objectives||[]).length && !(p.keyRisks||[]).length)){
-    return `<div class="empty" style="padding:24px 10px"><div class="big">✦</div>
-      No audit plan yet.<br>Click <b>Generate audit plan</b> to get a recommended scope and test programme from AI.</div>`;
+    return `<div class="empty" style="padding:24px 10px"><div class="big">✦</div>No audit plan yet.</div>`;
   }
   let h="";
   if(p.scope) h+=`<div class="obs-field"><div class="ttl">Scope</div><div class="txt">${esc(p.scope)}</div></div>`;
@@ -2155,7 +2160,7 @@ function planHTML(a){
       <td>${esc(t.objective||"")}</td>
       <td>${esc(t.controlTested||"")}${(t.population||t.sampleBasis)?`<div class="hint">${esc(t.population||"")}${t.population&&t.sampleBasis?" · ":""}${esc(t.sampleBasis||"")}</div>`:""}</td>
       <td>${resultPill(t.result)}${t.evidenceRef?`<div class="hint">WP: ${esc(t.evidenceRef)}</div>`:""}${t.testedBy?`<div class="hint">${esc(t.testedBy)}${t.testedDate?" · "+esc(t.testedDate):""}</div>`:""}</td>
-      <td style="white-space:nowrap">${isExc?`<button class="btn sm" style="background:var(--crit);display:block;margin-bottom:5px" onclick="modalRaiseException('${a.id}','${t.id}')">⚑ Raise</button>`:""}<button class="btn ghost sm" onclick="modalTest('${a.id}','${t.id}')">Edit</button><button class="btn ghost sm" style="color:var(--crit)" onclick="delTest('${a.id}','${t.id}')">✕</button></td>
+      <td style="white-space:nowrap">${isExc?`<button class="btn sm" style="background:var(--crit);display:block;margin-bottom:5px" onclick="modalRaiseException('${a.id}','${t.id}')">⚑ Raise</button>`:""}<button class="btn ghost sm" onclick="modalTest('${a.id}','${t.id}')">Edit</button>${delBtn(`delTest('${a.id}','${t.id}')`)}</td>
     </tr>`;}).join("");
     h+=`</tbody></table>`;
   } else { h+=`<div class="hint" style="margin-top:6px">No tests yet.</div>`; }
@@ -2164,7 +2169,6 @@ function planHTML(a){
 function modalPlanPrompt(aid){
   const a=audit(aid);
   openModal("Generate audit plan",`
-    <p class="hint">Uses the audit's details to generate a recommended scope and test programme. Add any extra context to sharpen it.</p>
     <label>Additional context (optional)</label>
     <textarea id="pl_ctx" placeholder="e.g. New loan management system went live Jan 2026; prior audit flagged weak collateral records."></textarea>
     <div id="planImpErr" style="margin-top:10px"></div>`,
@@ -2420,8 +2424,7 @@ function renderReport(C,T,A){
     </div>`:""}
   `;
   if(!r.observations.length){
-    html+=`<div class="empty"><div class="big">✎</div>No observations yet.<br>
-      Use <b>Generate observation</b> to draft one with AI, or <b>Add observation</b> to type it manually.</div>`;
+    html+=`<div class="empty"><div class="big">✎</div>No observations yet.</div>`;
   }else if(!filteredObs.length){
     html+=`<div class="empty">No observations match the current filter.</div>`;
   }else{
@@ -2432,7 +2435,7 @@ function renderReport(C,T,A){
   const sopObs=obs.filter(o=>(o.sopUpdate||"").trim());
   const sopMissing=obs.filter(o=>!(o.sopUpdate||"").trim()).length;
   html+=`<div class="card"><div class="row"><h3 style="margin:0">Proposed SOP updates (${sopObs.length})</h3><div class="spacer"></div>${obs.length?`<button class="btn sec sm ai-generate-btn" onclick="modalSopBulk('${a.id}','${r.id}')">Generate${sopMissing?" missing ("+sopMissing+")":""}</button>`:""}${sopObs.length?`<button class="btn sec sm" onclick="exportSopUpdates('${a.id}','${r.id}')">⤓ Export change-list (Word)</button>`:""}</div>`;
-  if(!sopObs.length){ html+=`<div class="hint" style="margin-top:8px">No proposed SOP updates yet. Add a <b>Proposed SOP update</b> to an observation and it rolls up here as a consolidated change-list for process owners.</div>`; }
+  if(!sopObs.length){ html+=`<div class="hint" style="margin-top:8px">No proposed SOP updates yet.</div>`; }
   else { html+=`<p class="hint" style="margin:2px 0 0">Consolidated procedure revisions arising from this report's observations.</p>`+sopObs.map(o=>`<div class="sop-card">
     <div class="row" style="align-items:center;gap:8px"><span class="pill c-${ck(o.criticality)}">${o.criticality}</span><b>${esc(o.ref?o.ref+" — ":"")}${esc(o.title)}</b></div>
     <div class="obs-field"><div class="ttl">Proposed SOP update</div><div class="txt">${esc(o.sopUpdate)}</div></div>
@@ -2495,7 +2498,6 @@ function modalSopBulk(aid,rid){
   const a=audit(aid), r=report(a,rid);
   const targets=r.observations.filter(o=>!(o.sopUpdate||"").trim());
   openModal("Generate proposed SOP updates",`
-    <p class="hint">Generates proposed SOP updates for observations that don't yet have one (${targets.length} of ${r.observations.length}).</p>
     <label style="display:flex;align-items:center;gap:8px;font-weight:400;color:#475569"><input type="checkbox" id="sb_all" style="width:auto"> Include observations that already have a proposed SOP update</label>
     <div id="sbErr" style="margin-top:10px"></div>`,
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark ai-generate-btn" onclick="generateSopBulk('${aid}','${rid}')">Generate SOP updates</button>`);
@@ -2542,7 +2544,7 @@ function execSummaryHTML(r){
   h+=sumSection("1.4 Internal audit opinion"+(r.assuranceLevel?` <span class="tag">${esc(r.assuranceLevel)}</span>`:""), txt(r.auditOpinion));
   h+=sumSection("1.5 Conclusion", txt(r.conclusion));
   if(!(r.objective||r.scope||r.outOfScope||r.strengths||r.areasForImprovement||r.auditOpinion||r.conclusion)){
-    h+=`<div class="hint">No executive-summary narrative yet. Click <b>Generate exec summary</b> to draft it from your findings.</div>`;
+    h+=`<div class="hint">No executive-summary narrative yet.</div>`;
   }
   return h;
 }
@@ -2607,10 +2609,8 @@ function field(t,v){ if(!v)return""; return `<div class="obs-field"><div class="
 function viewNewObs(){
   const opts=DB.audits.map(a=>`<optgroup label="${esc(a.name)}">`+a.reports.map(r=>`<option value="${a.id}|${r.id}">${esc(a.name)} → ${esc(r.title)}</option>`).join("")+`</optgroup>`).join("");
   return `
-  <div class="note">Create an observation from a one-liner with AI, or import past observations from CSV.</div>
   <div class="card">
     <h3>Generate observation</h3>
-    <p class="hint">Enter your one-liner and target report — AI will draft a full observation with description, impact/risk, root cause, recommendation and criticality.</p>
     <label>Your one-liner observation</label>
     <input id="ol" placeholder="e.g. Loan disbursements approved without evidence of credit committee sign-off">
     <div class="f2">
@@ -2624,8 +2624,7 @@ function viewNewObs(){
     <div class="row" style="margin-top:14px">${DB.audits.some(a=>a.reports.length)?`<button class="btn dark ai-generate-btn" onclick="generateObsFromPicker()">Generate observation</button>`:""}</div>
   </div>
   <div class="card">
-    <h3>C · Bulk import legacy observations (CSV)</h3>
-    <p class="hint">Have past observations in a spreadsheet? Download the template, fill one observation per row — including the <b>Audit</b> and <b>Report</b> each belongs to — then paste it back or upload the file. Audits and reports that don't exist yet are created automatically.</p>
+    <h3>Bulk import legacy observations (CSV)</h3>
     <div class="row"><button class="btn sec" onclick="downloadObsTemplate()">⤓ Download CSV template</button>
       <label class="btn sec" style="display:inline-block;margin:0">⤒ Load CSV file<input type="file" accept=".csv,text/csv" style="display:none" onchange="loadCsvFile(event)"></label></div>
     <label style="margin-top:12px">Or paste CSV here</label>
@@ -2755,63 +2754,137 @@ function viewGuide(){
   <div class="card"><h3>The 4-step loop</h3>
     <ol style="line-height:1.9;padding-left:18px">
       <li><b>Set up structure once.</b> In <b>Audits &amp; Reports</b>, create an audit (by process or department). Add one or more reports under it.</li>
-      <li><b>Plan the audit.</b> Open the audit and click <b>Generate audit plan</b> to get a recommended scope, objectives, key risks and a full test programme you can edit and export to Word.</li>
-      <li><b>Generate observations.</b> On the <b>Dashboard</b>, click <b>+ New Observation</b>, enter your one-liner, choose a report, and click <b>Generate observation</b>. AI returns a structured observation with description, impact/risk, root cause, recommendation and criticality.</li>
-      <li><b>Review &amp; edit.</b> Observations are added automatically. Edit anything you like — criticality, owner, management response, proposed SOP updates.</li>
+      <li><b>Plan the audit.</b> Open the audit and build a scope, objectives, key risks and test programme you can edit and export to Word.</li>
+      <li><b>Add observations.</b> On the <b>Dashboard</b>, click <b>+ New Observation</b>, or add them directly from a report.</li>
+      <li><b>Review &amp; edit.</b> Edit criticality, owner, management response, proposed SOP updates, and closure details as needed.</li>
       <li><b>Report &amp; brief.</b> Each report builds an <b>Executive Summary</b>; the <b>CAE/MD Dashboard</b> rolls everything up. Export any report or the whole audit to <b>Word</b>.</li>
     </ol>
   </div>
   <div class="card"><h3>Putting a report on your CREDICORP letterhead</h3>
-    <p class="hint">The Word export already contains the full structure — cover details, executive summary (1.1–1.5), the detailed-findings table, and the Risk Classification Guide. To land it on your official letterhead (logo, headers/footers, Table of Contents):</p>
     <ol style="line-height:1.9;padding-left:18px">
       <li>Open your master template (e.g. <i>INTERNAL AUDIT REPORT - CREDIT PORTFOLIO.docx</i>) and <b>Save As</b> a new file name.</li>
       <li>Delete the old body <b>below the cover page and Table of Contents</b> — keep the cover, the TOC, and the headers/footers (those carry the logo).</li>
       <li>In a report here, click <b>⤓ Export report (Word)</b>, open it, <b>select all → copy</b>, and <b>paste</b> into your template under the TOC. Headings, colour-coded ratings and the findings table come across.</li>
       <li>Click the Table of Contents → press <b>F9</b> → <b>Update entire table</b>. Done.</li>
     </ol>
-    <div class="hint">Set the report author for the sign-off in <b>Settings</b>. Fill the cover date, distribution list and the 1.1–1.5 narrative via <b>Edit</b> / <b>Generate exec summary</b> on the report.</div>
   </div>
   <div class="card"><h3>Criticality rubric (Risk Classification Guide)</h3>
     ${CRITS.map(c=>`<div class="kv"><b><span class="pill c-${ck(c)}">${c}</span></b> ${esc(RUBRIC[c])}</div>`).join("")}
-    <div class="hint" style="margin-top:8px">AI recommends a rating; you always have the final say and can change it when editing an observation.</div>
-  </div>
-  <div class="card"><h3>AI generation</h3>
-    <p class="hint">Most workflows in AMS use one-click <b>Generate</b> buttons. AI runs server-side via Gemini — set <code>GEMINI_API_KEY</code> in <code>.env</code> and restart the dev server. CSV bulk import and backup restore work without AI.</p>
   </div>`;
 }
 
-/* ============================ SETTINGS ============================ */
+/* ============================ SETTINGS & USER ACCESS ============================ */
+const ASSESSMENT_NAV=[
+  ["auditra","Audit Risk Assessment"],
+  ["fraud","Fraud Risk"],
+  ["process","Process Review"],
+  ["external","External Findings"],
+  ["iasa","IA Self-Assessment"]
+];
+function roleLabel(r){ return r==="head_of_audit"?"Head of Audit":"Audit Staff"; }
 function viewSettings(){
+  const isHead=window.AMS_USER&&window.AMS_USER.role==="head_of_audit";
   return `
-  <div class="card"><h3>Organisation &amp; report sign-off</h3>
-    <label>Organisation name (shown on reports)</label>
-    <input id="setOrg" value="${esc(DB.org)}">
-    <div class="f2">
-      <div><label>Report author name (sign-off)</label><input id="setName" value="${esc(DB.signOffName||"Awa Michael")}"></div>
-      <div><label>Author title</label><input id="setTitle" value="${esc(DB.signOffTitle||"Head, Internal Audit")}"></div>
-    </div>
-    <div class="row" style="margin-top:12px"><button class="btn" onclick="DB.org=val('setOrg');DB.signOffName=val('setName');DB.signOffTitle=val('setTitle');save();render();">Save</button></div>
-  </div>
-  <div class="card"><h3>Branding</h3>
-    <div class="row" style="align-items:center;gap:14px">
-      ${logoSrc()?`<img src="${logoSrc()}" style="max-height:56px;max-width:170px;border:1px solid var(--line);border-radius:8px;padding:5px;background:#fff">`:`<div class="hint">No logo set.</div>`}
-      <label class="btn sec" style="display:inline-block;margin:0">⤒ Upload logo<input type="file" accept="image/*" style="display:none" onchange="uploadLogo(event)"></label>
-      ${DB.logo?`<button class="btn sec sm" onclick="DB.logo='';save();render();">Reset to default</button>`:""}
-    </div>
-    <p class="hint" style="margin-top:8px">The logo appears in the sidebar and at the top of every Word export. PNG or JPG; a small/transparent logo works best. Stored in your browser with the rest of your data.</p>
-  </div>
   <div class="card"><h3>Backup &amp; restore</h3>
-    <p class="hint">Your data lives only in this browser. Download a backup regularly, especially before clearing browser data or moving to another PC.<br>Last backup: <b>${DB.lastBackup?esc(fmtDate(isoToDate(DB.lastBackup))):"never"}</b>.</p>
+    <p class="hint">Last backup: <b>${DB.lastBackup?esc(fmtDate(isoToDate(DB.lastBackup))):"never"}</b></p>
     <div class="row">
-      <button class="btn sec" onclick="exportData()">⤓ Download backup (.json)</button>
-      <label class="btn sec" style="display:inline-block;margin:0">⤒ Restore / import<input type="file" accept="application/json" style="display:none" onchange="importData(event)"></label>
+      <button class="btn" onclick="exportData()">⤓ Download backup (.json)</button>
+      <label class="btn sec" style="display:inline-block;margin:0">⤒ Import backup<input type="file" accept="application/json" style="display:none" onchange="importData(event)"></label>
     </div>
-    <p class="hint" style="margin-top:8px">Import accepts a full backup <b>or</b> a single-audit file (from an audit's “Share data (JSON)”). You'll be shown what's inside and can <b>Merge</b> it into your data (nothing of yours is deleted) or <b>Replace all</b>. Good for handing a colleague an audit, or consolidating their work into yours.</p>
   </div>
-  <div class="card"><h3>Danger zone</h3>
-    <p class="hint">Clears <b>everything</b> — audits, reports, observations, audit universe, fraud risks &amp; plan, and process reviews. Your organisation name and report author are kept. Download a backup first if unsure.</p>
-    <button class="btn danger" onclick="resetAllData()">Reset all data</button>
-  </div>`;
+  ${isHead?`<div class="card"><div class="row"><h3 style="margin:0">User access management</h3><div class="spacer"></div><button class="btn sm" onclick="modalUser()">+ Add user</button></div>
+    <div id="usersTableWrap" style="margin-top:12px">${usersTableHTML()}</div>
+  </div>`:""}`;
+}
+let _usersCache=[];
+async function refreshUsersTable(){
+  try{
+    const res=await fetch("/api/users");
+    if(!res.ok) return;
+    const json=await res.json();
+    _usersCache=json.users||[];
+    const el=document.getElementById("usersTableWrap");
+    if(el) el.innerHTML=usersTableHTML();
+  }catch(e){}
+}
+function usersTableHTML(){
+  if(!_usersCache.length) return `<div class="empty">No users yet.</div>`;
+  return `<table><thead><tr><th>Name</th><th>Department</th><th>Email</th><th>Role</th><th>Sidebar access</th><th></th></tr></thead><tbody>
+    ${_usersCache.map(u=>`<tr>
+      <td><b>${esc(u.name)}</b></td>
+      <td>${esc(u.department||"—")}</td>
+      <td>${esc(u.email)}</td>
+      <td>${esc(roleLabel(u.role))}</td>
+      <td class="hint">${u.role==="head_of_audit"?"All sections + Settings":((u.sidebarAccess||[]).length?(u.sidebarAccess||[]).map(id=>esc((ASSESSMENT_NAV.find(x=>x[0]===id)||[id,id])[1])).join(", "):"Main only")}</td>
+      <td class="ra-actions-cell">${iconBtn(`modalUser('${u.id}')`,"✎","Edit")}${window.AMS_USER&&window.AMS_USER.id!==u.id?delBtn(`deleteUser('${u.id}')`):""}</td>
+    </tr>`).join("")}
+  </tbody></table>`;
+}
+function sidebarAccessChecks(selected,disabled){
+  return ASSESSMENT_NAV.map(([id,label])=>`<label class="filter-check" style="display:block;margin:4px 0"><input type="checkbox" name="ua_view" value="${id}" style="width:auto"${disabled?" disabled":""}${(selected||[]).includes(id)?" checked":""}> ${esc(label)}</label>`).join("");
+}
+function modalUser(id){
+  const u=id?_usersCache.find(x=>x.id===id):null;
+  const isEdit=!!u;
+  const isHeadRole=u&&u.role==="head_of_audit";
+  openModal(isEdit?"Edit user":"Add user",`
+    <div class="f2">
+      <div><label>Name *</label><input id="ua_name" value="${esc(u?u.name:"")}"></div>
+      <div><label>Department</label><input id="ua_dept" value="${esc(u?u.department:"")}"></div>
+    </div>
+    <div class="f2">
+      <div><label>Email *</label><input id="ua_email" type="email" value="${esc(u?u.email:"")}"></div>
+      <div><label>Role</label><select id="ua_role" onchange="toggleUserAccessFields()"><option value="audit_staff"${!isHeadRole?" selected":""}>Audit Staff</option><option value="head_of_audit"${isHeadRole?" selected":""}>Head of Audit</option></select></div>
+    </div>
+    <label>${isEdit?"New password (leave blank to keep)":"Password *"}</label><input id="ua_pass" type="password" autocomplete="new-password">
+    <div id="ua_access_block" style="margin-top:10px${isHeadRole?" ;display:none":""}">
+      <div class="seclabel" style="margin-bottom:6px">Additional sidebar access</div>
+      <div class="hint" style="margin-bottom:6px">Main sections (Dashboard, Audits &amp; Reports, Remediation Tracker) are always included.</div>
+      <div id="ua_access">${sidebarAccessChecks(u?u.sidebarAccess:[],false)}</div>
+    </div>
+    <div id="ua_err" style="margin-top:10px"></div>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveUser('${id||""}')">Save</button>`);
+}
+function toggleUserAccessFields(){
+  const role=val("ua_role");
+  const block=document.getElementById("ua_access_block");
+  if(block) block.style.display=role==="head_of_audit"?"none":"block";
+}
+function selectedSidebarAccess(){
+  return Array.from(document.querySelectorAll('input[name="ua_view"]:checked')).map(el=>el.value);
+}
+async function saveUser(id){
+  const err=document.getElementById("ua_err");
+  if(err) err.textContent="";
+  const payload={
+    name:val("ua_name"),
+    email:val("ua_email"),
+    department:val("ua_dept"),
+    role:val("ua_role"),
+    password:val("ua_pass"),
+    sidebarAccess:selectedSidebarAccess()
+  };
+  if(!payload.name||!payload.email||(!id&&!payload.password)){
+    if(err) err.textContent="Name, email and password are required.";
+    return;
+  }
+  const res=await fetch(id?`/api/users/${id}`:"/api/users",{
+    method:id?"PUT":"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(payload)
+  });
+  const data=await res.json().catch(()=>({}));
+  if(!res.ok){ if(err) err.textContent=data.error||"Could not save user."; return; }
+  closeModal();
+  await refreshUsersTable();
+  if(view==="settings") render();
+}
+async function deleteUser(id){
+  if(!confirm("Delete this user?")) return;
+  const res=await fetch(`/api/users/${id}`,{ method:"DELETE" });
+  if(!res.ok){ alert("Could not delete user."); return; }
+  await refreshUsersTable();
+  if(view==="settings") render();
 }
 function resetAllData(){
   if(!confirm("Delete ALL content — audits, reports, observations, audit universe, fraud risks/plan and process reviews? Your org name and report author are kept. This cannot be undone."))return;
@@ -2897,7 +2970,6 @@ const ASSURANCE = ["High assurance","Moderate assurance","Limited assurance","No
 function modalFrontMatter(aid,rid){
   const r=report(audit(aid),rid);
   openModal("Executive summary & front matter",`
-    <p class="hint">These sections build the formal report's front matter and executive summary. Use lists (one item per line) where shown. The counts/overall rating are computed automatically.</p>
     <div class="f2">
       <div><label>Report date <span class="hint">(drives aging &amp; expected close)</span></label><input type="date" id="fm_dateISO" value="${esc(r.reportDateISO||"")}"></div>
       <div><label>Internal audit opinion — assurance level</label><select id="fm_assure"><option value="">— select —</option>${ASSURANCE.map(x=>`<option${r.assuranceLevel===x?" selected":""}>${x}</option>`).join("")}</select></div>
@@ -2920,7 +2992,7 @@ function saveFrontMatter(aid,rid){
   save(); closeModal(); render();
 }
 function modalExecPrompt(aid,rid){
-  openModal("Generate executive summary",`<p class="hint">AI will draft the executive summary front matter from the observations in this report.</p><div id="exErr" style="margin-top:10px"></div>`,
+  openModal("Generate executive summary",`<div id="exErr" style="margin-top:10px"></div>`,
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark ai-generate-btn" onclick="generateExecSummary('${aid}','${rid}')">Generate exec summary</button>`);
 }
 function buildExecPrompt(aid,rid){
@@ -2984,7 +3056,7 @@ function modalObs(aid,rid,oid){
     <label>Recommendation</label><textarea id="o_rec">${esc(o.recommendation)}</textarea>
     <label>Proposed SOP update <span class="hint">(what the procedure should say)</span> <button class="btn sec sm ai-generate-btn" type="button" style="margin-left:6px" onclick="genSopPrompt()">Generate</button></label><textarea id="o_sop">${esc(o.sopUpdate||"")}</textarea>
     <div id="o_sop_prompt" style="margin-top:6px"></div>
-    <label>Management response <button class="btn sec sm ai-generate-btn" type="button" style="margin-left:6px" onclick="genMgmtPrompt()">Enhance with AI</button></label><textarea id="o_mgmt">${esc(o.managementResponse)}</textarea>
+    <label>Management response <button class="btn sec sm ai-generate-btn" type="button" style="margin-left:6px" onclick="genMgmtPrompt()">Generate</button></label><textarea id="o_mgmt">${esc(o.managementResponse)}</textarea>
     <div id="o_mgmt_prompt" style="margin-top:6px"></div>
     <div class="f3">
       <div><label>Action owner</label><input id="o_owner" value="${esc(o.owner)}" placeholder="e.g. Head, Credit Operations"></div>
@@ -3198,7 +3270,8 @@ function applyImport(mode){
     if(d.extFindings) DB.extFindings=mergeById(DB.extFindings||[],d.extFindings);
     if(!DB.fraudPlanNarrative && d.fraudPlanNarrative) DB.fraudPlanNarrative=d.fraudPlanNarrative;
   }
-  _pendingImport=null; save(); closeModal(); curAudit=curReport=curProc=null; go("dashboard");
+  _pendingImport=null;
+  saveNow().then(()=>{ closeModal(); curAudit=curReport=curProc=null; go("dashboard"); }).catch(()=>{ alert("Import saved locally but failed to sync to the server."); closeModal(); go("dashboard"); });
 }
 function exportAuditData(aid){ const a=audit(aid); if(!a)return; dl(JSON.stringify({exportedAt:isoNow(),org:DB.org,audits:[a]},null,2),"audit-"+String(a.name).replace(/[^\w \-]/g,"")+".json","application/json"); }
 function stamp(){ const d=new Date(); return d.getFullYear()+("0"+(d.getMonth()+1)).slice(-2)+("0"+d.getDate()).slice(-2); }
@@ -3488,7 +3561,10 @@ function initAuditBot(){
     go(b.dataset.view);
   });
   (function(){ const s=logoSrc(); if(s){ const f=document.getElementById("favicon"), t=document.getElementById("touchicon"); if(f)f.href=s; if(t)t.href=s; } })();
-  render();
+  loadFromServer().then(()=>{
+    if(window.AMS_USER&&window.AMS_USER.role==="head_of_audit") refreshUsersTable();
+    render();
+  }).catch(()=>{ render(); });
 }
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initAuditBot);
 else initAuditBot();

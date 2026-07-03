@@ -8,9 +8,15 @@ import {
   DashboardSquare01Icon,
   File01Icon,
   JusticeScale01Icon,
+  Settings01Icon,
   TaskDaily01Icon,
   WorkflowSquare01Icon,
 } from "@hugeicons/core-free-icons";
+import type { SessionUser } from "@/lib/permissions";
+import {
+  ASSESSMENT_VIEWS,
+  MAIN_VIEWS,
+} from "@/lib/permissions";
 
 const ICON_SIZE = 20;
 
@@ -41,27 +47,57 @@ const SECTIONS: { label: string; items: NavItem[] }[] = [
   },
 ];
 
-export default function SidebarNav() {
+type SidebarNavProps = {
+  user: SessionUser;
+};
+
+export default function SidebarNav({ user }: SidebarNavProps) {
+  const access = new Set<string>([
+    ...MAIN_VIEWS,
+    ...(user.sidebarAccess || []),
+  ]);
+  if (user.role === "head_of_audit") access.add("settings");
+
   return (
     <nav className="nav" id="nav">
-      {SECTIONS.map((section) => (
-        <div className="nav-section" key={section.label}>
-          <div className="nav-label">{section.label}</div>
-          {section.items.map((item) => (
-            <button
-              key={item.view}
-              type="button"
-              data-view={item.view}
-              className={item.view === "dashboard" ? "active" : undefined}
-            >
+      {SECTIONS.map((section) => {
+        const items = section.items.filter((item) => access.has(item.view));
+        if (!items.length) return null;
+        return (
+          <div className="nav-section" key={section.label}>
+            <div className="nav-label">{section.label}</div>
+            {items.map((item) => (
+              <button
+                key={item.view}
+                type="button"
+                data-view={item.view}
+                className={item.view === "dashboard" ? "active" : undefined}
+              >
+                <span className="ic">
+                  <HugeiconsIcon icon={item.icon} size={ICON_SIZE} strokeWidth={1.75} />
+                </span>
+                {item.label}
+              </button>
+            ))}
+          </div>
+        );
+      })}
+      {user.role === "head_of_audit" ? (
+        <>
+          <div className="nav-spacer" aria-hidden="true" />
+          <div className="nav-section nav-section-footer">
+            <div className="nav-label">System</div>
+            <button type="button" data-view="settings">
               <span className="ic">
-                <HugeiconsIcon icon={item.icon} size={ICON_SIZE} strokeWidth={1.75} />
+                <HugeiconsIcon icon={Settings01Icon} size={ICON_SIZE} strokeWidth={1.75} />
               </span>
-              {item.label}
+              Settings
             </button>
-          ))}
-        </div>
-      ))}
+          </div>
+        </>
+      ) : null}
     </nav>
   );
 }
+
+export { ASSESSMENT_VIEWS };

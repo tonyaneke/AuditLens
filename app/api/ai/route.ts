@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse } from "next/server";
+import { requireActiveSession } from "@/lib/auth";
 
 type AiMode = "json" | "text";
 
@@ -12,6 +13,16 @@ function stripCodeFences(raw: string): string {
 }
 
 export async function POST(request: Request) {
+  try {
+    await requireActiveSession();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unauthorized";
+    if (message === "PasswordChangeRequired") {
+      return NextResponse.json({ error: "Password change required." }, { status: 403 });
+    }
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
@@ -40,7 +51,7 @@ export async function POST(request: Request) {
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash",
+      model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
       ...(mode === "json"
         ? { generationConfig: { responseMimeType: "application/json" } }
         : {}),
