@@ -4,6 +4,7 @@ import {
   requireHeadOfAudit,
   userToSession,
 } from "@/lib/auth";
+import { writeAuditLog } from "@/lib/audit-log";
 import { prisma } from "@/lib/prisma";
 import {
   ASSESSMENT_VIEWS,
@@ -77,6 +78,14 @@ export async function PUT(request: Request, { params }: Params) {
 
   const user = await prisma.user.update({ where: { id }, data });
 
+  await writeAuditLog({
+    user: session,
+    action: "user.updated",
+    category: "user",
+    summary: `Updated user ${user.name} (${user.email})`,
+    metadata: { targetUserId: user.id, targetEmail: user.email, role: user.role },
+  });
+
   if (user.id === session.id) {
     await createSession(userToSession(user));
   }
@@ -106,5 +115,14 @@ export async function DELETE(_request: Request, { params }: Params) {
   }
 
   await prisma.user.delete({ where: { id } });
+
+  await writeAuditLog({
+    user: session,
+    action: "user.deleted",
+    category: "user",
+    summary: `Deleted user ${existing.name} (${existing.email})`,
+    metadata: { targetUserId: existing.id, targetEmail: existing.email },
+  });
+
   return NextResponse.json({ ok: true });
 }

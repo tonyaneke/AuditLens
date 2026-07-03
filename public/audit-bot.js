@@ -128,15 +128,25 @@ function save(){
 function saveNow(){
   return fetch("/api/data", { method:"PUT", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ data: DB }) });
 }
+function logAudit(action,summary,metadata){
+  if(!summary) return;
+  fetch("/api/audit-log",{ method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ action, summary, metadata:metadata||undefined }) }).catch(()=>{});
+}
+function fmtAuditWhen(iso){
+  if(!iso) return "—";
+  const d=new Date(iso);
+  if(isNaN(d)) return "—";
+  return d.toLocaleString(undefined,{ year:"numeric", month:"short", day:"numeric", hour:"2-digit", minute:"2-digit" });
+}
 function canAccessView(v){
   const u = window.AMS_USER;
   if(!u) return ["dashboard","audits","tracker","audit","report","observation","newobs","insights","guide"].includes(v);
   if(u.role==="head_of_audit"){
-    if(["dashboard","audits","tracker","auditra","fraud","process","external","iasa","settings","audit","report","observation","newobs","insights","guide"].includes(v)) return true;
+    if(["dashboard","audits","tracker","auditra","fraud","process","external","iasa","settings","auditlog","audit","report","observation","newobs","insights","guide"].includes(v)) return true;
     return false;
   }
   if(["dashboard","audits","tracker","audit","report","observation","newobs","insights","guide"].includes(v)) return true;
-  if(v==="settings") return false;
+  if(v==="settings"||v==="auditlog") return false;
   return (u.sidebarAccess||[]).includes(v);
 }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
@@ -150,7 +160,7 @@ function reportObs(r){ return r.observations; }
 function go(v,opts={}){
   if(v==="newobs"){ modalNewObs(); return; }
   if(v==="insights"){ trackerMode="insights"; v="tracker"; }
-  const gated=["dashboard","audits","tracker","auditra","fraud","process","external","iasa","settings","guide"];
+  const gated=["dashboard","audits","tracker","auditra","fraud","process","external","iasa","settings","auditlog","guide"];
   if(gated.includes(v) && !canAccessView(v)){ go("dashboard"); return; }
   view=v;
   curProc=null;
@@ -166,7 +176,7 @@ const ICON_TRASH=`<svg viewBox="0 0 24 24" width="14" height="14" fill="none" st
 function iconBtn(fn,icon,title,danger){ return `<button type="button" class="btn-icon-action${danger?" danger":""}" title="${esc(title)}" onclick="${fn}">${icon}</button>`; }
 function delBtn(fn,title){ return iconBtn(fn,ICON_TRASH,title||"Delete",true); }
 function pageTitleFor(v){
-  const map={dashboard:"Dashboard",audits:"Audits & Reports",tracker:"Remediation Tracker",auditra:"Audit Risk Assessment",fraud:"Fraud Risk",process:"Process Review",external:"External Findings",iasa:"IA Self-Assessment",guide:"How to use AMS",settings:"Settings"};
+  const map={dashboard:"Dashboard",audits:"Audits & Reports",tracker:"Remediation Tracker",auditra:"Audit Risk Assessment",fraud:"Fraud Risk",process:"Process Review",external:"External Findings",iasa:"IA Self-Assessment",guide:"How to use AMS",settings:"Settings",auditlog:"Audit log"};
   return map[v]||"AMS";
 }
 function planYearOptions(selected){
@@ -266,6 +276,17 @@ function render(){
     T.textContent=pageTitleFor("settings");
     A.innerHTML=`<button class="btn sec sm" onclick="exportData()">⤓ Download backup</button><label class="btn sec sm" style="display:inline-block;margin:0">⤒ Import backup<input type="file" accept="application/json" style="display:none" onchange="importData(event)"></label>`;
     C.innerHTML=viewSettings();
+  }
+  else if(view==="auditlog"){
+    if(!canAccessView("auditlog")){ go("dashboard"); return; }
+    T.textContent=pageTitleFor("auditlog");
+    A.innerHTML=`<button class="btn sec sm" onclick="refreshAuditLog(1)">Refresh</button>`;
+    C.innerHTML=viewAuditLog();
+    refreshAuditLog(_auditLogCache.page||1);
+  }
+  else {
+    T.textContent=pageTitleFor(view)||"AMS";
+    C.innerHTML=`<div class="empty">This section is not available.</div>`;
   }
 }
 
@@ -1130,7 +1151,7 @@ function viewProcess(){
     P.slice().reverse().map(p=>{ const f=p.findings||[]; const counts={}; PROC_CATS.forEach(([c])=>counts[c]=f.filter(x=>x.category===c).length); const rh=PROC_RATING_HEX[p.overallRating]||"#64748b";
       return `<div class="listcard" onclick="curProc='${p.id}';render()">
         <div class="row"><div class="t">${esc(p.unit||"(unit)")}</div><div class="spacer"></div><span class="pill" style="background:${hx2rgba(rh,.16)};color:${rh}">${esc(p.overallRating||"—")}</span></div>
-        <div class="m">${esc(p.sopTitle||"")}${p.period?" · "+esc(p.period):""}</div>
+        <div class="m">${esc(p.sopTitle||p.sopFileName||"")}${p.period?" · "+esc(p.period):""}</div>
         <div class="mini-tiles">${PROC_CATS.filter(([c])=>counts[c]).map(([c,hex])=>`<span class="mini-tile" style="background:${hx2rgba(hex,.16)};color:${hex}">${counts[c]} ${c}</span>`).join("")||`<span class="hint">No findings</span>`}</div>
       </div>`; }).join("");
 }
@@ -1171,7 +1192,7 @@ function procFindingCard(p,x){
 function procDetail(p){
   const f=p.findings||[]; const rh=PROC_RATING_HEX[p.overallRating]||"#64748b";
   const counts={}; PROC_CATS.forEach(([c])=>counts[c]=f.filter(x=>x.category===c).length);
-  let h=`<div class="card"><div class="row" style="align-items:flex-start"><div><h3 style="margin:0">${esc(p.unit||"(unit)")}</h3><div class="hint" style="margin-top:3px">${esc(p.sopTitle||"")}${p.period?" · "+esc(p.period):""}</div></div><div class="spacer"></div><span class="pill" style="background:${hx2rgba(rh,.16)};color:${rh};font-size:13px">Effectiveness: ${esc(p.overallRating||"—")}</span></div>
+  let h=`<div class="card"><div class="row" style="align-items:flex-start"><div><h3 style="margin:0">${esc(p.unit||"(unit)")}</h3><div class="hint" style="margin-top:3px">${esc(p.sopTitle||"")}${p.sopFileName?`${p.sopTitle?" · ":""}${esc(p.sopFileName)}`:""}${p.period?" · "+esc(p.period):""}</div></div><div class="spacer"></div><span class="pill" style="background:${hx2rgba(rh,.16)};color:${rh};font-size:13px">Effectiveness: ${esc(p.overallRating||"—")}</span></div>
     ${p.summary?`<div class="txt" style="white-space:pre-wrap;margin-top:10px">${esc(p.summary)}</div>`:""}</div>`;
   h+=`<div class="card proc-findings-section">
     <div class="proc-findings-head">
@@ -1199,61 +1220,94 @@ function procDetail(p){
   </div>`;
   return h;
 }
+let _procSopUpload=null;
+function updateProcSopUploadLabel(){
+  const el=document.getElementById("pc_file_status");
+  if(!el) return;
+  el.innerHTML=_procSopUpload
+    ? `<div class="note">Ready: <b>${esc(_procSopUpload.name)}</b>${_procSopUpload.file?` · ${Math.round(_procSopUpload.file.size/1024)} KB`:""} — Gemini will read the PDF directly</div>`
+    : `<div class="hint">Upload the SOP as a PDF for AI analysis.</div>`;
+}
+function handleProcSopUpload(e){
+  const f=e.target.files[0];
+  if(!f) return;
+  e.target.value="";
+  const name=f.name.toLowerCase();
+  if(!name.endsWith(".pdf")){
+    _procSopUpload=null;
+    updateProcSopUploadLabel();
+    showAiErr("pcErr","Upload a PDF file.");
+    return;
+  }
+  if(f.size>12*1024*1024){
+    _procSopUpload=null;
+    updateProcSopUploadLabel();
+    showAiErr("pcErr","PDF is too large. Maximum size is 12 MB.");
+    return;
+  }
+  _procSopUpload={ name:f.name, file:f, sopPdfBase64:"" };
+  showAiErr("pcErr","");
+  updateProcSopUploadLabel();
+  const sopEl=document.getElementById("pc_sop");
+  if(sopEl && !val("pc_sop")) sopEl.value=String(f.name).replace(/\.pdf$/i,"");
+}
 function modalProcNew(){
+  _procSopUpload=null;
   openModal("New process review",`
     <div class="f3">
       <div><label>Business unit *</label><input id="pc_unit" placeholder="e.g. Credit Operations"></div>
-      <div><label>SOP title</label><input id="pc_sop" placeholder="e.g. Loan Disbursement SOP v2"></div>
+      <div><label>SOP title</label><input id="pc_sop" placeholder="Auto-filled from file name"></div>
       <div><label>Period / version</label><input id="pc_period" placeholder="e.g. 2026"></div>
     </div>
-    <label>SOP text <span class="hint">(paste, or</span> <label class="btn sec sm" style="display:inline-block;margin:0">load .txt<input type="file" accept=".txt,text/plain" style="display:none" onchange="loadCsvInto(event,'pc_sop_text')"></label><span class="hint">)</span></label>
-    <textarea id="pc_sop_text" style="min-height:120px" placeholder="Paste the standard operating procedure here..."></textarea>
+    <label>SOP document (PDF) *</label>
+    <div class="proc-upload-row">
+      <label class="btn sec proc-upload-btn">Upload PDF<input type="file" accept=".pdf,application/pdf" style="display:none" onchange="handleProcSopUpload(event)"></label>
+    </div>
+    <div id="pc_file_status"><div class="hint">Upload the SOP as a PDF for AI analysis.</div></div>
     <div id="pcErr" style="margin-top:10px"></div>`,
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark ai-generate-btn" onclick="generateProcReview()">Generate analysis</button>`);
 }
-function buildProcPrompt(unit,sop,sopText){
-  return `Act as an internal audit / business process specialist for ${DB.org}. Review the Standard Operating Procedure below and assess the process effectiveness for the business unit. Identify:
-- Control gaps: missing or weak controls (approvals, segregation of duties, reconciliations, validations, limits, audit trail)
-- Process gaps: missing steps, unclear ownership, weak handoffs, no escalation, undefined timelines
-- Redundancy: duplicate, repetitive or non-value-adding tasks
-- Efficiency opportunity: automation, streamlining, removing bottlenecks
-- Strength: notable good practices
-
-Business unit: ${unit||"(not specified)"}
-SOP: ${sop||"(untitled)"}
-
-SOP TEXT:
-"""
-${sopText}
-"""
-
-Return ONLY a JSON object (no commentary):
-{
-  "overallRating": "Strong | Adequate | Needs improvement | Weak",
-  "summary": "concise assessment of the process's effectiveness",
-  "findings": [
-    { "category": "Control gap | Process gap | Redundancy | Efficiency opportunity | Strength", "title": "short title", "detail": "what was observed in the SOP", "recommendation": "specific improvement", "severity": "High | Medium | Low" }
-  ],
-  "keyRecommendations": ["top priority improvement", "..."]
-}`;
+function mapProcAnalysis(d){
+  const rating=PROC_RATINGS.find(r=>r.toLowerCase()===String(d.overallRating||"").toLowerCase())||d.overallRating||"";
+  const findings=(Array.isArray(d.findings)?d.findings:[]).map(x=>({id:uid(),category:(PROC_CATS.find(c=>c[0].toLowerCase()===String(x.category||"").toLowerCase())||["Process gap"])[0],title:x.title||"(untitled)",detail:x.detail||"",recommendation:x.recommendation||"",severity:PROC_SEV.find(s=>s.toLowerCase()===String(x.severity||"").toLowerCase())||"Medium"}));
+  return { rating, findings, summary:d.summary||"", keyRecommendations:Array.isArray(d.keyRecommendations)?d.keyRecommendations.map(String):[] };
 }
 async function generateProcReview(){
-  const unit=val("pc_unit"), sop=val("pc_sop"), sopText=val("pc_sop_text");
+  const unit=val("pc_unit");
   if(!unit){ showAiErr("pcErr","Enter the business unit."); return; }
-  if(!sopText){ showAiErr("pcErr","Paste the SOP text first."); return; }
-  await runAiJson(buildProcPrompt(unit,sop,sopText),"pcErr",d=>{ doImportProc(d); });
+  if(!_procSopUpload?.file){ showAiErr("pcErr","Upload a PDF SOP first."); return; }
+  if(_aiBusy) return;
+  showAiErr("pcErr","");
+  aiBusy(true);
+  try{
+    const fd=new FormData();
+    fd.append("file", _procSopUpload.file);
+    fd.append("unit", unit);
+    fd.append("sopTitle", val("pc_sop")||_procSopUpload.name.replace(/\.pdf$/i,""));
+    fd.append("period", val("pc_period"));
+    const res=await fetch("/api/process/analyse",{ method:"POST", body:fd });
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error||"Analysis failed.");
+    if(_procSopUpload && data.sopPdfBase64) _procSopUpload.sopPdfBase64=data.sopPdfBase64;
+    doImportProc(data.analysis);
+  }catch(e){
+    showAiErr("pcErr", e.message);
+  }finally{
+    aiBusy(false);
+  }
 }
 function doImportProc(raw){
   const unit=val("pc_unit");
   if(!unit && raw==null){ showAiErr("pcErr","Enter the business unit."); return false; }
   if(raw==null) raw=val("pc_json").trim();
+  else if(typeof raw==="object") raw=importRaw(raw);
   else raw=importRaw(raw);
   if(!raw){ showAiErr("pcErr","Nothing to import."); return false; }
-  let d; try{ d=parseAiJson(raw); }catch(e){ showAiErr("pcErr",e.message); return false; }
-  const rating=PROC_RATINGS.find(r=>r.toLowerCase()===String(d.overallRating||"").toLowerCase())||d.overallRating||"";
-  const findings=(Array.isArray(d.findings)?d.findings:[]).map(x=>({id:uid(),category:(PROC_CATS.find(c=>c[0].toLowerCase()===String(x.category||"").toLowerCase())||["Process gap"])[0],title:x.title||"(untitled)",detail:x.detail||"",recommendation:x.recommendation||"",severity:PROC_SEV.find(s=>s.toLowerCase()===String(x.severity||"").toLowerCase())||"Medium"}));
-  const p={id:uid(),unit,sopTitle:val("pc_sop"),period:val("pc_period"),overallRating:rating,summary:d.summary||"",findings,keyRecommendations:Array.isArray(d.keyRecommendations)?d.keyRecommendations.map(String):[],createdAt:new Date().toISOString()};
-  procList().push(p); save(); closeModal(); curProc=p.id; render(); return true;
+  let d; try{ d=typeof raw==="string"?parseAiJson(raw):raw; }catch(e){ showAiErr("pcErr",e.message); return false; }
+  const mapped=mapProcAnalysis(d);
+  const sopTitle=val("pc_sop")||(_procSopUpload?_procSopUpload.name.replace(/\.pdf$/i,""):"");
+  const p={id:uid(),unit,sopTitle,sopFileName:_procSopUpload?_procSopUpload.name:"",sopPdfBase64:_procSopUpload?.sopPdfBase64||"",period:val("pc_period"),overallRating:mapped.rating,summary:mapped.summary,findings:mapped.findings,keyRecommendations:mapped.keyRecommendations,createdAt:new Date().toISOString()};
+  procList().push(p); _procSopUpload=null; save(); closeModal(); curProc=p.id; render(); return true;
 }
 function modalProcMeta(id){
   const p=procList().find(x=>x.id===id); if(!p)return;
@@ -1348,38 +1402,41 @@ function flowchartSVG(steps){
 function downloadFlowchart(pid){ const p=procList().find(x=>x.id===pid); if(!p||!(p.proposedSteps||[]).length){ alert("No proposed process to chart yet."); return; } dl(flowchartSVG(p.proposedSteps),"process-chart-"+String(p.unit||"unit").replace(/[^\w \-]/g,"")+".svg","image/svg+xml"); }
 function modalProposeProcess(pid){
   const p=procList().find(x=>x.id===pid); if(!p)return;
+  const sopNote=p.sopFileName
+    ? `<div class="note" style="margin-bottom:8px">${p.sopPdfBase64?`Original SOP PDF on file: <b>${esc(p.sopFileName)}</b> — Gemini will use it for context.`:`Original SOP: <b>${esc(p.sopFileName)}</b> (PDF not stored — redesign uses findings only).`}</div>`
+    : `<div class="hint" style="margin-bottom:8px">No uploaded SOP on file — the redesign will use findings only.</div>`;
   openModal("Generate proposed updated process",`
-    <label>Original SOP text <span class="hint">(optional)</span> <label class="btn sec sm" style="display:inline-block;margin:0">load .txt<input type="file" accept=".txt,text/plain" style="display:none" onchange="loadCsvInto(event,'pp_sop')"></label></label>
-    <textarea id="pp_sop" style="min-height:80px" placeholder="(optional) paste the SOP for closer rewriting..."></textarea>
+    ${sopNote}
     <div id="ppErr" style="margin-top:10px"></div>`,
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark ai-generate-btn" onclick="generateProposedProcess('${pid}')">Generate process</button>`);
 }
-function buildProposePrompt(p,sopText){
-  const findingsList=(p.findings||[]).map(x=>`- [${x.category}] ${x.title}: ${x.recommendation||x.detail}`).join("\n")||"(no findings captured)";
-  return `Act as a business process re-engineering specialist for ${DB.org}. Redesign the "${p.unit}" process${p.sopTitle?" ("+p.sopTitle+")":""} into an improved, controlled and efficient end-to-end process — resolving the control gaps, removing redundancies and building in efficiency from the findings below.
-
-Findings to resolve:
-${findingsList}
-${sopText?`\nOriginal SOP for reference:\n"""\n${sopText}\n"""`:""}
-
-Return ONLY a JSON object (no commentary):
-{
-  "proposedSummary": "short narrative of the redesigned process and the key improvements",
-  "steps": [
-    { "actor": "role responsible", "action": "what happens at this step", "type": "start | step | control | decision | end", "note": "for a decision, the branch condition; otherwise optional" }
-  ]
-}
-Order the steps end-to-end (begin with a "start", finish with an "end"). Use type "control" for embedded controls (approvals, segregation of duties, reconciliations, system blocks) and "decision" for branch/approval points.`;
-}
 async function generateProposedProcess(pid){
   const p=procList().find(x=>x.id===pid); if(!p)return;
-  await runAiJson(buildProposePrompt(p,val("pp_sop")),"ppErr",d=>{ doImportProposed(pid,d); });
+  if(_aiBusy) return;
+  showAiErr("ppErr","");
+  aiBusy(true);
+  try{
+    const findingsList=(p.findings||[]).map(x=>`- [${x.category}] ${x.title}: ${x.recommendation||x.detail}`).join("\n")||"(no findings captured)";
+    const fd=new FormData();
+    fd.append("unit", p.unit||"");
+    fd.append("sopTitle", p.sopTitle||"");
+    fd.append("findings", findingsList);
+    if(p.sopPdfBase64) fd.append("pdfBase64", p.sopPdfBase64);
+    const res=await fetch("/api/process/propose",{ method:"POST", body:fd });
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error||"Could not generate process.");
+    doImportProposed(pid, data.analysis);
+  }catch(e){
+    showAiErr("ppErr", e.message);
+  }finally{
+    aiBusy(false);
+  }
 }
 function doImportProposed(pid,raw){
   const p=procList().find(x=>x.id===pid); if(!p)return false;
-  if(raw==null) raw=val("pp_json").trim(); else raw=importRaw(raw);
+  if(raw==null) raw=val("pp_json").trim(); else if(typeof raw==="object") raw=importRaw(raw); else raw=importRaw(raw);
   if(!raw){ showAiErr("ppErr","Nothing to import."); return false; }
-  let d; try{ d=parseAiJson(raw); }catch(e){ showAiErr("ppErr",e.message); return false; }
+  let d; try{ d=typeof raw==="string"?parseAiJson(raw):raw; }catch(e){ showAiErr("ppErr",e.message); return false; }
   p.proposedSummary=d.proposedSummary||d.summary||"";
   const types=["start","step","control","decision","end"];
   p.proposedSteps=(Array.isArray(d.steps)?d.steps:[]).map(s=>({id:uid(),actor:s.actor||"",action:s.action||"",type:types.includes(String(s.type||"").toLowerCase())?String(s.type).toLowerCase():"step",note:s.note||""}));
@@ -2778,6 +2835,76 @@ function viewGuide(){
 }
 
 /* ============================ SETTINGS & USER ACCESS ============================ */
+const AUDIT_LOG_ACTIONS=[
+  ["","All actions"],
+  ["auth.login","Sign in"],
+  ["auth.logout","Sign out"],
+  ["auth.password_changed","Password changed"],
+  ["user.created","User created"],
+  ["user.updated","User updated"],
+  ["user.deleted","User deleted"],
+  ["data.backup_export","Backup exported"],
+  ["data.backup_import","Backup imported"],
+  ["data.reset_all","All data reset"],
+  ["workspace.audit_created","Audit created"],
+  ["workspace.audit_updated","Audit updated"],
+  ["workspace.report_created","Report created"],
+  ["workspace.observation_created","Observation created"]
+];
+let _auditLogCache={ logs:[], total:0, page:1, limit:50 };
+function viewAuditLog(){
+  return `<div class="card audit-log-card">
+    <div class="audit-log-toolbar">
+      <input id="al_q" class="topbar-search audit-log-search" placeholder="Search user or summary…" onkeydown="if(event.key==='Enter')refreshAuditLog(1)">
+      <select id="al_action" class="field-select audit-log-filter" onchange="refreshAuditLog(1)">
+        ${AUDIT_LOG_ACTIONS.map(([v,l])=>`<option value="${esc(v)}">${esc(l)}</option>`).join("")}
+      </select>
+      <button class="btn sm sec" type="button" onclick="refreshAuditLog(1)">Search</button>
+    </div>
+    <div id="auditLogWrap" class="audit-log-wrap"><div class="empty">Loading audit log…</div></div>
+  </div>`;
+}
+function auditLogTableHTML(){
+  if(!_auditLogCache.logs.length) return `<div class="empty">No audit log entries yet.</div>`;
+  const rows=_auditLogCache.logs.map(row=>`<tr>
+    <td class="audit-log-when">${esc(fmtAuditWhen(row.createdAt))}</td>
+    <td><div class="audit-log-user"><b>${esc(row.userName||"System")}</b>${row.userEmail?`<div class="hint">${esc(row.userEmail)}</div>`:""}</div></td>
+    <td><span class="tag audit-log-tag">${esc(row.actionLabel||row.action)}</span></td>
+    <td>${esc(row.summary)}</td>
+  </tr>`).join("");
+  const total=_auditLogCache.total||0;
+  const page=_auditLogCache.page||1;
+  const limit=_auditLogCache.limit||50;
+  const pages=Math.max(1,Math.ceil(total/limit));
+  const pager=pages>1?`<div class="audit-log-pager">
+    <span class="hint">${total} entr${total===1?"y":"ies"}</span>
+    <div class="spacer"></div>
+    <button class="btn sm sec" type="button" onclick="refreshAuditLog(${page-1})"${page<=1?" disabled":""}>Previous</button>
+    <span class="hint">Page ${page} of ${pages}</span>
+    <button class="btn sm sec" type="button" onclick="refreshAuditLog(${page+1})"${page>=pages?" disabled":""}>Next</button>
+  </div>`:`<div class="audit-log-pager"><span class="hint">${total} entr${total===1?"y":"ies"}</span></div>`;
+  return `<div class="audit-log-table-wrap"><table class="audit-log-table"><thead><tr><th>When</th><th>User</th><th>Action</th><th>Summary</th></tr></thead><tbody>${rows}</tbody></table></div>${pager}`;
+}
+async function refreshAuditLog(page){
+  const wrap=document.getElementById("auditLogWrap");
+  if(wrap && view==="auditlog") wrap.innerHTML=`<div class="empty">Loading audit log…</div>`;
+  page=Math.max(1,page||1);
+  const params=new URLSearchParams({ page:String(page), limit:"50" });
+  const action=val("al_action"); if(action) params.set("action",action);
+  const q=val("al_q"); if(q) params.set("q",q);
+  try{
+    const res=await fetch("/api/audit-log?"+params.toString());
+    if(!res.ok){
+      if(wrap) wrap.innerHTML=`<div class="empty">Could not load audit log.</div>`;
+      return;
+    }
+    const json=await res.json();
+    _auditLogCache={ logs:json.logs||[], total:json.total||0, page:json.page||page, limit:json.limit||50 };
+    if(wrap) wrap.innerHTML=auditLogTableHTML();
+  }catch(e){
+    if(wrap) wrap.innerHTML=`<div class="empty">Could not load audit log.</div>`;
+  }
+}
 const ASSESSMENT_NAV=[
   ["auditra","Audit Risk Assessment"],
   ["fraud","Fraud Risk"],
@@ -2897,6 +3024,7 @@ function resetAllData(){
   if(!confirm("Delete ALL content — audits, reports, observations, audit universe, fraud risks/plan and process reviews? Your org name and report author are kept. This cannot be undone."))return;
   DB={org:DB.org,signOffName:DB.signOffName,signOffTitle:DB.signOffTitle,planYear:DB.planYear,logo:DB.logo,audits:[],auditUniverse:[],fraudRisks:[],fraudPlanNarrative:"",fraudUpdate:{period:"",commentary:""},processReviews:[],extFindings:[],extCommentary:""};
   curAudit=null; curReport=null; curProc=null;
+  logAudit("data.reset_all","Reset all workspace data");
   save(); go("dashboard");
 }
 
@@ -2946,8 +3074,8 @@ function modalAudit(id){
 function saveAudit(id){
   const name=val("m_name"); if(!name){alert("Name required");return;}
   const data={name,type:val("m_type"),area:val("m_area"),period:val("m_period"),leadAuditor:val("m_lead"),status:val("m_status")};
-  if(id){ Object.assign(audit(id),data); }
-  else{ DB.audits.push({id:uid(),...data,createdAt:new Date().toISOString(),reports:[]}); }
+  if(id){ Object.assign(audit(id),data); logAudit("workspace.audit_updated","Updated audit "+name,{ auditId:id, name }); }
+  else{ const nid=uid(); DB.audits.push({id:nid,...data,createdAt:new Date().toISOString(),reports:[]}); logAudit("workspace.audit_created","Created audit "+name,{ auditId:nid, name }); }
   save(); closeModal(); render();
 }
 
@@ -2969,7 +3097,7 @@ function saveReport(aid,rid){
   const a=audit(aid); const title=val("m_title"); if(!title){alert("Title required");return;}
   const data={title,refNo:val("m_ref"),period:val("m_rperiod"),status:val("m_rstatus"),kind:val("m_kind"),scope:val("m_scope")};
   if(rid){ Object.assign(report(a,rid),data); }
-  else{ a.reports.push({id:uid(),...data,execSummaryNarrative:"",createdAt:new Date().toISOString(),observations:[]}); }
+  else{ const nr=uid(); a.reports.push({id:nr,...data,execSummaryNarrative:"",createdAt:new Date().toISOString(),observations:[]}); logAudit("workspace.report_created","Created report "+title+" in "+(a.name||"audit"),{ auditId:aid, reportId:nr, title }); }
   save(); closeModal(); render();
 }
 
@@ -3098,7 +3226,7 @@ function saveObs(aid,rid,oid){
   const cdate=val("o_cdate");
   let obj;
   if(oid){ obj=r.observations.find(x=>x.id===oid); stampClosed(obj,status); Object.assign(obj,data); }
-  else{ obj={id:uid(),...data,createdAt:new Date().toISOString()}; stampClosed(obj,status); r.observations.push(obj); }
+  else{ obj={id:uid(),...data,createdAt:new Date().toISOString()}; stampClosed(obj,status); r.observations.push(obj); logAudit("workspace.observation_created","Created observation "+title,{ auditId:aid, reportId:rid, observationId:obj.id, title }); }
   if(status==="Closed" && cdate) obj.closedDateISO=cdate;
   save(); closeModal(); render();
 }
@@ -3241,6 +3369,7 @@ function val(id){ const el=document.getElementById(id); return el?el.value.trim(
 /* ============================ BACKUP ============================ */
 function exportData(){
   DB.lastBackup=isoNow(); save();
+  logAudit("data.backup_export","Downloaded workspace backup (.json)");
   dl(JSON.stringify(DB,null,2),"audit-bot-backup-"+stamp()+".json","application/json");
   const b=document.getElementById("banner"); if(b) b.innerHTML=backupBanner();
 }
@@ -3278,6 +3407,8 @@ function applyImport(mode){
     if(!DB.fraudPlanNarrative && d.fraudPlanNarrative) DB.fraudPlanNarrative=d.fraudPlanNarrative;
   }
   _pendingImport=null;
+  const c=importCounts(d);
+  logAudit("data.backup_import",`${mode==="replace"?"Replaced all data with":"Merged"} backup (${c.audits} audit(s), ${c.reports} report(s), ${c.obs} observation(s))`,{ mode, ...c });
   saveNow().then(()=>{ closeModal(); curAudit=curReport=curProc=null; go("dashboard"); }).catch(()=>{ alert("Import saved locally but failed to sync to the server."); closeModal(); go("dashboard"); });
 }
 function exportAuditData(aid){ const a=audit(aid); if(!a)return; dl(JSON.stringify({exportedAt:isoNow(),org:DB.org,audits:[a]},null,2),"audit-"+String(a.name).replace(/[^\w \-]/g,"")+".json","application/json"); }
@@ -3561,6 +3692,10 @@ function exportCaeReport(){
 /* ============================ INIT ============================ */
 function initAuditBot(){
   window.go = go;
+  window.addEventListener("ams-navigate", (e) => {
+    const view = e.detail?.view;
+    if (view) go(view);
+  });
   ov = document.getElementById("overlay");
   if (ov) ov.addEventListener("click", (e) => { if (e.target === ov) closeModal(); });
   document.getElementById("nav").addEventListener("click", (e) => {

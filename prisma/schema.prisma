@@ -25,3 +25,20 @@ model WorkspaceData {
   data      Json
   updatedAt DateTime @updatedAt
 }
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  userId    String?
+  userName  String
+  userEmail String
+  action    String
+  category  String
+  summary   String
+  metadata  Json?
+
+  @@index([createdAt])
+  @@index([action])
+  @@index([userId])
+  @@index([category])
+}

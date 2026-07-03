@@ -8,7 +8,13 @@ export const ASSESSMENT_VIEWS = [
   "iasa",
 ] as const;
 
-export const ALL_VIEWS = [...MAIN_VIEWS, ...ASSESSMENT_VIEWS, "settings"] as const;
+export const ADMIN_VIEWS = ["settings", "auditlog"] as const;
+
+export const ALL_VIEWS = [
+  ...MAIN_VIEWS,
+  ...ASSESSMENT_VIEWS,
+  ...ADMIN_VIEWS,
+] as const;
 
 export type AppView = (typeof ALL_VIEWS)[number];
 
@@ -48,7 +54,7 @@ export function canAccessView(user: SessionUser, view: string): boolean {
     return (ALL_VIEWS as readonly string[]).includes(view);
   }
   if ((MAIN_VIEWS as readonly string[]).includes(view)) return true;
-  if (view === "settings") return false;
+  if (view === "settings" || view === "auditlog") return false;
   return user.sidebarAccess.includes(view);
 }
 

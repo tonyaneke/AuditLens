@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { hashPassword, requireHeadOfAudit, userToSession } from "@/lib/auth";
+import { writeAuditLog } from "@/lib/audit-log";
 import { loginUrlFromRequest, sendWelcomeEmail } from "@/lib/email";
 import { generateTempPassword } from "@/lib/password-utils";
 import { prisma } from "@/lib/prisma";
@@ -97,6 +98,19 @@ export async function POST(request: Request) {
     name,
     tempPassword,
     loginUrl: loginUrlFromRequest(request),
+  });
+
+  await writeAuditLog({
+    user: session,
+    action: "user.created",
+    category: "user",
+    summary: `Created user ${name} (${email})`,
+    metadata: {
+      targetUserId: user.id,
+      targetEmail: email,
+      role,
+      emailSent: emailResult.sent,
+    },
   });
 
   return NextResponse.json(

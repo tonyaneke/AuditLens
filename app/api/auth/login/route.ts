@@ -5,6 +5,7 @@ import {
   userToSession,
   verifyPassword,
 } from "@/lib/auth";
+import { writeAuditLog } from "@/lib/audit-log";
 
 export async function POST(request: Request) {
   let body: { email?: string; password?: string };
@@ -33,6 +34,14 @@ export async function POST(request: Request) {
 
   const sessionUser = userToSession(user);
   await createSession(sessionUser);
+
+  await writeAuditLog({
+    user: sessionUser,
+    action: "auth.login",
+    category: "auth",
+    summary: `${sessionUser.name} signed in`,
+    metadata: { email: sessionUser.email },
+  });
 
   return NextResponse.json({ user: sessionUser, mustChangePassword: user.mustChangePassword });
 }

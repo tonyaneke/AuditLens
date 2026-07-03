@@ -190,18 +190,22 @@ a {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: calc(100% + 6px);
+  bottom: 100%;
+  padding-bottom: 8px;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(4px);
+  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.sidebar-profile-dropdown-panel {
   padding: 6px;
   background: #0d5a47;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
-  opacity: 0;
-  visibility: hidden;
-  transform: translateY(6px);
-  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s;
-  pointer-events: none;
-  z-index: 5;
 }
 
 .sidebar-profile-head:hover .sidebar-profile-dropdown,
@@ -3242,4 +3246,91 @@ body.ai-busy .ai-generate-btn:not(:disabled) {
   pointer-events: none;
   user-select: none;
   filter: blur(2px);
+}
+
+.audit-log-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.audit-log-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+  background: #fafcfb;
+}
+
+.audit-log-search {
+  flex: 1;
+  min-width: 220px;
+}
+
+.audit-log-filter {
+  min-width: 180px;
+}
+
+.audit-log-wrap {
+  padding: 0 18px 18px;
+}
+
+.audit-log-table-wrap {
+  overflow: auto;
+}
+
+.audit-log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.audit-log-table th,
+.audit-log-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.audit-log-table th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  background: #fafcfb;
+}
+
+.audit-log-when {
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.audit-log-user b {
+  display: block;
+}
+
+.audit-log-tag {
+  background: #e9f8f2;
+  color: #0d5a47;
+  border: 1px solid #c6e9df;
+}
+
+.audit-log-pager {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.proc-upload-row {
+  margin-top: 6px;
+}
+
+.proc-upload-btn {
+  display: inline-flex;
+  margin: 0;
+  cursor: pointer;
 }

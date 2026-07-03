@@ -1,5 +1,6 @@
 "use client";
 
+import type { MouseEvent } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Alert02Icon,
@@ -11,6 +12,7 @@ import {
   Logout01Icon,
   Settings01Icon,
   TaskDaily01Icon,
+  TransactionHistoryIcon,
   WorkflowSquare01Icon,
 } from "@hugeicons/core-free-icons";
 import type { SessionUser } from "@/lib/permissions";
@@ -67,10 +69,21 @@ function navigate(view: string) {
     w.go(view);
     return;
   }
+  window.dispatchEvent(
+    new CustomEvent("ams-navigate", { detail: { view } }),
+  );
   const btn = document.querySelector(
     `#nav button[data-view="${view}"]`,
   ) as HTMLButtonElement | null;
   btn?.click();
+}
+
+function onProfileNav(
+  e: MouseEvent,
+  view: string,
+) {
+  e.preventDefault();
+  navigate(view);
 }
 
 async function signOut() {
@@ -127,10 +140,12 @@ export default function SidebarNav({ user }: SidebarNavProps) {
           </div>
           {isHead ? (
             <div className="sidebar-profile-dropdown">
+              <div className="sidebar-profile-dropdown-panel">
               <button
                 type="button"
                 className="sidebar-profile-dropdown-item"
-                onClick={() => navigate("settings")}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={(e) => onProfileNav(e, "settings")}
               >
                 <HugeiconsIcon
                   icon={Settings01Icon}
@@ -139,6 +154,20 @@ export default function SidebarNav({ user }: SidebarNavProps) {
                 />
                 Settings
               </button>
+              <button
+                type="button"
+                className="sidebar-profile-dropdown-item"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={(e) => onProfileNav(e, "auditlog")}
+              >
+                <HugeiconsIcon
+                  icon={TransactionHistoryIcon}
+                  size={16}
+                  strokeWidth={1.75}
+                />
+                Audit log
+              </button>
+              </div>
             </div>
           ) : null}
         </div>

@@ -6,6 +6,7 @@ import {
   userToSession,
   verifyPassword,
 } from "@/lib/auth";
+import { writeAuditLog } from "@/lib/audit-log";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(request: Request) {
@@ -87,6 +88,15 @@ export async function POST(request: Request) {
 
   const sessionUser = userToSession(updated);
   await createSession(sessionUser);
+
+  await writeAuditLog({
+    user: sessionUser,
+    action: "auth.password_changed",
+    category: "auth",
+    summary: isFirstLogin
+      ? `${sessionUser.name} set their password on first sign-in`
+      : `${sessionUser.name} changed their password`,
+  });
 
   return NextResponse.json({ user: sessionUser });
 }
