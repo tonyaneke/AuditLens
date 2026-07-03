@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { hashPassword, requireHeadOfAudit, userToSession } from "@/lib/auth";
-import { isPasswordChangeRequired } from "@/lib/auth-config";
+import { loginUrlFromRequest, sendWelcomeEmail } from "@/lib/email";
+import { generateTempPassword } from "@/lib/password-utils";
 import { prisma } from "@/lib/prisma";
 import { ASSESSMENT_VIEWS, normalizeSidebarAccess } from "@/lib/permissions";
 
@@ -38,7 +39,6 @@ export async function POST(request: Request) {
   let body: {
     name?: string;
     email?: string;
-    password?: string;
     department?: string;
     role?: string;
     sidebarAccess?: string[];
@@ -51,20 +51,13 @@ export async function POST(request: Request) {
 
   const name = body.name?.trim();
   const email = body.email?.trim().toLowerCase();
-  const password = body.password || "";
   const department = body.department?.trim() || "";
   const role = body.role === "head_of_audit" ? "head_of_audit" : "audit_staff";
   const sidebarAccess = normalizeSidebarAccess(body.sidebarAccess);
 
-  if (!name || !email || !password) {
+  if (!name || !email) {
     return NextResponse.json(
-      { error: "Name, email and password are required." },
-      { status: 400 },
-    );
-  }
-  if (password.length < 8) {
-    return NextResponse.json(
-      { error: "Password must be at least 8 characters." },
+      { error: "Name and email are required." },
       { status: 400 },
     );
   }
@@ -80,6 +73,8 @@ export async function POST(request: Request) {
     );
   }
 
+  const tempPassword = generateTempPassword();
+
   const user = await prisma.user.create({
     data: {
       name,
@@ -92,10 +87,24 @@ export async function POST(request: Request) {
           : sidebarAccess.filter((v) =>
               (ASSESSMENT_VIEWS as readonly string[]).includes(v),
             ),
-      passwordHash: await hashPassword(password),
-      mustChangePassword: isPasswordChangeRequired(),
+      passwordHash: await hashPassword(tempPassword),
+      mustChangePassword: true,
     },
   });
 
-  return NextResponse.json({ user: userToSession(user) }, { status: 201 });
+  const emailResult = await sendWelcomeEmail({
+    to: email,
+    name,
+    tempPassword,
+    loginUrl: loginUrlFromRequest(request),
+  });
+
+  return NextResponse.json(
+    {
+      user: userToSession(user),
+      emailSent: emailResult.sent,
+      emailError: emailResult.sent ? undefined : emailResult.error,
+    },
+    { status: 201 },
+  );
 }

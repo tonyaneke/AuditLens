@@ -28,10 +28,17 @@ export async function POST(request: Request) {
   const currentPassword = body.currentPassword || "";
   const newPassword = body.newPassword || "";
   const confirmPassword = body.confirmPassword || "";
+  const isFirstLogin = session.mustChangePassword;
 
-  if (!currentPassword || !newPassword || !confirmPassword) {
+  if (!newPassword || !confirmPassword) {
     return NextResponse.json(
-      { error: "All password fields are required." },
+      { error: "New password and confirmation are required." },
+      { status: 400 },
+    );
+  }
+  if (!isFirstLogin && !currentPassword) {
+    return NextResponse.json(
+      { error: "Current password is required." },
       { status: 400 },
     );
   }
@@ -53,7 +60,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "User not found." }, { status: 404 });
   }
 
-  if (!(await verifyPassword(currentPassword, user.passwordHash))) {
+  if (
+    !isFirstLogin &&
+    !(await verifyPassword(currentPassword, user.passwordHash))
+  ) {
     return NextResponse.json(
       { error: "Current password is incorrect." },
       { status: 401 },

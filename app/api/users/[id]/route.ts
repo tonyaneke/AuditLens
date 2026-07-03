@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
 import {
   createSession,
-  hashPassword,
   requireHeadOfAudit,
   userToSession,
 } from "@/lib/auth";
-import { isPasswordChangeRequired } from "@/lib/auth-config";
 import { prisma } from "@/lib/prisma";
 import {
   ASSESSMENT_VIEWS,
@@ -31,7 +29,6 @@ export async function PUT(request: Request, { params }: Params) {
   let body: {
     name?: string;
     email?: string;
-    password?: string;
     department?: string;
     role?: string;
     sidebarAccess?: string[];
@@ -70,34 +67,13 @@ export async function PUT(request: Request, { params }: Params) {
           (v) => (ASSESSMENT_VIEWS as readonly string[]).includes(v),
         );
 
-  const data: {
-    name?: string;
-    email?: string;
-    department?: string;
-    role?: string;
-    sidebarAccess?: string[];
-    passwordHash?: string;
-    mustChangePassword?: boolean;
-  } = {
+  const data = {
     name: body.name?.trim() || existing.name,
     email: email || existing.email,
     department: body.department?.trim() ?? existing.department,
     role,
     sidebarAccess,
   };
-
-  if (body.password?.trim()) {
-    if (body.password.length < 8) {
-      return NextResponse.json(
-        { error: "Password must be at least 8 characters." },
-        { status: 400 },
-      );
-    }
-    data.passwordHash = await hashPassword(body.password);
-    if (isPasswordChangeRequired()) {
-      data.mustChangePassword = true;
-    }
-  }
 
   const user = await prisma.user.update({ where: { id }, data });
 

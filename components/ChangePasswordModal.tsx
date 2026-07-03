@@ -12,6 +12,7 @@ export default function ChangePasswordModal({
   user,
   onSuccess,
 }: ChangePasswordModalProps) {
+  const isFirstLogin = user.mustChangePassword;
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -37,7 +38,7 @@ export default function ChangePasswordModal({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          currentPassword,
+          currentPassword: isFirstLogin ? undefined : currentPassword,
           newPassword,
           confirmPassword,
         }),
@@ -58,21 +59,26 @@ export default function ChangePasswordModal({
   return (
     <div className="pw-change-overlay" role="dialog" aria-modal="true">
       <div className="pw-change-modal">
-        <h3>Change your password</h3>
+        <h3>{isFirstLogin ? "Set your password" : "Change your password"}</h3>
         <p className="hint">
-          Welcome, {user.name}. For security, you must set a new password before
-          using AMS.
+          {isFirstLogin
+            ? `Welcome, ${user.name}. Choose a password to finish setting up your account.`
+            : `Update the password for ${user.name}.`}
         </p>
         <form onSubmit={onSubmit}>
-          <label htmlFor="pw-current">Current password</label>
-          <input
-            id="pw-current"
-            type="password"
-            autoComplete="current-password"
-            value={currentPassword}
-            onChange={(e) => setCurrentPassword(e.target.value)}
-            required
-          />
+          {!isFirstLogin ? (
+            <>
+              <label htmlFor="pw-current">Current password</label>
+              <input
+                id="pw-current"
+                type="password"
+                autoComplete="current-password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                required
+              />
+            </>
+          ) : null}
           <label htmlFor="pw-new">New password</label>
           <input
             id="pw-new"
@@ -93,7 +99,7 @@ export default function ChangePasswordModal({
           />
           {error ? <div className="login-error">{error}</div> : null}
           <button className="btn pw-change-submit" type="submit" disabled={loading}>
-            {loading ? "Saving…" : "Save new password"}
+            {loading ? "Saving…" : isFirstLogin ? "Save password" : "Save new password"}
           </button>
         </form>
       </div>

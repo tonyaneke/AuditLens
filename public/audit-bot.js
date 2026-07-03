@@ -2840,7 +2840,7 @@ function modalUser(id){
       <div><label>Email *</label><input id="ua_email" type="email" value="${esc(u?u.email:"")}"></div>
       <div><label>Role</label><select id="ua_role" onchange="toggleUserAccessFields()"><option value="audit_staff"${!isHeadRole?" selected":""}>Audit Staff</option><option value="head_of_audit"${isHeadRole?" selected":""}>Head of Audit</option></select></div>
     </div>
-    <label>${isEdit?"New password (leave blank to keep)":"Password *"}</label><input id="ua_pass" type="password" autocomplete="new-password">
+    ${isEdit?"":`<p class="hint" style="margin:10px 0 0">A welcome email with a temporary password will be sent. The user sets their own password on first sign-in.</p>`}
     <div id="ua_access_block" style="margin-top:10px${isHeadRole?" ;display:none":""}">
       <div class="seclabel" style="margin-bottom:6px">Additional sidebar access</div>
       <div class="hint" style="margin-bottom:6px">Main sections (Dashboard, Audits &amp; Reports, Remediation Tracker) are always included.</div>
@@ -2865,11 +2865,10 @@ async function saveUser(id){
     email:val("ua_email"),
     department:val("ua_dept"),
     role:val("ua_role"),
-    password:val("ua_pass"),
     sidebarAccess:selectedSidebarAccess()
   };
-  if(!payload.name||!payload.email||(!id&&!payload.password)){
-    if(err) err.textContent="Name, email and password are required.";
+  if(!payload.name||!payload.email){
+    if(err) err.textContent="Name and email are required.";
     return;
   }
   const res=await fetch(id?`/api/users/${id}`:"/api/users",{
@@ -2880,6 +2879,10 @@ async function saveUser(id){
   const data=await res.json().catch(()=>({}));
   if(!res.ok){ if(err) err.textContent=data.error||"Could not save user."; return; }
   closeModal();
+  if(!id){
+    if(data.emailSent) alert("User created. A welcome email with sign-in details was sent.");
+    else alert("User created, but the welcome email could not be sent. "+(data.emailError||""));
+  }
   await refreshUsersTable();
   if(view==="settings") render();
 }
