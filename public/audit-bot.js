@@ -82,6 +82,24 @@ function today0(){ const d=new Date(); d.setHours(0,0,0,0); return d; }
 function addDays(d,n){ const x=new Date(d.getTime()); x.setDate(x.getDate()+n); return x; }
 function daysBetween(a,b){ return Math.round((b.getTime()-a.getTime())/86400000); }
 function fmtDate(d){ if(!d)return ""; const m=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; return d.getDate()+" "+m[d.getMonth()]+" "+d.getFullYear(); }
+function fmtDateTime(iso){ if(!iso)return ""; const d=new Date(iso); if(isNaN(d.getTime()))return ""; return fmtDate(d)+" · "+d.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}); }
+function obsSortByAdded(a,b){ const ta=a.createdAt?new Date(a.createdAt).getTime():0, tb=b.createdAt?new Date(b.createdAt).getTime():0; return tb-ta; }
+function isRecentlyCreated(o){ if(!o||!o.createdAt)return false; return Date.now()-new Date(o.createdAt).getTime()<24*60*60*1000; }
+function markObsHighlight(ids){ const arr=Array.isArray(ids)?ids:[ids]; arr.forEach(id=>{ if(id)_highlightObsIds.add(id); }); if(arr.length) setTimeout(()=>{ arr.forEach(id=>_highlightObsIds.delete(id)); if(view==="report"||view==="observation") render(); },8000); }
+function hasExecSummary(r){ return !!(r&&(r.objective||r.scope||r.outOfScope||r.strengths||r.areasForImprovement||r.auditOpinion||r.conclusion||r.assuranceLevel)); }
+function boldSectionTitle(t){ const m=String(t||"").match(/^(\d+\.\d+)\s*(.+)$/); return m?`<b>${m[1]}</b> ${m[2]}`:t; }
+function closeSplitMenus(){ document.querySelectorAll(".split-btn-wrap.open").forEach(el=>el.classList.remove("open")); }
+function toggleSplitMenu(id,ev){ if(ev) ev.stopPropagation(); const el=document.getElementById(id); if(!el)return; const open=el.classList.contains("open"); closeSplitMenus(); if(!open) el.classList.add("open"); }
+function addObsDropdown(aid,rid){
+  return `<div class="split-btn-wrap" id="addObsMenu">
+    <button class="btn sm" type="button" onclick="closeSplitMenus();modalObs('${aid}','${rid}')">+ Add observation</button>
+    <button class="btn sm split-btn-caret" type="button" aria-label="Add observation options" onclick="toggleSplitMenu('addObsMenu',event)">▾</button>
+    <div class="split-btn-menu">
+      <button type="button" class="split-btn-item" onmousedown="event.preventDefault()" onclick="closeSplitMenus();modalObs('${aid}','${rid}')">Add manually</button>
+      <button type="button" class="split-btn-item" onmousedown="event.preventDefault()" onclick="closeSplitMenus();modalGenerateObs('${aid}','${rid}')">Auto-generate with AI</button>
+    </div>
+  </div>`;
+}
 function reportDateOf(r){ if(!r)return null; return isoToDate(r.reportDateISO) || looseDate(r.reportDate); }
 function expectedClose(o,r){ const base=reportDateOf(r); const w=CLOSE_DAYS[o.timeline]; return (base&&w)?addDays(base,w):null; }
 function effectiveClose(o,r){ return looseDate(o.dueDate) || expectedClose(o,r); }  // manual target overrides computed
@@ -101,6 +119,7 @@ let curAudit = null;   // id
 let curReport = null;  // id
 let curObs = null;     // observation id
 let reportObsFilter={crit:"All",status:"All",q:""};
+let _highlightObsIds=new Set();
 let curProc = null;    // process review id
 
 let _saveTimer = null;
@@ -167,8 +186,8 @@ function go(v,opts={}){
   if(opts.audit!==undefined) curAudit=opts.audit;
   if(opts.report!==undefined) curReport=opts.report;
   if(opts.obs!==undefined) curObs=opts.obs;
-  else if(v!=="observation") curObs=null;
-  document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("active",b.dataset.view===v && v!=="report" && v!=="observation" && v!=="audit"));
+  else if(v!=="observation" && v!=="sopupdate") curObs=null;
+  document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("active",b.dataset.view===v && v!=="report" && v!=="observation" && v!=="sopupdate" && v!=="audit"));
   render();
 }
 function backBtn(fn){ return `<button class="btn-back" onclick="${fn}" title="Back"><span aria-hidden="true">←</span> Back</button>`; }
@@ -262,6 +281,7 @@ function render(){
   else if(view==="audit"){ renderAudit(C,T,A); }
   else if(view==="report"){ renderReport(C,T,A); }
   else if(view==="observation"){ renderObservation(C,T,A); }
+  else if(view==="sopupdate"){ renderSopUpdate(C,T,A); }
   else if(view==="tracker"){
     T.textContent=pageTitleFor("tracker");
     A.innerHTML=trackerMode==="insights"
@@ -710,7 +730,7 @@ function engStatusCell(e){
   if(occ.length>1){
     const done=occ.filter(o=>o.done).length;
     return `<div class="hint" style="margin-bottom:4px">${done}/${occ.length} quarters${done>=occ.length?` · <b style="color:#2e7d32">Completed</b>`:done>0?" · in progress":""}</div>`+
-      occ.map(o=>`<span onclick="raOccToggle('${e.id}','${esc(o.q).replace(/'/g,"")}')" title="Toggle this quarter complete" style="cursor:pointer;display:inline-block;margin:0 3px 3px 0;font-size:11px;padding:2px 7px;border-radius:5px;font-weight:600;background:${o.done?"#eaf5eb":"#eef2f7"};color:${o.done?"#2e7d32":"#64748b"};border:1px solid ${o.done?"#bfe3c4":"#dbe3ea"}">${o.done?"✓ ":""}${esc(o.q)}</span>`).join("");
+      occ.map(o=>`<span data-q="${esc(o.q)}" onclick="raOccToggle('${e.id}',this.getAttribute('data-q'))" title="Toggle this quarter complete" style="cursor:pointer;display:inline-block;margin:0 3px 3px 0;font-size:11px;padding:2px 7px;border-radius:5px;font-weight:600;background:${o.done?"#eaf5eb":"#eef2f7"};color:${o.done?"#2e7d32":"#64748b"};border:1px solid ${o.done?"#bfe3c4":"#dbe3ea"}">${o.done?"✓ ":""}${esc(o.q)}</span>`).join("");
   }
   return `<select class="mini" onchange="raEngSet('${e.id}',this.value)">${ENG_STATUS.map(s=>`<option${(e.engStatus||"Not started")===s?" selected":""}>${s}</option>`).join("")}</select>`;
 }
@@ -2443,10 +2463,9 @@ function renderReport(C,T,A){
   T.textContent=pageTitleFor("audits");
   setTopBack(backBtn("go('audit',{audit:'"+a.id+"'})"));
   A.innerHTML=`<button class="btn sec sm" onclick="modalReport('${a.id}','${r.id}')">Edit report</button>
-    <button class="btn sm dark ai-generate-btn" onclick="modalGenerateObs('${a.id}','${r.id}')">Generate observation</button>
     ${btnDownload(`exportReport('${a.id}','${r.id}')`,"Download")}`;
 
-  const obs=r.observations.slice().sort((x,y)=>CRITS.indexOf(x.criticality)-CRITS.indexOf(y.criticality));
+  const obs=r.observations.slice().sort(obsSortByAdded);
   const filteredObs=obs.filter(o=>{
     if(reportObsFilter.crit!=="All" && o.criticality!==reportObsFilter.crit) return false;
     if(reportObsFilter.status!=="All" && (o.status||"Open")!==reportObsFilter.status) return false;
@@ -2464,7 +2483,7 @@ function renderReport(C,T,A){
 
   // exec summary
   html+=`<div class="card anim-fade-in"><div class="row"><h3 style="margin:0">Executive Summary</h3><div class="spacer"></div>
-    <button class="btn ghost sm ai-generate-btn" onclick="modalExecPrompt('${a.id}','${r.id}')">Generate exec summary</button>
+    <button class="btn ghost sm ai-generate-btn" onclick="modalExecPrompt('${a.id}','${r.id}')">${hasExecSummary(r)?"Regenerate exec summary":"Generate exec summary"}</button>
     <button class="btn ghost sm" onclick="modalFrontMatter('${a.id}','${r.id}')">Edit</button></div>
     <div style="margin:12px 0">${reportSummaryHTML(r)}${execSummaryHTML(r)}</div></div>`;
 
@@ -2474,7 +2493,7 @@ function renderReport(C,T,A){
       <h3 class="section-title">Observations (${r.observations.length})</h3>
       <div class="spacer"></div>
       ${r.observations.length?`<input class="field-input obs-filter-search" value="${esc(reportObsFilter.q||"")}" placeholder="Search observations…" oninput="reportObsFilter.q=this.value;render()">`:""}
-      <button class="btn sm" onclick="modalObs('${a.id}','${r.id}')">+ Add observation</button>
+      ${addObsDropdown(a.id,r.id)}
       ${r.observations.length?`<button class="btn sec sm" onclick="scanRepeats('${a.id}','${r.id}')">🔁 Scan for repeats</button>`:""}
     </div>
     ${r.observations.length?`<div class="obs-filters-row obs-filters-left">
@@ -2493,17 +2512,50 @@ function renderReport(C,T,A){
   }
   html+=`</div>`;
   // proposed SOP updates roll-up
-  const sopObs=obs.filter(o=>(o.sopUpdate||"").trim());
   const sopMissing=obs.filter(o=>!(o.sopUpdate||"").trim()).length;
-  html+=`<div class="card"><div class="row"><h3 style="margin:0">Proposed SOP updates (${sopObs.length})</h3><div class="spacer"></div>${obs.length?`<button class="btn sec sm ai-generate-btn" onclick="modalSopBulk('${a.id}','${r.id}')">Generate${sopMissing?" missing ("+sopMissing+")":""}</button>`:""}${sopObs.length?`<button class="btn sec sm" onclick="exportSopUpdates('${a.id}','${r.id}')">⤓ Export change-list (Word)</button>`:""}</div>`;
-  if(!sopObs.length){ html+=`<div class="hint" style="margin-top:8px">No proposed SOP updates yet.</div>`; }
-  else { html+=`<p class="hint" style="margin:2px 0 0">Consolidated procedure revisions arising from this report's observations.</p>`+sopObs.map(o=>`<div class="sop-card">
-    <div class="row" style="align-items:center;gap:8px"><span class="pill c-${ck(o.criticality)}">${o.criticality}</span><b>${esc(o.ref?o.ref+" — ":"")}${esc(o.title)}</b></div>
-    <div class="obs-field"><div class="ttl">Proposed SOP update</div><div class="txt">${esc(o.sopUpdate)}</div></div>
-  </div>`).join(""); }
+  html+=`<div class="card"><div class="row"><h3 style="margin:0">Proposed SOP updates</h3><div class="spacer"></div>${sopMissing?`<button class="btn sec sm ai-generate-btn" onclick="modalSopBulk('${a.id}','${r.id}')">Generate missing (${sopMissing})</button>`:""}${obs.some(o=>(o.sopUpdate||"").trim())?`<button class="btn sec sm" onclick="exportSopUpdates('${a.id}','${r.id}')">⤓ Export change-list (Word)</button>`:""}</div>`;
+  if(!obs.length){ html+=`<div class="hint" style="margin-top:8px">Add observations first — proposed SOP updates are drafted from each finding.</div>`; }
+  else { html+=`<p class="hint" style="margin:2px 0 0">Click a row to view the full proposed procedure revision.</p>`+obs.map(o=>sopListCard(a,r,o)).join(""); }
   html+=`</div>`;
   C.innerHTML=html;
+  if(_highlightObsIds.size){ const first=[..._highlightObsIds][0]; const el=document.querySelector(`.obs-grid-card[data-obs-id="${first}"]`); if(el) el.scrollIntoView({behavior:"smooth",block:"nearest"}); }
 }
+function sopStatusPill(o){
+  return (o.sopUpdate||"").trim()?`<span class="pill c-Low">SOP drafted</span>`:`<span class="pill sop-pending-pill">Pending</span>`;
+}
+function sopListCard(a,r,o){
+  return `<div class="sop-list-card" data-obs-id="${o.id}" onclick="go('sopupdate',{audit:'${a.id}',report:'${r.id}',obs:'${o.id}'})" role="button" tabindex="0">
+    <b class="sop-list-title">${esc(o.ref?o.ref+" — ":"")}${esc(o.title)}</b>
+  </div>`;
+}
+function renderSopUpdate(C,T,A){
+  const a=audit(curAudit); const r=report(a,curReport);
+  const o=r&&r.observations.find(x=>x.id===curObs);
+  if(!a||!r||!o){ go("report",{audit:curAudit,report:curReport}); return; }
+  T.textContent=pageTitleFor("audits");
+  setTopBack(backBtn("go('report',{audit:'"+a.id+"',report:'"+r.id+"'})"));
+  A.innerHTML=`<button class="btn sec sm" onclick="modalObs('${a.id}','${r.id}','${o.id}')">Edit observation</button>
+    ${btnDownload(`exportSopUpdates('${a.id}','${r.id}')`,"Export SOP list")}`;
+  const hasSop=(o.sopUpdate||"").trim();
+  C.innerHTML=`<div class="obs-detail-page anim-fade-in">
+    <header class="obs-detail-hero">
+      <div class="obs-detail-badges">
+        ${sopStatusPill(o)}
+        <span class="pill c-${ck(o.criticality)}">${o.criticality}</span>
+        ${statusPill(o.status||"Open")}
+        ${o.category?`<span class="tag">${esc(o.category)}</span>`:""}
+      </div>
+      <h2 class="obs-detail-title">${esc(o.ref?o.ref+" — ":"")}${esc(o.title)}</h2>
+      <p class="hint" style="margin:8px 0 0">Proposed Standard Operating Procedure update arising from this observation.</p>
+    </header>
+    <div class="obs-detail-sections">
+      ${hasSop?`<section class="obs-detail-section"><h4 class="obs-detail-label">Proposed SOP update</h4><div class="obs-detail-content">${esc(o.sopUpdate)}</div></section>`:`<div class="empty" style="padding:28px 12px"><div class="big">📋</div>No proposed SOP update yet.${sopMissingFor(r)?` Use <b>Generate missing</b> on the report page.`:""}</div>`}
+      ${detailSection("Observation summary",o.description)}
+      ${detailSection("Recommendation",o.recommendation)}
+    </div>
+  </div>`;
+}
+function sopMissingFor(r){ return r&&r.observations.some(o=>!(o.sopUpdate||"").trim()); }
 function exportSopUpdates(aid,rid){
   const a=audit(aid),r=report(a,rid);
   const sopObs=r.observations.filter(o=>(o.sopUpdate||"").trim()).slice().sort((x,y)=>CRITS.indexOf(x.criticality)-CRITS.indexOf(y.criticality));
@@ -2594,8 +2646,8 @@ function doImportSopBulk(aid,rid,raw){
   if(!n){ showAiErr("sbErr","No matching observations found — check the ref values match."); return false; }
   save(); closeModal(); render(); return true;
 }
-function bullets(text){ const items=(text||"").split("\n").map(s=>s.trim()).filter(Boolean); return items.length?`<ul style="margin:6px 0 0;padding-left:18px">${items.map(i=>`<li>${esc(i)}</li>`).join("")}</ul>`:""; }
-function sumSection(t,body){ return body?`<div class="obs-field"><div class="ttl">${t}</div>${body}</div>`:""; }
+function bullets(text){ const items=(text||"").split("\n").map(s=>s.trim()).filter(Boolean); return items.length?`<ul style="margin:6px 0 0;padding-left:18px">${items.map(i=>{ const m=i.match(/^([^:—–-]+[:—–-])\s*(.*)$/); return m?`<li><b>${esc(m[1].trim())}</b> ${esc(m[2])}</li>`:`<li>${esc(i)}</li>`; }).join("")}</ul>`:""; }
+function sumSection(t,body){ return body?`<div class="obs-field"><div class="ttl">${boldSectionTitle(t)}</div>${body}</div>`:""; }
 function execSummaryHTML(r){
   const txt=v=>v?`<div class="txt" style="white-space:pre-wrap">${esc(v)}</div>`:"";
   let h=sumSection("1.1 Audit objective &amp; scope", txt(r.objective||r.scope));
@@ -2612,7 +2664,10 @@ function execSummaryHTML(r){
 function obsGridCard(a,r,o){
   const preview=(o.description||o.recommendation||"").trim();
   const previewShort=preview.length>90?preview.slice(0,89)+"…":preview;
-  return `<div class="obs-grid-card lc-${ck(o.criticality)}" onclick="go('observation',{audit:'${a.id}',report:'${r.id}',obs:'${o.id}'})" role="button" tabindex="0">
+  const hl=_highlightObsIds.has(o.id)?" obs-new-highlight":"";
+  const recent=isRecentlyCreated(o)?`<span class="obs-recent-badge">Recently created</span>`:"";
+  const created=o.createdAt?`<div class="obs-grid-created">${recent}${recent?" · ":""}${esc(fmtDateTime(o.createdAt))}</div>`:(recent?`<div class="obs-grid-created">${recent}</div>`:"");
+  return `<div class="obs-grid-card lc-${ck(o.criticality)}${hl}" data-obs-id="${o.id}" onclick="go('observation',{audit:'${a.id}',report:'${r.id}',obs:'${o.id}'})" role="button" tabindex="0">
     <div class="obs-grid-head">
       <span class="pill c-${ck(o.criticality)}">${o.criticality}</span>
       ${statusPill(o.status||"Open")}
@@ -2620,6 +2675,7 @@ function obsGridCard(a,r,o){
     <h4 class="obs-grid-title">${esc(o.ref?o.ref+" — ":"")}${esc(o.title)}</h4>
     ${o.category?`<span class="tag">${esc(o.category)}</span>`:""}
     ${previewShort?`<p class="obs-grid-preview">${esc(previewShort)}</p>`:""}
+    ${created}
     ${o.isRepeat?`<span class="pill repeat-pill">↻ REPEAT</span>`:""}
   </div>`;
 }
@@ -2651,6 +2707,7 @@ function renderObservation(C,T,A){
       ${o.timeline?`<div class="obs-meta-item"><span class="obs-meta-label">Timeline</span><span class="obs-meta-value">${esc(o.timeline)}</span></div>`:""}
       ${ec?`<div class="obs-meta-item"><span class="obs-meta-label">Expected close</span><span class="obs-meta-value">${fmtDate(ec)}${od?` <span class="pill c-Critical">OVERDUE</span>`:""}</span></div>`:""}
       ${age!=null?`<div class="obs-meta-item"><span class="obs-meta-label">Age</span><span class="obs-meta-value">${age} day${age!==1?"s":""}${o.status==="Closed"?" to close":""}</span></div>`:""}
+      ${o.createdAt?`<div class="obs-meta-item"><span class="obs-meta-label">Created</span><span class="obs-meta-value">${esc(fmtDateTime(o.createdAt))}</span></div>`:""}
     </div>
     <div class="obs-detail-sections">
       ${detailSection("Detailed description",o.description)}
@@ -2764,8 +2821,9 @@ One-liner: ${ol}
 Process / Department: ${area||"(not specified)"}
 Context: ${ctx||"(not specified)"}
 
-Return ONLY a JSON object (no commentary) with these exact keys:
+Return ONLY a JSON object (no commentary) with these exact keys — every field must be populated with substantive content:
 {
+  "ref": "observation reference e.g. 1.1",
   "title": "concise observation title",
   "category": "control theme, e.g. Credit risk / Segregation of duties",
   "description": "detailed condition — what was observed, with specifics",
@@ -3127,25 +3185,29 @@ function saveFrontMatter(aid,rid){
   save(); closeModal(); render();
 }
 function modalExecPrompt(aid,rid){
-  openModal("Generate executive summary",`<div id="exErr" style="margin-top:10px"></div>`,
-    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark ai-generate-btn" onclick="generateExecSummary('${aid}','${rid}')">Generate exec summary</button>`);
+  const r=report(audit(aid),rid);
+  const regen=hasExecSummary(r);
+  openModal(regen?"Regenerate executive summary":"Generate executive summary",`<div id="exErr" style="margin-top:10px"></div><p class="hint">All sections will be populated — objective, out of scope, strengths, areas for improvement, opinion, and conclusion.</p>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark ai-generate-btn" onclick="generateExecSummary('${aid}','${rid}')">${regen?"Regenerate exec summary":"Generate exec summary"}</button>`);
 }
 function buildExecPrompt(aid,rid){
   const a=audit(aid), r=report(a,rid);
   const obs=r.observations; const c=zc(); obs.forEach(o=>c[o.criticality]++);
   const overall=worst(c,obs.length);
-  const findingList=obs.map((o,i)=>`${i+1}. [${o.criticality}] ${o.title}`).join("\n")||"(no observations captured yet)";
-  return `Act as my internal audit report writer for ${DB.org}. Draft the executive summary for the report "${r.title}" (audit: ${a.name}${a.area?", "+a.area:""}${r.period?", period "+r.period:""}).
+  const findingList=obs.map((o,i)=>`${i+1}. [${o.criticality}] ${o.title}${o.description?" — "+o.description.slice(0,120):""}`).join("\n")||"(no observations captured yet)";
+  return `Act as my internal audit report writer for ${DB.org}. Draft the executive summary for the report "${r.title}" (audit: ${a.name}${a.area?", "+a.area:""}${r.period?", period "+r.period:""}${r.scope?", scope: "+r.scope:""}).
 
 Findings raised (${obs.length}; mix: ${CRITS.filter(k=>c[k]).map(k=>c[k]+" "+k).join(", ")||"none"}; overall residual risk ${overall}):
 ${findingList}
 
-Write in the formal tone of an internal audit report to the CAE/MD and Board Audit Committee. Return ONLY a JSON object with these exact keys:
+Write in the formal tone of an internal audit report to the CAE/MD and Board Audit Committee. You MUST populate every field below — do not leave any blank or empty array. For list fields provide at least 2 substantive bullet items each (one per line when converted to text).
+
+Return ONLY a JSON object with these exact keys:
 {
   "objective": "1.1 audit objective & scope — what was assessed, frameworks/period; 1-2 short paragraphs",
-  "outOfScope": ["area explicitly out of scope", "..."],
-  "strengths": ["notable strength / positive observation", "..."],
-  "areasForImprovement": ["thematic area for strategic improvement", "..."],
+  "outOfScope": ["area explicitly out of scope", "second out-of-scope area"],
+  "strengths": ["notable strength / positive observation", "second strength"],
+  "areasForImprovement": ["thematic area for strategic improvement", "second improvement theme"],
   "assuranceLevel": "High assurance | Moderate assurance | Limited assurance | No assurance",
   "auditOpinion": "1.4 internal audit opinion narrative justifying the assurance level and describing the control environment",
   "conclusion": "1.5 conclusion paragraph"
@@ -3160,7 +3222,10 @@ function doImportExec(aid,rid,raw){
   if(raw==null) raw=val("ex_json").trim(); else raw=importRaw(raw);
   if(!raw){ showAiErr("exErr","Nothing to import."); return false; }
   let d; try{ d=parseAiJson(raw); }catch(e){ showAiErr("exErr",e.message); return false; }
-  const li=v=>Array.isArray(v)?v.join("\n"):(v||"");
+  const li=v=>Array.isArray(v)?v.filter(x=>String(x||"").trim()).join("\n"):String(v||"").trim();
+  const need=(k,v)=>{ if(v==null||v==="") return k; if(Array.isArray(v)&&!v.length) return k; return null; };
+  const missing=[need("objective",d.objective),need("outOfScope",d.outOfScope),need("strengths",d.strengths),need("areasForImprovement",d.areasForImprovement),need("assuranceLevel",d.assuranceLevel),need("auditOpinion",d.auditOpinion),need("conclusion",d.conclusion)].filter(Boolean);
+  if(missing.length){ showAiErr("exErr","AI response incomplete — missing: "+missing.join(", ")+". Try again."); return false; }
   if(d.objective!=null) r.objective=String(d.objective);
   if(d.outOfScope!=null) r.outOfScope=li(d.outOfScope);
   if(d.strengths!=null) r.strengths=li(d.strengths);
@@ -3226,7 +3291,7 @@ function saveObs(aid,rid,oid){
   const cdate=val("o_cdate");
   let obj;
   if(oid){ obj=r.observations.find(x=>x.id===oid); stampClosed(obj,status); Object.assign(obj,data); }
-  else{ obj={id:uid(),...data,createdAt:new Date().toISOString()}; stampClosed(obj,status); r.observations.push(obj); logAudit("workspace.observation_created","Created observation "+title,{ auditId:aid, reportId:rid, observationId:obj.id, title }); }
+  else{ obj={id:uid(),...data,createdAt:new Date().toISOString()}; stampClosed(obj,status); r.observations.push(obj); markObsHighlight(obj.id); logAudit("workspace.observation_created","Created observation "+title,{ auditId:aid, reportId:rid, observationId:obj.id, title }); }
   if(status==="Closed" && cdate) obj.closedDateISO=cdate;
   save(); closeModal(); render();
 }
@@ -3299,16 +3364,20 @@ function doImport(aid,rid,raw){
   let data; try{ data=parseAiJson(raw); }catch(e){ showAiErr("impErr",e.message); return false; }
   const arr=Array.isArray(data)?data:[data];
   let added=0;
+  const newIds=[];
   arr.forEach(d=>{
     if(typeof d!=="object"||!d) return;
     let crit=(d.criticality||"Moderate"); crit=CRITS.find(c=>c.toLowerCase()===String(crit).toLowerCase())||"Moderate";
-    r.observations.push({id:uid(),ref:d.ref||"",title:d.title||"(untitled)",category:d.category||"",
+    const id=uid();
+    r.observations.push({id,ref:d.ref||"",title:d.title||"(untitled)",category:d.category||"",
       description:d.description||"",criteria:d.criteria||"",risk:d.risk||d.impact||"",rootCause:d.rootCause||d.root_cause||"",
       recommendation:d.recommendation||"",sopUpdate:d.sopUpdate||d.proposedSOP||"",criticality:crit,managementResponse:d.managementResponse||"",
       owner:d.owner||"",timeline:TIMELINES.includes(d.timeline)?d.timeline:"",dueDate:d.dueDate||"",isRepeat:!!d.isRepeat,repeatOf:d.repeatOf||"",status:d.status&&STATUSES.includes(d.status)?d.status:"Open",createdAt:new Date().toISOString()});
+    newIds.push(id);
     added++;
   });
   if(!added){ showAiErr("impErr","No observations found in that JSON."); return false; }
+  markObsHighlight(newIds);
   save(); closeModal(); render();
   if(view!=="report"){ go("report",{audit:aid,report:rid}); }
   return true;
@@ -3316,11 +3385,21 @@ function doImport(aid,rid,raw){
 
 /* ============================ AI (Gemini) ============================ */
 let _aiBusy=false;
+let _aiBusyTimer=null;
+const AI_BUSY_MSGS=["Generating…","Please hold on…","Almost done…","Finishing up…"];
 function aiBusy(on){
   _aiBusy=!!on;
   document.body.classList.toggle("ai-busy",_aiBusy);
   document.querySelectorAll(".ai-generate-btn").forEach(b=>{ b.disabled=_aiBusy; });
   const ov=document.getElementById("aiBusyOverlay"); if(ov) ov.classList.toggle("show",_aiBusy);
+  const msgEl=document.getElementById("aiBusyMsg");
+  clearInterval(_aiBusyTimer);
+  _aiBusyTimer=null;
+  if(on){
+    let i=0;
+    if(msgEl) msgEl.textContent=AI_BUSY_MSGS[0];
+    _aiBusyTimer=setInterval(()=>{ i=(i+1)%AI_BUSY_MSGS.length; if(msgEl) msgEl.textContent=AI_BUSY_MSGS[i]; },2800);
+  }else if(msgEl) msgEl.textContent=AI_BUSY_MSGS[0];
 }
 function parseAiJson(raw){
   raw=String(raw||"").trim().replace(/^```(json)?/i,"").replace(/```$/,"").trim();
@@ -3698,6 +3777,7 @@ function initAuditBot(){
   });
   ov = document.getElementById("overlay");
   if (ov) ov.addEventListener("click", (e) => { if (e.target === ov) closeModal(); });
+  document.addEventListener("click", (e) => { if(e.target.closest(".split-btn-wrap")) return; closeSplitMenus(); });
   document.getElementById("nav").addEventListener("click", (e) => {
     const b = e.target.closest("button");
     if (!b) return;

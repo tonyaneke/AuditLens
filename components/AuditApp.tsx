@@ -64,11 +64,11 @@ export default function AuditApp() {
           <div className="ai-busy-overlay" id="aiBusyOverlay" aria-hidden="true">
             <div className="ai-busy-card">
               <span className="ai-busy-spinner" aria-hidden="true" />
-              Generating…
+              <span id="aiBusyMsg">Generating…</span>
             </div>
           </div>
 
-          <Script src="/audit-bot.js?v=20260703c" strategy="afterInteractive" />
+          <Script src="/audit-bot.js?v=20260703e" strategy="afterInteractive" />
         </>
       )}
     </AuthGate>
