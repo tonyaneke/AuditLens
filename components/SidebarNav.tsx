@@ -9,6 +9,7 @@ import {
   CheckmarkBadge01Icon,
   DashboardSquare01Icon,
   File01Icon,
+  Folder01Icon,
   JusticeScale01Icon,
   Logout01Icon,
   Settings01Icon,
@@ -52,6 +53,12 @@ const SECTIONS: { label: string; items: NavItem[] }[] = [
       { view: "approvals", label: "Approvals", icon: CheckmarkBadge01Icon },
     ],
   },
+  {
+    label: "Portal",
+    items: [
+      { view: "myobs", label: "My Observations", icon: Folder01Icon },
+    ],
+  },
 ];
 
 type SidebarNavProps = {
@@ -60,6 +67,7 @@ type SidebarNavProps = {
 
 function formatRole(role: string) {
   if (role === "head_of_audit") return "Head of Audit";
+  if (role === "action_owner") return "Action Owner";
   return "Audit Staff";
 }
 
@@ -100,9 +108,12 @@ async function signOut() {
 
 export default function SidebarNav({ user }: SidebarNavProps) {
   const isHead = user.role === "head_of_audit";
+  const isOwner = user.role === "action_owner";
   const access = isHead
     ? new Set<string>([...MAIN_VIEWS, ...ASSESSMENT_VIEWS, "approvals"])
-    : new Set<string>([...MAIN_VIEWS, ...(user.sidebarAccess || [])]);
+    : isOwner
+      ? new Set<string>(["myobs"])
+      : new Set<string>([...MAIN_VIEWS, ...(user.sidebarAccess || [])]);
 
   return (
     <>

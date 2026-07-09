@@ -8,6 +8,7 @@ import { writeAuditLog } from "@/lib/audit-log";
 import { prisma } from "@/lib/prisma";
 import {
   ASSESSMENT_VIEWS,
+  normalizeRole,
   normalizeSidebarAccess,
 } from "@/lib/permissions";
 
@@ -51,8 +52,7 @@ export async function PUT(request: Request, { params }: Params) {
     }
   }
 
-  const role =
-    body.role === "head_of_audit" ? "head_of_audit" : body.role === "audit_staff" ? "audit_staff" : existing.role;
+  const role = body.role ? normalizeRole(body.role) : existing.role;
 
   if (existing.id === session.id && role !== "head_of_audit") {
     return NextResponse.json(
@@ -62,11 +62,11 @@ export async function PUT(request: Request, { params }: Params) {
   }
 
   const sidebarAccess =
-    role === "head_of_audit"
-      ? []
-      : normalizeSidebarAccess(body.sidebarAccess ?? existing.sidebarAccess).filter(
+    role === "audit_staff"
+      ? normalizeSidebarAccess(body.sidebarAccess ?? existing.sidebarAccess).filter(
           (v) => (ASSESSMENT_VIEWS as readonly string[]).includes(v),
-        );
+        )
+      : [];
 
   const data = {
     name: body.name?.trim() || existing.name,

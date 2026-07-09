@@ -4,7 +4,7 @@ import { writeAuditLog } from "@/lib/audit-log";
 import { loginUrlFromRequest, sendWelcomeEmail } from "@/lib/email";
 import { generateTempPassword } from "@/lib/password-utils";
 import { prisma } from "@/lib/prisma";
-import { ASSESSMENT_VIEWS, normalizeSidebarAccess } from "@/lib/permissions";
+import { ASSESSMENT_VIEWS, normalizeRole, normalizeSidebarAccess } from "@/lib/permissions";
 
 export async function GET() {
   try {
@@ -53,7 +53,7 @@ export async function POST(request: Request) {
   const name = body.name?.trim();
   const email = body.email?.trim().toLowerCase();
   const department = body.department?.trim() || "";
-  const role = body.role === "head_of_audit" ? "head_of_audit" : "audit_staff";
+  const role = normalizeRole(body.role);
   const sidebarAccess = normalizeSidebarAccess(body.sidebarAccess);
 
   if (!name || !email) {
@@ -83,11 +83,11 @@ export async function POST(request: Request) {
       department,
       role,
       sidebarAccess:
-        role === "head_of_audit"
-          ? []
-          : sidebarAccess.filter((v) =>
+        role === "audit_staff"
+          ? sidebarAccess.filter((v) =>
               (ASSESSMENT_VIEWS as readonly string[]).includes(v),
-            ),
+            )
+          : [],
       passwordHash: await hashPassword(tempPassword),
       mustChangePassword: true,
     },

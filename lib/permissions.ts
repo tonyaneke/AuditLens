@@ -10,13 +10,29 @@ export const ASSESSMENT_VIEWS = [
 
 export const ADMIN_VIEWS = ["settings", "auditlog"] as const;
 
+// Views available to a department-head "action owner" (their remediation portal).
+export const OWNER_VIEWS = ["myobs"] as const;
+
 export const ALL_VIEWS = [
   ...MAIN_VIEWS,
   ...ASSESSMENT_VIEWS,
   ...ADMIN_VIEWS,
+  ...OWNER_VIEWS,
 ] as const;
 
 export type AppView = (typeof ALL_VIEWS)[number];
+
+export const KNOWN_ROLES = [
+  "head_of_audit",
+  "audit_staff",
+  "action_owner",
+] as const;
+
+export function normalizeRole(raw: unknown): string {
+  return (KNOWN_ROLES as readonly string[]).includes(String(raw))
+    ? String(raw)
+    : "audit_staff";
+}
 
 export type SessionUser = {
   id: string;
@@ -38,6 +54,9 @@ export function normalizeSidebarAccess(raw: unknown): string[] {
 }
 
 export function canAccessView(user: SessionUser, view: string): boolean {
+  if (user.role === "action_owner") {
+    return (OWNER_VIEWS as readonly string[]).includes(view);
+  }
   if (user.role === "head_of_audit") {
     if (
       [
@@ -59,6 +78,7 @@ export function canAccessView(user: SessionUser, view: string): boolean {
 }
 
 export function allowedViews(user: SessionUser): string[] {
+  if (user.role === "action_owner") return [...OWNER_VIEWS];
   if (user.role === "head_of_audit") return [...ALL_VIEWS];
   const views: string[] = [...MAIN_VIEWS];
   for (const v of user.sidebarAccess) {

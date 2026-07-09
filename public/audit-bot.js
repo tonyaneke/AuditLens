@@ -114,14 +114,7 @@ function boldSectionTitle(t){ const m=String(t||"").match(/^(\d+\.\d+)\s*(.+)$/)
 function closeSplitMenus(){ document.querySelectorAll(".split-btn-wrap.open").forEach(el=>el.classList.remove("open")); }
 function toggleSplitMenu(id,ev){ if(ev) ev.stopPropagation(); const el=document.getElementById(id); if(!el)return; const open=el.classList.contains("open"); closeSplitMenus(); if(!open) el.classList.add("open"); }
 function addObsDropdown(aid,rid){
-  return `<div class="split-btn-wrap" id="addObsMenu">
-    <button class="btn sm" type="button" onclick="closeSplitMenus();modalObs('${aid}','${rid}')">+ Add observation</button>
-    <button class="btn sm split-btn-caret" type="button" aria-label="Add observation options" onclick="toggleSplitMenu('addObsMenu',event)">▾</button>
-    <div class="split-btn-menu">
-      <button type="button" class="split-btn-item" onmousedown="event.preventDefault()" onclick="closeSplitMenus();modalObs('${aid}','${rid}')">Add manually</button>
-      <button type="button" class="split-btn-item" onmousedown="event.preventDefault()" onclick="closeSplitMenus();modalGenerateObs('${aid}','${rid}')">Auto-generate with AI</button>
-    </div>
-  </div>`;
+  return `<button class="btn sm dark ai-generate-btn" type="button" onclick="modalGenerateObs('${aid}','${rid}')">+ Add observation (AI)</button>`;
 }
 function reportDateOf(r){ if(!r)return null; return isoToDate(r.reportDateISO) || looseDate(r.reportDate); }
 function expectedClose(o,r){ const base=reportDateOf(r); const w=CLOSE_DAYS[o.timeline]; return (base&&w)?addDays(base,w):null; }
@@ -183,6 +176,7 @@ function fmtAuditWhen(iso){
 function canAccessView(v){
   const u = window.AMS_USER;
   if(!u) return ["dashboard","audits","tracker","audit","report","observation","newobs","insights","guide"].includes(v);
+  if(u.role==="action_owner"){ return v==="myobs"||v==="observation"; }
   if(u.role==="head_of_audit"){
     if(["dashboard","audits","tracker","auditra","fraud","process","external","iasa","approvals","settings","auditlog","audit","report","observation","newobs","insights","guide"].includes(v)) return true;
     return false;
@@ -202,8 +196,8 @@ function reportObs(r){ return r.observations; }
 function go(v,opts={}){
   if(v==="newobs"){ modalNewObs(); return; }
   if(v==="insights"){ trackerMode="insights"; v="tracker"; }
-  const gated=["dashboard","audits","tracker","auditra","fraud","process","external","iasa","approvals","settings","auditlog","guide"];
-  if(gated.includes(v) && !canAccessView(v)){ go("dashboard"); return; }
+  const gated=["dashboard","audits","tracker","auditra","fraud","process","external","iasa","approvals","myobs","settings","auditlog","guide"];
+  if(gated.includes(v) && !canAccessView(v)){ go(window.AMS_USER&&window.AMS_USER.role==="action_owner"?"myobs":"dashboard"); return; }
   view=v;
   curProc=null;
   if(opts.audit!==undefined) curAudit=opts.audit;
@@ -218,7 +212,7 @@ const ICON_TRASH=`<svg viewBox="0 0 24 24" width="14" height="14" fill="none" st
 function iconBtn(fn,icon,title,danger){ return `<button type="button" class="btn-icon-action${danger?" danger":""}" title="${esc(title)}" onclick="${fn}">${icon}</button>`; }
 function delBtn(fn,title){ return iconBtn(fn,ICON_TRASH,title||"Delete",true); }
 function pageTitleFor(v){
-  const map={dashboard:"Dashboard",audits:"Audits & Reports",tracker:"Remediation Tracker",auditra:"Audit Risk Assessment",fraud:"Fraud Risk",process:"Process Review",external:"External Findings",iasa:"IA Self-Assessment",approvals:"Approvals",guide:"How to use AuditLens",settings:"Settings",auditlog:"Audit log"};
+  const map={dashboard:"Dashboard",audits:"Audits & Reports",tracker:"Remediation Tracker",auditra:"Audit Risk Assessment",fraud:"Fraud Risk",process:"Process Review",external:"External Findings",iasa:"IA Self-Assessment",approvals:"Approvals",myobs:"My Observations",guide:"How to use AuditLens",settings:"Settings",auditlog:"Audit log"};
   return map[v]||"AuditLens";
 }
 function planYearOptions(selected){
@@ -290,6 +284,7 @@ function render(){
   const T=document.getElementById("pageTitle");
   const A=document.getElementById("topActions");
   A.innerHTML=""; setTopSearch(""); setTopBack("");
+  if(window.AMS_USER && window.AMS_USER.role==="action_owner" && !["myobs","observation"].includes(view)){ view="myobs"; }
   if(view==="dashboard"){ T.textContent=pageTitleFor("dashboard"); A.innerHTML=`<button class="btn sec sm" onclick="exportDashboard()">⤓ Export dashboard</button><button class="btn sec sm" onclick="modalCaeReport()">⤓ Quarterly BAC report</button>`; C.innerHTML=viewDashboard(); }
   else if(view==="auditra"){ T.textContent=pageTitleFor("auditra"); A.innerHTML=`${btnDownload("modalRADownload()","Download")}<button class="btn sm dark ai-generate-btn" onclick="modalRAPrompt()">Generate audit universe</button><button class="btn sm" onclick="modalRA()">+ Add unit</button>`; C.innerHTML=viewAuditRA(); }
   else if(view==="fraud"){ T.textContent=pageTitleFor("fraud"); A.innerHTML=`${btnDownload("modalFraudDownload()","Download")}<button class="btn sm dark ai-generate-btn" onclick="modalFraudPrompt()">Generate fraud risks</button><button class="btn sm" onclick="modalFraud()">+ Add fraud risk</button>`; C.innerHTML=viewFraud(); }
@@ -331,6 +326,11 @@ function render(){
     if(!canAccessView("approvals")){ go("dashboard"); return; }
     T.textContent=pageTitleFor("approvals");
     C.innerHTML=viewApprovals();
+  }
+  else if(view==="myobs"){
+    if(!canAccessView("myobs")){ go("dashboard"); return; }
+    T.textContent=pageTitleFor("myobs");
+    C.innerHTML=viewMyObs();
   }
   else {
     T.textContent=pageTitleFor(view)||"AuditLens";
@@ -773,7 +773,7 @@ function viewAuditRA(){
     </tbody></table>
     <div class="hint" style="margin-top:8px">Risk score = weighted average of factors (1–5). Frequency: Critical/High = annual · Medium = 2 yrs · Low = 3 yrs. “Due” = last audited + cycle ≤ plan year (or never audited).</div>
   </div>
-  <div class="card"><div class="row" style="align-items:center;gap:10px"><div class="seclabel" style="margin:0">Annual Audit Plan — ${esc(planYear())}</div><div class="spacer"></div><span class="hint">${planned.length} engagement(s) · ${doneOcc}/${totalOcc} quarter-reviews done (${pctPlan}%)</span><button class="btn sm dark ai-generate-btn" onclick="modalAnnualPlanPrompt()">Generate plan (AI)</button></div>
+  <div class="card"><div class="row" style="align-items:center;gap:10px"><div class="seclabel" style="margin:0">Annual Audit Plan — ${esc(planYear())}</div><div class="spacer"></div><span class="hint">${planned.length} engagement(s) · ${doneOcc}/${totalOcc} quarter-reviews done (${pctPlan}%)</span><button class="btn sm dark ai-generate-btn" onclick="modalAnnualPlanPrompt()">${planned.some(e=>(e.plannedPeriod||"").trim()||(e.rationale||"").trim())?"Regenerate":"Generate"} plan (AI)</button></div>
     ${planned.length?`<div class="hint" style="margin:2px 0 8px">Click a row for full details, linked audits and to update its status.</div><table class="ra-plan-table" style="margin-top:6px"><thead><tr><th class="ra-plan-num-col">#</th><th>Auditable unit</th><th class="ra-rating-col">Rating</th><th class="ra-timing-col">Timing</th><th>Status</th><th class="ra-link-col">Linked audit</th><th>Rationale</th></tr></thead><tbody>
       ${planned.map((e,i)=>{ const isOpen=!!raPlanOpen[e.id]; return `<tr class="ra-plan-row${isOpen?" open":""}" onclick="raPlanToggle('${e.id}',event)" title="Click for details">
         <td class="ra-plan-num-col">${i+1}</td>
@@ -2482,8 +2482,9 @@ function renderAudit(C,T,A){
 /* ============================ AUDIT PLANNING ============================ */
 function planCard(a){
   const p=a.plan;
+  const hasPlan=p && ((p.scope||"").trim() || (p.tests||[]).length || (p.objectives||[]).length || (p.keyRisks||[]).length);
   return `<div class="card"><div class="row"><h3 style="margin:0">Audit Planning — Scope &amp; Test Programme</h3><div class="spacer"></div>
-    <button class="btn sm dark ai-generate-btn" onclick="modalPlanPrompt('${a.id}')">Generate audit plan</button>
+    <button class="btn sm dark ai-generate-btn" onclick="modalPlanPrompt('${a.id}')">${hasPlan?"Regenerate audit plan":"Generate audit plan"}</button>
     ${p?`<button class="btn ghost sm" onclick="modalEditPlan('${a.id}')">Edit</button>
     <button class="btn sm" onclick="exportPlan('${a.id}')">⤓ Export plan (Word)</button>
     ${(p.tests||[]).some(t=>t.result==="Exception"||t.result==="Partial")?`<button class="btn sm" style="background:var(--crit)" onclick="exportExceptions('${a.id}')">⤓ Exceptions report (Word)</button>`:""}`:""}
@@ -2664,7 +2665,6 @@ Return ONLY a JSON object (no commentary) with these exact keys:
   "risk": "impact & risk if not addressed",
   "rootCause": "most likely root cause(s)",
   "recommendation": "specific, actionable recommendation per best practice",
-  "sopUpdate": "the specific revised SOP wording/clause stating what the procedure should now say",
   "criticality": "Critical | High | Moderate | Low | Process Improvement",
   "owner": "the role/function best placed to own remediation, e.g. Head, Credit Operations",
   "timeline": "Immediate | Short-term | Long-term"
@@ -2786,7 +2786,10 @@ function renderReport(C,T,A){
   const sopMissing=obs.filter(o=>!(o.sopUpdate||"").trim()).length;
   html+=`<div class="card"><div class="row"><h3 style="margin:0">Proposed SOP updates</h3><div class="spacer"></div>${sopMissing?`<button class="btn sec sm ai-generate-btn" onclick="modalSopBulk('${a.id}','${r.id}')">Generate missing (${sopMissing})</button>`:""}${obs.some(o=>(o.sopUpdate||"").trim())?`<button class="btn sec sm" onclick="exportSopUpdates('${a.id}','${r.id}')">⤓ Export change-list (Word)</button>`:""}</div>`;
   if(!obs.length){ html+=`<div class="hint" style="margin-top:8px">Add observations first — proposed SOP updates are drafted from each finding.</div>`; }
-  else { html+=`<p class="hint" style="margin:2px 0 0">Click a row to view the full proposed procedure revision.</p>`+obs.map(o=>sopListCard(a,r,o)).join(""); }
+  else { const drafted=obs.filter(o=>(o.sopUpdate||"").trim());
+    if(drafted.length){ html+=`<p class="hint" style="margin:2px 0 0">Click a row to view the full proposed procedure revision.</p>`+drafted.map(o=>sopListCard(a,r,o)).join(""); }
+    else { html+=`<div class="hint" style="margin-top:8px">No proposed SOP updates drafted yet.${sopMissing?` Use <b>Generate missing (${sopMissing})</b> above, or draft one from an observation's Edit form.`:""}</div>`; }
+  }
   html+=`</div>`;
   C.innerHTML=html;
   if(_highlightObsIds.size){ const first=[..._highlightObsIds][0]; const el=document.querySelector(`.obs-grid-card[data-obs-id="${first}"]`); if(el) el.scrollIntoView({behavior:"smooth",block:"nearest"}); }
@@ -2797,6 +2800,7 @@ function sopStatusPill(o){
 function sopListCard(a,r,o){
   return `<div class="sop-list-card" data-obs-id="${o.id}" onclick="go('sopupdate',{audit:'${a.id}',report:'${r.id}',obs:'${o.id}'})" role="button" tabindex="0">
     <b class="sop-list-title">${esc(o.ref?o.ref+" — ":"")}${esc(o.title)}</b>
+    ${sopStatusPill(o)}
   </div>`;
 }
 function renderSopUpdate(C,T,A){
@@ -2957,10 +2961,11 @@ function detailSection(t,v){
 function renderObservation(C,T,A){
   const a=audit(curAudit); const r=report(a,curReport);
   const o=r&&r.observations.find(x=>x.id===curObs);
-  if(!a||!r||!o){ go("report",{audit:curAudit,report:curReport}); return; }
-  T.textContent=pageTitleFor("audits");
-  setTopBack(backBtn("go('report',{audit:'"+a.id+"',report:'"+r.id+"'})"));
-  A.innerHTML=`<button class="btn sec sm" onclick="modalObs('${a.id}','${r.id}','${o.id}')">Edit</button>
+  if(!a||!r||!o){ go(window.AMS_USER&&window.AMS_USER.role==="action_owner"?"myobs":"report",{audit:curAudit,report:curReport}); return; }
+  const isOwner=window.AMS_USER&&window.AMS_USER.role==="action_owner";
+  T.textContent=pageTitleFor(isOwner?"myobs":"audits");
+  setTopBack(backBtn(isOwner?"go('myobs')":("go('report',{audit:'"+a.id+"',report:'"+r.id+"'})")));
+  A.innerHTML=isOwner?"":`<button class="btn sec sm" onclick="modalObs('${a.id}','${r.id}','${o.id}')">Edit</button>
     <button class="btn ghost sm danger" onclick="delObs('${a.id}','${r.id}','${o.id}')">Delete</button>`;
   const ec=effectiveClose(o,r); const age=obsAge(o,r); const od=isOverdueObs(o,r);
   C.innerHTML=`<div class="obs-detail-page anim-fade-in">
@@ -3013,16 +3018,6 @@ function viewNewObs(){
       <select id="tgtReport">${opts}</select>`:`<div class="hint">Create an audit and a report first (Audits &amp; Reports → New Audit).</div>`}
     <div id="obsGenErr" style="margin-top:10px"></div>
     <div class="row" style="margin-top:14px">${DB.audits.some(a=>a.reports.length)?`<button class="btn dark ai-generate-btn" onclick="generateObsFromPicker()">Generate observation</button>`:""}</div>
-  </div>
-  <div class="card">
-    <h3>Bulk import legacy observations (CSV)</h3>
-    <div class="row"><button class="btn sec" onclick="downloadObsTemplate()">⤓ Download CSV template</button>
-      <label class="btn sec" style="display:inline-block;margin:0">⤒ Load CSV file<input type="file" accept=".csv,text/csv" style="display:none" onchange="loadCsvFile(event)"></label></div>
-    <label style="margin-top:12px">Or paste CSV here</label>
-    <textarea id="bulkCsv" style="min-height:130px;font-family:Consolas,monospace;font-size:12px" placeholder="Audit,AuditType,Area,Report,Ref,Title,Criticality,Category,Description,..."></textarea>
-    <div class="hint" style="margin-top:6px">Required columns: <b>Audit</b>, <b>Report</b>, <b>Title</b>. Allowed — Criticality: ${CRITS.join(" / ")}; Timeline: ${TIMELINES.join(" / ")}; Status: ${STATUSES.join(" / ")}; IsRepeat: Yes/No. Blank/other criticality defaults to Moderate.</div>
-    <div class="row" style="margin-top:10px"><button class="btn" onclick="doBulkImport()">Import observations</button></div>
-    <div id="bulkOut" style="margin-top:10px"></div>
   </div>`;
 }
 function downloadObsTemplate(){
@@ -3104,7 +3099,6 @@ Return ONLY a JSON object (no commentary) with these exact keys — every field 
   "risk": "impact & risk if not addressed",
   "rootCause": "most likely root cause(s)",
   "recommendation": "specific, actionable recommendation per best practice",
-  "sopUpdate": "the specific revised SOP wording/clause stating what the procedure should now say",
   "criticality": "Critical | High | Moderate | Low | Process Improvement",
   "owner": "the role/function best placed to own remediation, e.g. Head, Credit Operations",
   "timeline": "Immediate | Short-term | Long-term"
@@ -3243,7 +3237,9 @@ const ASSESSMENT_NAV=[
   ["external","External Findings"],
   ["iasa","IA Self-Assessment"]
 ];
-function roleLabel(r){ return r==="head_of_audit"?"Head of Audit":"Audit Staff"; }
+function roleLabel(r){ return r==="head_of_audit"?"Head of Audit":r==="action_owner"?"Action Owner":"Audit Staff"; }
+function departments(){ DB.departments=DB.departments||[]; return DB.departments; }
+function deptById(id){ return departments().find(d=>d.id===id); }
 function viewSettings(){
   const isHead=window.AMS_USER&&window.AMS_USER.role==="head_of_audit";
   return `
@@ -3254,11 +3250,120 @@ function viewSettings(){
       <label class="btn sec" style="display:inline-block;margin:0">⤒ Import backup<input type="file" accept="application/json" style="display:none" onchange="importData(event)"></label>
     </div>
   </div>
-  ${isHead?`<div class="card"><div class="row"><h3 style="margin:0">User access management</h3><div class="spacer"></div><button class="btn sm" onclick="modalUser()">+ Add user</button></div>
+  ${isHead?`<div class="card"><div class="row"><h3 style="margin:0">Departments &amp; action owners</h3><div class="spacer"></div><button class="btn sm" onclick="modalDepartment()">+ Add department</button></div>
+    <div class="hint" style="margin-top:4px">Each department's head becomes an <b>Action Owner</b> login (welcome email with a temporary password) and can be assigned remediation actions.</div>
+    <div id="deptTableWrap" style="margin-top:12px">${departmentsTableHTML()}</div>
+  </div>
+  <div class="card"><div class="row"><h3 style="margin:0">User access management</h3><div class="spacer"></div><button class="btn sm" onclick="modalUser()">+ Add user</button></div>
     <div id="usersTableWrap" style="margin-top:12px">${usersTableHTML()}</div>
   </div>`:""}`;
 }
+function departmentsTableHTML(){
+  const D=departments();
+  if(!D.length) return `<div class="empty">No departments yet. Add one to create its head as an action owner.</div>`;
+  return `<table><thead><tr><th>Department</th><th>Head</th><th>Email</th><th>Login</th><th></th></tr></thead><tbody>
+    ${D.map(d=>`<tr>
+      <td><b>${esc(d.name)}</b></td>
+      <td>${esc(d.headName||"—")}</td>
+      <td>${esc(d.headEmail||"—")}</td>
+      <td>${d.headUserId?`<span class="pill c-Low">Active</span>`:`<span class="pill sop-pending-pill">Not linked</span>`}</td>
+      <td class="ra-actions-cell">${iconBtn(`modalDepartment('${d.id}')`,"✎","Edit")}${delBtn(`delDepartment('${d.id}')`)}</td>
+    </tr>`).join("")}
+  </tbody></table>`;
+}
+function refreshDepartmentsTable(){ const el=document.getElementById("deptTableWrap"); if(el) el.innerHTML=departmentsTableHTML(); }
+function modalDepartment(id){
+  const d=id?deptById(id):null;
+  openModal(id?"Edit department":"Add department",`
+    <label>Department name *</label><input id="dp_name" value="${esc(d?d.name:"")}" placeholder="e.g. Credit Operations">
+    <div class="f2">
+      <div><label>Head of department (name) *</label><input id="dp_head" value="${esc(d?d.headName:"")}" placeholder="e.g. Jane Doe"></div>
+      <div><label>Head email *</label><input id="dp_email" type="email" value="${esc(d?d.headEmail:"")}" ${d&&d.headUserId?"disabled title='Linked to a login account — email cannot be changed here'":""}></div>
+    </div>
+    ${id?"":`<p class="hint" style="margin:10px 0 0">On save, an <b>Action Owner</b> login is created for this head and a welcome email (temporary password) is sent.</p>`}
+    <div id="dp_err" style="margin-top:10px"></div>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveDepartment('${id||""}')">Save</button>`);
+}
+async function saveDepartment(id){
+  const name=val("dp_name"), headName=val("dp_head"), headEmail=val("dp_email").toLowerCase();
+  const errEl=document.getElementById("dp_err");
+  const showErr=m=>{ if(errEl) errEl.innerHTML=`<div class="hint" style="color:var(--crit)">${esc(m)}</div>`; };
+  if(!name||!headName||!headEmail){ showErr("Department name, head name and email are all required."); return; }
+  const D=departments();
+  if(id){
+    const d=deptById(id); if(!d) return;
+    d.name=name; d.headName=headName; if(!d.headUserId) d.headEmail=headEmail;
+    save(); closeModal(); render(); return;
+  }
+  // New department → provision the head as an action_owner login user.
+  if(errEl) errEl.innerHTML=`<div class="hint">Creating action-owner login…</div>`;
+  let userId="", emailSent=false;
+  try{
+    const res=await fetch("/api/users",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({name:headName,email:headEmail,department:name,role:"action_owner"})});
+    const data=await res.json().catch(()=>({}));
+    if(res.status===409){
+      // Head already has an account — link it by looking up the directory.
+      await loadDirectory();
+      const existing=_directoryCache.find(u=>(u.email||"").toLowerCase()===headEmail);
+      if(existing) userId=existing.id; else { showErr("That email already has an account that couldn't be linked."); return; }
+    } else if(!res.ok){ showErr(data.error||"Could not create the action-owner login."); return; }
+    else { userId=data.user&&data.user.id; emailSent=!!data.emailSent; }
+  }catch(e){ showErr("Network error creating the login."); return; }
+  D.push({id:uid(),name,headName,headEmail,headUserId:userId||"",createdAt:new Date().toISOString()});
+  save(); await refreshUsersTable(); await loadDirectory(); closeModal(); render();
+  alert(emailSent?`Department added. A welcome email was sent to ${headEmail}.`:`Department added.${userId?" (Welcome email could not be sent — check SendGrid config.)":""}`);
+}
+function delDepartment(id){
+  if(!confirm("Remove this department? The head's login account is kept (delete it from User access management if needed)."))return;
+  DB.departments=departments().filter(d=>d.id!==id); save(); render();
+}
+/* ---- Action Owner portal ---- */
+function myObsList(){ const me=window.AMS_USER||{}; return allObs().filter(o=>o.ownerUserId&&o.ownerUserId===me.id); }
+function viewMyObs(){
+  const me=window.AMS_USER||{};
+  const mine=myObsList();
+  const open=mine.filter(o=>o.status!=="Closed");
+  const closed=mine.filter(o=>o.status==="Closed");
+  let h=`<div class="dash-welcome anim-fade-in"><div class="dash-welcome-text"><h1>Welcome, ${esc((me.name||"there").split(/\s+/)[0])}</h1><p class="dash-welcome-role">${esc(me.department||"Action Owner")}</p></div></div>
+  <div class="dash-kpis" style="grid-template-columns:repeat(3,1fr)">
+    ${kpi("accent","Assigned to me",mine.length,"remediation actions")}
+    ${kpi("warn","Open",open.length,"awaiting your action")}
+    ${kpi("good","Closed",closed.length,"resolved")}
+  </div>`;
+  if(!mine.length){ h+=`<div class="card"><div class="empty"><div class="big">✦</div>No observations have been assigned to you yet. When Internal Audit raises and approves an observation against your department, it will appear here for you to respond, add updates and evidence.</div></div>`; return h; }
+  const rows=[...open,...closed];
+  h+=`<div class="card"><div class="seclabel">Observations raised against my department</div>
+    <table><thead><tr><th>Criticality</th><th>Observation</th><th>Audit / Area</th><th>Expected close</th><th>Status</th></tr></thead><tbody>
+    ${rows.map(o=>{ const ec=effectiveClose(o,o._r); return `<tr class="tracker-row" onclick="go('observation',{audit:'${o._a.id}',report:'${o._r.id}',obs:'${o.id}'})" title="Open observation">
+      <td><span class="pill c-${ck(o.criticality)}">${o.criticality}</span></td>
+      <td><b>${esc(o.title)}</b></td>
+      <td>${esc(o._a.name)}<div class="hint">${esc(o._a.area||"")}</div></td>
+      <td>${ec?fmtDate(ec):`<span class="hint">—</span>`}</td>
+      <td>${statusPill(o.status)}</td>
+    </tr>`; }).join("")}
+    </tbody></table></div>`;
+  return h;
+}
 let _usersCache=[];
+let _directoryCache=[];
+async function loadDirectory(){
+  try{
+    const res=await fetch("/api/directory");
+    if(!res.ok) return _directoryCache;
+    const json=await res.json();
+    _directoryCache=json.users||[];
+  }catch(e){}
+  return _directoryCache;
+}
+function auditorOptions(selectedId){
+  const list=_directoryCache.filter(u=>u.role==="audit_staff"||u.role==="head_of_audit");
+  return `<option value="">— unassigned —</option>`+list.map(u=>`<option value="${u.id}"${selectedId===u.id?" selected":""}>${esc(u.name)}${u.role==="head_of_audit"?" (Head of Audit)":""}</option>`).join("");
+}
+function ownerOptions(selectedId){
+  const D=departments().filter(d=>d.headUserId);
+  return `<option value="">— select action owner —</option>`+D.map(d=>`<option value="${esc(d.headUserId)}"${selectedId===d.headUserId?" selected":""}>${esc(d.headName)} · ${esc(d.name)}</option>`).join("");
+}
 async function refreshUsersTable(){
   try{
     const res=await fetch("/api/users");
@@ -3288,7 +3393,6 @@ function sidebarAccessChecks(selected,disabled){
 function modalUser(id){
   const u=id?_usersCache.find(x=>x.id===id):null;
   const isEdit=!!u;
-  const isHeadRole=u&&u.role==="head_of_audit";
   openModal(isEdit?"Edit user":"Add user",`
     <div class="f2">
       <div><label>Name *</label><input id="ua_name" value="${esc(u?u.name:"")}"></div>
@@ -3296,10 +3400,10 @@ function modalUser(id){
     </div>
     <div class="f2">
       <div><label>Email *</label><input id="ua_email" type="email" value="${esc(u?u.email:"")}"></div>
-      <div><label>Role</label><select id="ua_role" onchange="toggleUserAccessFields()"><option value="audit_staff"${!isHeadRole?" selected":""}>Audit Staff</option><option value="head_of_audit"${isHeadRole?" selected":""}>Head of Audit</option></select></div>
+      <div><label>Role</label><select id="ua_role" onchange="toggleUserAccessFields()">${[["audit_staff","Audit Staff"],["action_owner","Action Owner"],["head_of_audit","Head of Audit"]].map(([v,l])=>`<option value="${v}"${(u?u.role:"audit_staff")===v?" selected":""}>${l}</option>`).join("")}</select></div>
     </div>
     ${isEdit?"":`<p class="hint" style="margin:10px 0 0">A welcome email with a temporary password will be sent. The user sets their own password on first sign-in.</p>`}
-    <div id="ua_access_block" style="margin-top:10px${isHeadRole?" ;display:none":""}">
+    <div id="ua_access_block" style="margin-top:10px${(u?u.role:"audit_staff")!=="audit_staff"?" ;display:none":""}">
       <div class="seclabel" style="margin-bottom:6px">Additional sidebar access</div>
       <div class="hint" style="margin-bottom:6px">Main sections (Dashboard, Audits &amp; Reports, Remediation Tracker) are always included.</div>
       <div id="ua_access">${sidebarAccessChecks(u?u.sidebarAccess:[],false)}</div>
@@ -3310,7 +3414,7 @@ function modalUser(id){
 function toggleUserAccessFields(){
   const role=val("ua_role");
   const block=document.getElementById("ua_access_block");
-  if(block) block.style.display=role==="head_of_audit"?"none":"block";
+  if(block) block.style.display=role==="audit_staff"?"block":"none";
 }
 function selectedSidebarAccess(){
   return Array.from(document.querySelectorAll('input[name="ua_view"]:checked')).map(el=>el.value);
@@ -3387,8 +3491,10 @@ function modalNewObs(){
 }
 
 
-function modalAudit(id){
-  const a=id?audit(id):{name:"",type:"process",area:"",period:"",leadAuditor:"",status:"In progress"};
+async function modalAudit(id){
+  if(!_directoryCache.length) await loadDirectory();
+  const a=id?audit(id):{name:"",type:"process",area:"",period:"",leadAuditor:"",leadAuditorId:"",status:"In progress"};
+  const leadKnown=_directoryCache.some(u=>u.id===a.leadAuditorId);
   openModal(id?"Edit audit":"New audit",`
     <label>Audit name *</label><input id="m_name" value="${esc(a.name)}" placeholder="e.g. Credit Operations Audit 2026">
     <div class="f2">
@@ -3397,14 +3503,19 @@ function modalAudit(id){
     </div>
     <div class="f3">
       <div><label>Period</label><input id="m_period" value="${esc(a.period)}" placeholder="e.g. Q2 2026"></div>
-      <div><label>Lead auditor</label><input id="m_lead" value="${esc(a.leadAuditor)}"></div>
+      <div><label>Lead auditor <span class="hint">(owns this audit)</span></label><select id="m_lead">${auditorOptions(a.leadAuditorId)}${(!leadKnown&&a.leadAuditor)?`<option value="__keep" selected>${esc(a.leadAuditor)} (unlinked)</option>`:""}</select></div>
       <div><label>Status</label><select id="m_status">${[...AUDIT_STATUS,...(a.status&&!AUDIT_STATUS.includes(a.status)?[a.status]:[])].map(s=>`<option${(a.status||"In progress")===s?" selected":""}>${esc(s)}</option>`).join("")}</select></div>
     </div>`,
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveAudit('${id||""}')">Save</button>`);
 }
 function saveAudit(id){
   const name=val("m_name"); if(!name){alert("Name required");return;}
-  const data={name,type:val("m_type"),area:val("m_area"),period:val("m_period"),leadAuditor:val("m_lead"),status:val("m_status")};
+  const leadId=val("m_lead");
+  const lead=_directoryCache.find(u=>u.id===leadId);
+  const prev=id?audit(id):null;
+  const leadAuditorId=leadId==="__keep"?(prev?prev.leadAuditorId||"":""):leadId;
+  const leadAuditor=leadId==="__keep"?(prev?prev.leadAuditor||"":""):(lead?lead.name:"");
+  const data={name,type:val("m_type"),area:val("m_area"),period:val("m_period"),leadAuditorId,leadAuditor,status:val("m_status")};
   if(id){ Object.assign(audit(id),data); logAudit("workspace.audit_updated","Updated audit "+name,{ auditId:id, name }); }
   else{ const nid=uid(); DB.audits.push({id:nid,...data,createdAt:new Date().toISOString(),reports:[]}); logAudit("workspace.audit_created","Created audit "+name,{ auditId:nid, name }); }
   save(); closeModal(); render();
@@ -4059,6 +4170,7 @@ function initAuditBot(){
   (function(){ const s=logoSrc(); if(s){ const f=document.getElementById("favicon"), t=document.getElementById("touchicon"); if(f)f.href=s; if(t)t.href=s; } })();
   loadFromServer().then(()=>{
     if(window.AMS_USER&&window.AMS_USER.role==="head_of_audit") refreshUsersTable();
+    loadDirectory().then(()=>{ if(document.querySelector('.ra-plan-table')||view==="audits"||view==="audit") render(); });
     render();
   }).catch(()=>{ render(); });
 }
