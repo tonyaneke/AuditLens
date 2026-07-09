@@ -14,7 +14,7 @@ export default function AuditApp() {
               <div className="brand">
                 <div className="brand-logo-row">
                   <img id="brandLogo" alt="" className="brand-logo" />
-                  <span className="brand-name">AMS</span>
+                  <span className="brand-name">AuditLens</span>
                 </div>
                 <div className="brand-tagline">Audit Management System</div>
               </div>

@@ -32,6 +32,7 @@ export default function LoginPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
+   
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Login failed.");
@@ -53,12 +54,12 @@ export default function LoginPage() {
           <div className="login-logo-wrap">
             <img src={logo} alt="" className="login-logo" />
           </div>
-          <div className="login-brand-name">AMS</div>
+          <div className="login-brand-name">AuditLens</div>
           <div className="login-brand-tag">{org}</div>
         </div>
         <h1 className="login-title">Sign in</h1>
         <p className="login-sub">
-          Access the Audit Management System with your assigned account.
+          Access AuditLens with your assigned account.
         </p>
         <form className="login-form" onSubmit={onSubmit}>
           <label htmlFor="email">Email</label>

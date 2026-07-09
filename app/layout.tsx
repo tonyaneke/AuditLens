@@ -9,10 +9,10 @@ const plusJakarta = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "AMS — Audit Management System",
+  title: "AuditLens",
   description:
     "Internal audit management — observations, remediation tracking, risk assessment, and reporting.",
-  applicationName: "AMS",
+  applicationName: "AuditLens",
 };
 
 export const viewport: Viewport = {

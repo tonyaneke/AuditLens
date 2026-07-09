@@ -66,6 +66,29 @@ function auditUniverse(){ DB.auditUniverse=DB.auditUniverse||[]; return DB.audit
 function planYear(){ return DB.planYear || String((new Date()).getFullYear()); }
 function raDue(e,band){ const py=+planYear(); const la=parseInt(e.lastAudited,10); if(isNaN(la))return true; return (la+raFreqYears(band))<=py; }
 function raInPlan(e,band,due){ return e.includeInPlan!=null? e.includeInPlan : (due || band==="Critical" || band==="High"); }
+// ---- Annual plan: completion approvals + year rollover ----
+function isHeadUser(){ return !!(window.AMS_USER && window.AMS_USER.role==="head_of_audit"); }
+function approvals(){ DB.approvals=DB.approvals||[]; return DB.approvals; }
+function pendingCompletion(unitId){ return approvals().find(x=>x.kind==="engagement_completion" && x.unitId===unitId && x.status==="pending"); }
+function pendingApprovalCount(){ return approvals().filter(x=>x.status==="pending").length; }
+function engIsComplete(e){ if(e.engStatus==="Completed") return true; const occ=unitOcc(e); return occ.length>0 && occ.every(o=>o.done); }
+function raYearsIn(period){ const out=[]; const re=/(20\d{2})/g; let m; while((m=re.exec(String(period||"")))) out.push(+m[1]); return out; }
+function rolloverPlan(){
+  const py=+planYear(); let changed=false;
+  auditUniverse().forEach(e=>{
+    const per=(e.plannedPeriod||"").trim(); if(!per) return;
+    const yrs=raYearsIn(per); if(!yrs.length) return;
+    const maxYr=Math.max(...yrs);
+    if(maxYr<py && !engIsComplete(e) && !pendingCompletion(e.id)){
+      e.carryOverFrom=e.carryOverFrom||maxYr;
+      e.plannedPeriod=per.replace(/20\d{2}/g,String(py));
+      e.occDone=[];
+      changed=true;
+    }
+  });
+  if(changed) save();
+  return changed;
+}
 // ---- Process & control effectiveness review ----
 const PROC_RATINGS=["Strong","Adequate","Needs improvement","Weak"];
 const PROC_RATING_HEX={Strong:"#2e7d32","Adequate":"#c9a300","Needs improvement":"#e8590c","Weak":"#b00020"};
@@ -161,7 +184,7 @@ function canAccessView(v){
   const u = window.AMS_USER;
   if(!u) return ["dashboard","audits","tracker","audit","report","observation","newobs","insights","guide"].includes(v);
   if(u.role==="head_of_audit"){
-    if(["dashboard","audits","tracker","auditra","fraud","process","external","iasa","settings","auditlog","audit","report","observation","newobs","insights","guide"].includes(v)) return true;
+    if(["dashboard","audits","tracker","auditra","fraud","process","external","iasa","approvals","settings","auditlog","audit","report","observation","newobs","insights","guide"].includes(v)) return true;
     return false;
   }
   if(["dashboard","audits","tracker","audit","report","observation","newobs","insights","guide"].includes(v)) return true;
@@ -179,7 +202,7 @@ function reportObs(r){ return r.observations; }
 function go(v,opts={}){
   if(v==="newobs"){ modalNewObs(); return; }
   if(v==="insights"){ trackerMode="insights"; v="tracker"; }
-  const gated=["dashboard","audits","tracker","auditra","fraud","process","external","iasa","settings","auditlog","guide"];
+  const gated=["dashboard","audits","tracker","auditra","fraud","process","external","iasa","approvals","settings","auditlog","guide"];
   if(gated.includes(v) && !canAccessView(v)){ go("dashboard"); return; }
   view=v;
   curProc=null;
@@ -195,8 +218,8 @@ const ICON_TRASH=`<svg viewBox="0 0 24 24" width="14" height="14" fill="none" st
 function iconBtn(fn,icon,title,danger){ return `<button type="button" class="btn-icon-action${danger?" danger":""}" title="${esc(title)}" onclick="${fn}">${icon}</button>`; }
 function delBtn(fn,title){ return iconBtn(fn,ICON_TRASH,title||"Delete",true); }
 function pageTitleFor(v){
-  const map={dashboard:"Dashboard",audits:"Audits & Reports",tracker:"Remediation Tracker",auditra:"Audit Risk Assessment",fraud:"Fraud Risk",process:"Process Review",external:"External Findings",iasa:"IA Self-Assessment",guide:"How to use AMS",settings:"Settings",auditlog:"Audit log"};
-  return map[v]||"AMS";
+  const map={dashboard:"Dashboard",audits:"Audits & Reports",tracker:"Remediation Tracker",auditra:"Audit Risk Assessment",fraud:"Fraud Risk",process:"Process Review",external:"External Findings",iasa:"IA Self-Assessment",approvals:"Approvals",guide:"How to use AuditLens",settings:"Settings",auditlog:"Audit log"};
+  return map[v]||"AuditLens";
 }
 function planYearOptions(selected){
   const y=new Date().getFullYear();
@@ -304,10 +327,16 @@ function render(){
     C.innerHTML=viewAuditLog();
     refreshAuditLog(_auditLogCache.page||1);
   }
+  else if(view==="approvals"){
+    if(!canAccessView("approvals")){ go("dashboard"); return; }
+    T.textContent=pageTitleFor("approvals");
+    C.innerHTML=viewApprovals();
+  }
   else {
-    T.textContent=pageTitleFor(view)||"AMS";
+    T.textContent=pageTitleFor(view)||"AuditLens";
     C.innerHTML=`<div class="empty">This section is not available.</div>`;
   }
+  updateApprovalsBadge();
 }
 
 /* ============================ DASHBOARD ============================ */
@@ -317,14 +346,12 @@ function viewDashboard(){
   const nAudits=DB.audits.length;
   const nReports=DB.audits.reduce((s,a)=>s+a.reports.length,0);
   const HEX={Critical:"#7a0012",High:"#b00020",Moderate:"#e8590c",Low:"#2e7d32","Process Improvement":"#2c5f8a"};
-  const STC={Open:"#b00020","In Progress":"#c98a00",Closed:"#2e7d32"};
   const TLC={"Immediate":"#b00020","Short-term":"#c98a00","Long-term":"#2c5f8a"};
   const byC=zc(); obs.forEach(o=>byC[o.criticality]++);
   const open=obs.filter(o=>o.status!=="Closed").length, closed=total-open;
   const keyExp=obs.filter(o=>(o.criticality==="Critical"||o.criticality==="High")&&o.status!=="Closed").length;
   const remRate=total?Math.round(closed/total*100):0;
   const overall=worstKey(byC);
-  const st={Open:0,"In Progress":0,Closed:0}; obs.forEach(o=>st[o.status||"Open"]++);
   const tl={"Immediate":0,"Short-term":0,"Long-term":0,Unspecified:0};
   obs.filter(o=>o.status!=="Closed").forEach(o=>{ tl[TIMELINES.includes(o.timeline)?o.timeline:"Unspecified"]++; });
   const byArea={}; obs.forEach(o=>{ const k=o._a.area||o._a.name; (byArea[k]=byArea[k]||zct())[o.criticality]++; byArea[k].t++; });
@@ -357,17 +384,6 @@ function viewDashboard(){
     ${kpi("accent","Observations",total,open+" open · "+closed+" closed","obs")}
     ${kpi("warn","Key exposures",keyExp,"open Critical &amp; High","alert")}
     ${kpi("good","Remediation rate",remRate+"%",closed+" of "+total+" closed","check")}
-  </div>
-
-  <div class="card remed-card anim-fade-in anim-d2">
-    <div class="seclabel">Remediation status</div>
-    <div class="remed-grid">
-      ${Object.keys(st).map(s=>{
-        const cls=s==="Closed"?"closed":s==="In Progress"?"progress":"open";
-        return `<div class="remed-item ${cls}"><div class="remed-num">${st[s]}</div><div class="remed-lbl">${esc(s)}</div><div class="remed-pct">${total?Math.round(st[s]/total*100):0}% of portfolio</div></div>`;
-      }).join("")}
-    </div>
-    <div class="miniheat">${total?Object.keys(st).map(s=>st[s]?`<div style="width:${st[s]/total*100}%;background:${STC[s]}"></div>`:"").join(""):""}</div>
   </div>
 
   <div class="dash2">
@@ -425,15 +441,16 @@ function viewDashboard(){
 
   <div class="card">
     <div class="seclabel">Watchlist — open observations due within 2 weeks</div>
-    ${watchlist.length?`<table><thead><tr><th>Expected close</th><th>Criticality</th><th>Observation</th><th>Audit / Area</th><th>Action owner</th><th>Status</th></tr></thead><tbody>`+
-      watchlist.slice(0,15).map(({o,d})=>{ const ec=effectiveClose(o,o._r); return `<tr>
+    ${watchlist.length?`<div class="hint" style="margin:-2px 0 8px">Click a row to see the details and add notes.</div><table><thead><tr><th>Expected close</th><th>Criticality</th><th>Observation</th><th>Audit / Area</th><th>Action owner</th><th>Status</th><th>Notes</th></tr></thead><tbody>`+
+      watchlist.slice(0,15).map(({o,d})=>{ const ec=effectiveClose(o,o._r); const isOpen=!!dashWatchOpen[o.id]; const nc=(o.notes||[]).length; return `<tr class="watch-row${isOpen?" open":""}" onclick="toggleWatch('${o.id}',event)" title="Click for details" aria-expanded="${isOpen}">
         <td>${ec?fmtDate(ec):"—"} ${d<0?`<span class="pill c-Critical">${-d}d overdue</span>`:`<span class="pill c-Moderate">${d}d left</span>`}</td>
         <td><span class="pill c-${ck(o.criticality)}">${o.criticality}</span></td>
-        <td><b>${esc(o.title)}</b></td>
+        <td><span class="watch-caret" aria-hidden="true">${isOpen?"▾":"▸"}</span> <b>${esc(o.title)}</b></td>
         <td>${esc(o._a.name)}<div class="hint">${esc(o._a.area||"")}</div></td>
         <td>${esc(o.owner||"—")}</td>
         <td>${statusPill(o.status)}</td>
-      </tr>`; }).join("")+`</tbody></table>`+(watchlist.length>15?`<div class="hint" style="margin-top:8px">Showing 15 of ${watchlist.length}.</div>`:"")
+        <td>${nc?`<span class="pill note-count">${nc} note${nc!==1?"s":""}</span>`:`<span class="hint">— add</span>`}</td>
+      </tr>`+(isOpen?`<tr class="watch-detail-row"><td colspan="7">${watchDetailHTML(o)}</td></tr>`:""); }).join("")+`</tbody></table>`+(watchlist.length>15?`<div class="hint" style="margin-top:8px">Showing 15 of ${watchlist.length}.</div>`:"")
       :`<div class="empty">No open observations due within 2 weeks.</div>`}
   </div>
 
@@ -450,6 +467,67 @@ function viewDashboard(){
       </tr>`).join("")+`</tbody></table>`+(critical.length>12?`<div class="hint" style="margin-top:8px">Showing 12 of ${critical.length} open key exposures.</div>`:"")
       :`<div class="empty">No open Critical or High observations.</div>`}
   </div>`;
+}
+/* ---- Watchlist inline details + notes ---- */
+let dashWatchOpen={};
+function toggleWatch(oid,ev){
+  if(ev&&(ev.target.closest("button")||ev.target.closest("a")||ev.target.closest("select")||ev.target.closest("input"))) return;
+  dashWatchOpen[oid]=!dashWatchOpen[oid];
+  render();
+}
+function watchDetailHTML(o){
+  const r=o._r, a=o._a; const ec=effectiveClose(o,r);
+  const meta=[
+    o.category?["Category",esc(o.category)]:null,
+    ["Audit / report",esc(a.name)+(r?" · "+esc(r.title):"")],
+    o.timeline?["Resolution timeline",esc(o.timeline)]:null,
+    ec?["Expected close",fmtDate(ec)]:null,
+    ["Action owner",esc(o.owner||"—")],
+    ["Status",statusPill(o.status)]
+  ].filter(Boolean);
+  const sections=[
+    detailSection("Detailed description",o.description),
+    detailSection("Impact / risk",o.risk),
+    detailSection("Recommendation",o.recommendation),
+    detailSection("Management response",o.managementResponse)
+  ].join("");
+  return `<div class="watch-detail anim-fade-in">
+    <div class="watch-detail-meta">${meta.map(([k,v])=>`<div class="watch-meta-item"><span class="watch-meta-label">${k}</span><span class="watch-meta-value">${v}</span></div>`).join("")}</div>
+    <div class="obs-detail-sections">${sections||`<div class="hint">No further detail captured for this observation.</div>`}</div>
+    ${notesHTML(o)}
+    <div class="row" style="margin-top:12px;gap:8px">
+      <button class="btn sm" onclick="modalAddNote('${a.id}','${r.id}','${o.id}')">+ Add note</button>
+      <button class="btn sec sm" onclick="go('observation',{audit:'${a.id}',report:'${r.id}',obs:'${o.id}'})">Open full observation →</button>
+    </div>
+  </div>`;
+}
+function notesHTML(o){
+  const notes=(o.notes||[]).slice().sort((x,y)=>String(y.at||"").localeCompare(String(x.at||"")));
+  return `<div class="obs-notes">
+    <div class="obs-notes-label">Notes${notes.length?` (${notes.length})`:""}</div>
+    ${notes.length?notes.map(n=>`<div class="obs-note"><div class="obs-note-text">${esc(n.text)}</div><div class="obs-note-meta">${esc(n.author||"—")}${n.at?" · "+esc(fmtDateTime(n.at)):""}</div></div>`).join(""):`<div class="hint">No notes yet.</div>`}
+  </div>`;
+}
+function modalAddNote(aid,rid,oid){
+  const r=report(audit(aid),rid); const o=r&&r.observations.find(x=>x.id===oid);
+  if(!o){ alert("Observation not found."); return; }
+  openModal("Add note",`
+    <div class="hint" style="margin-bottom:8px">${esc(o.ref?o.ref+" — ":"")}${esc(o.title)}</div>
+    <label>Note *</label>
+    <textarea id="note_text" style="min-height:120px" placeholder="Progress update, follow-up action, or context…"></textarea>
+    ${(o.notes||[]).length?`<div style="margin-top:14px">${notesHTML(o)}</div>`:""}`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveNote('${aid}','${rid}','${oid}')">Save note</button>`);
+  const ta=document.getElementById("note_text"); if(ta) ta.focus();
+}
+function saveNote(aid,rid,oid){
+  const r=report(audit(aid),rid); const o=r&&r.observations.find(x=>x.id===oid);
+  if(!o){ alert("Observation not found."); return; }
+  const text=val("note_text"); if(!text){ alert("Enter a note first."); return; }
+  o.notes=o.notes||[];
+  o.notes.push({id:uid(),text,author:(window.AMS_USER&&window.AMS_USER.name)||DB.signOffName||"",at:new Date().toISOString()});
+  save();
+  if(view==="dashboard") dashWatchOpen[oid]=true;
+  closeModal(); render();
 }
 function kpi(cls,lab,num,sub,icon){
   const icons={
@@ -502,35 +580,38 @@ function trackerTabs(){
 }
 function trackerSet(k,v){ trackerFilter[k]=v; render(); }
 function parseDate(s){ if(!s)return null; const d=new Date(s); return isNaN(d.getTime())?null:d; }
+function trackerBucketOf(o){ const d=daysToClose(o,o._r); return d==null?"No date":closeBucket(d); }
 function viewTracker(){
   const obs=allObs();
   if(!obs.length){
-    return `<div class="card"><div class="empty"><div class="big">◷</div>No observations yet. Once you raise observations, every open remediation action shows up here — grouped by timeline, with overdue flags.</div></div>`;
+    return `<div class="card"><div class="empty"><div class="big">◷</div>No observations yet. Once you raise observations, every open remediation action shows up here — grouped by expected close, with overdue flags.</div></div>`;
   }
   const isOverdue=o=>isOverdueObs(o,o._r);
   const openAll=obs.filter(o=>o.status!=="Closed");
   const watch=openAll.filter(o=>{ const d=daysToClose(o,o._r); return d!=null && d>=0 && d<=14; }).length;
   const overdue=openAll.filter(isOverdue).length;
   const repeats=openAll.filter(o=>o.isRepeat).length;
-  const unset=openAll.filter(o=>!TIMELINES.includes(o.timeline)).length;
+  const noClose=openAll.filter(o=>daysToClose(o,o._r)==null).length;
 
   let items=obs.slice();
   if(trackerFilter.status==="All") items=items.filter(o=>o.status!=="Closed");
   else items=items.filter(o=>(o.status||"Open")===trackerFilter.status);
   if(trackerFilter.crit!=="All") items=items.filter(o=>o.criticality===trackerFilter.crit);
-  if(trackerFilter.tl!=="All") items=items.filter(o=>(TIMELINES.includes(o.timeline)?o.timeline:"Unspecified")===trackerFilter.tl);
+  if(trackerFilter.tl!=="All") items=items.filter(o=>trackerBucketOf(o)===trackerFilter.tl);
 
+  const CLOSE_GROUPS=[...CLOSE_BUCKETS,"No date"];
+  const groupLabel=g=>g==="No date"?"No expected close date":g;
   let h=`
   <div class="dash-kpis" style="grid-template-columns:repeat(5,1fr)">
     ${kpi("base","Open actions",openAll.length,"across all audits")}
     ${kpi("warn","Watchlist",watch,"due within 2 weeks")}
     ${kpi("warn","Overdue",overdue,"past expected close")}
     ${kpi("accent","Repeat findings",repeats,"recur from prior audits")}
-    ${kpi("base","No timeline",unset,"need a timeframe set")}
+    ${kpi("base","No close date",noClose,"need an expected close date")}
   </div>
   <div class="card tracker-filters"><div class="filter-row filter-row-right">
-    <div class="filter-group"><span class="filter-label">Timeline</span>
-      <select class="field-select field-select-sm" onchange="trackerSet('tl',this.value)">${["All",...TIMELINES,"Unspecified"].map(x=>`<option value="${esc(x)}"${trackerFilter.tl===x?" selected":""}>${esc(x)}</option>`).join("")}</select></div>
+    <div class="filter-group"><span class="filter-label">Expected close</span>
+      <select class="field-select field-select-sm" onchange="trackerSet('tl',this.value)"><option value="All"${trackerFilter.tl==="All"?" selected":""}>All</option>${CLOSE_GROUPS.map(x=>`<option value="${esc(x)}"${trackerFilter.tl===x?" selected":""}>${esc(groupLabel(x))}</option>`).join("")}</select></div>
     <div class="filter-group"><span class="filter-label">Criticality</span>
       <select class="field-select field-select-sm" onchange="trackerSet('crit',this.value)">${["All",...CRITS].map(x=>`<option value="${esc(x)}"${trackerFilter.crit===x?" selected":""}>${esc(x)}</option>`).join("")}</select></div>
     <div class="filter-group"><span class="filter-label">Status</span>
@@ -538,20 +619,20 @@ function viewTracker(){
   </div></div>`;
 
   const crank=o=>CRITS.indexOf(o.criticality);
-  const tcol={"Immediate":"#b00020","Short-term":"#c98a00","Long-term":"#2c5f8a","Unspecified":"#64748b"};
+  const bcol={"Overdue":"#b00020","≤ 2 weeks":"#e8590c","2–4 weeks":"#c98a00","1–3 months":"#2c5f8a","> 3 months":"#2e7d32","No date":"#64748b"};
   let any=false;
-  [...TIMELINES,"Unspecified"].forEach(g=>{
-    let rows=items.filter(o=>(TIMELINES.includes(o.timeline)?o.timeline:"Unspecified")===g);
+  CLOSE_GROUPS.forEach(g=>{
+    let rows=items.filter(o=>trackerBucketOf(o)===g);
     if(!rows.length) return;
     any=true;
-    rows.sort((a,b)=>(isOverdue(b)-isOverdue(a))||(crank(a)-crank(b)));
+    rows.sort((a,b)=>{ const da=daysToClose(a,a._r), db=daysToClose(b,b._r); if(da==null&&db==null) return crank(a)-crank(b); if(da==null) return 1; if(db==null) return -1; return (da-db)||(crank(a)-crank(b)); });
     h+=`<div class="card"><div class="row" style="margin-bottom:10px;align-items:center">
-      <span class="dot" style="width:11px;height:11px;border-radius:3px;background:${tcol[g]};display:inline-block"></span>
-      <div class="seclabel" style="margin:0">${g==="Unspecified"?"No timeline set":g}</div>
+      <span class="dot" style="width:11px;height:11px;border-radius:3px;background:${bcol[g]};display:inline-block"></span>
+      <div class="seclabel" style="margin:0">${esc(groupLabel(g))}</div>
       <div class="hint">${rows.length} action${rows.length!==1?"s":""}</div></div>
-      <table><thead><tr><th>Criticality</th><th>Action / observation</th><th>Audit · Report</th><th>Owner</th><th>Expected close</th><th>Age</th><th>Status</th></tr></thead><tbody>
+      <table><thead><tr><th>Criticality</th><th>Action / observation</th><th>Audit · Report</th><th>Owner</th><th>Expected close</th><th>Status</th></tr></thead><tbody>
       ${rows.map(o=>{
-        const od=isOverdue(o); const ec=effectiveClose(o,o._r); const age=obsAge(o,o._r);
+        const od=isOverdue(o); const ec=effectiveClose(o,o._r);
         const st=o.status||"Open";
         const stCls=st==="Closed"?"closed":st==="In Progress"?"progress":"open";
         return `<tr class="tracker-row" onclick="go('observation',{audit:'${o._a.id}',report:'${o._r.id}',obs:'${o.id}'})" title="Open observation">
@@ -560,7 +641,6 @@ function viewTracker(){
           <td>${esc(o._a.name)}<div class="hint">${esc(o._r.title)}${o._a.area?" · "+esc(o._a.area):""}</div></td>
           <td>${esc(o.owner||"—")}</td>
           <td>${ec?`${fmtDate(ec)}${od?` <span class="pill c-Critical">overdue</span>`:""}`:`<span class="hint">—</span>`}</td>
-          <td>${age!=null?`${age}d`:`<span class="hint">—</span>`}</td>
           <td onclick="event.stopPropagation()"><select class="status-select status-${stCls}" onchange="updateObsStatus('${o._a.id}','${o._r.id}','${o.id}',this.value);this.className='status-select status-'+(this.value==='Closed'?'closed':this.value==='In Progress'?'progress':'open')">${STATUSES.map(s=>`<option value="${esc(s)}"${st===s?" selected":""}>${esc(s)}</option>`).join("")}</select></td>
         </tr>`;
       }).join("")}
@@ -579,11 +659,11 @@ function exportTracker(){
   const crank=o=>CRITS.indexOf(o.criticality);
   let inner=`<h1>Remediation Tracker — Open Actions</h1><div class="meta">${esc(DB.org)} — Internal Audit · ${obs.length} open action(s) · ${obs.filter(o=>o.isRepeat).length} repeat finding(s)</div>`;
   if(!obs.length){ inner+=`<div>No open actions.</div>`; wordDoc("Remediation Tracker "+stamp(),inner); return; }
-  [...TIMELINES,"Unspecified"].forEach(g=>{
-    let rows=obs.filter(o=>(TIMELINES.includes(o.timeline)?o.timeline:"Unspecified")===g);
+  [...CLOSE_BUCKETS,"No date"].forEach(g=>{
+    let rows=obs.filter(o=>trackerBucketOf(o)===g);
     if(!rows.length)return;
-    rows.sort((a,b)=>(od(b)-od(a))||(crank(a)-crank(b)));
-    inner+=`<h2>${g==="Unspecified"?"No timeline set":g} (${rows.length})</h2>
+    rows.sort((a,b)=>{ const da=daysToClose(a,a._r), db=daysToClose(b,b._r); if(da==null&&db==null) return crank(a)-crank(b); if(da==null) return 1; if(db==null) return -1; return (da-db)||(crank(a)-crank(b)); });
+    inner+=`<h2>${g==="No date"?"No expected close date":g} (${rows.length})</h2>
       <table><tr><th>Criticality</th><th>Action / observation</th><th>Audit · Report</th><th>Owner</th><th>Expected close</th><th>Age</th><th>Repeat</th><th>Status</th></tr>
       ${rows.map(o=>{ const ec=effectiveClose(o,o._r); const age=obsAge(o,o._r); return `<tr><td><span class="pill ${ck(o.criticality)}">${o.criticality}</span></td><td>${esc(o.title)}</td><td>${esc(o._a.name)} · ${esc(o._r.title)}</td><td>${esc(o.owner||"—")}</td><td>${ec?fmtDate(ec):"—"}${od(o)?" (overdue)":""}</td><td>${age!=null?age+"d":"—"}</td><td>${o.isRepeat?"Yes"+(o.repeatOf?" ("+esc(o.repeatOf)+")":""):"—"}</td><td>${esc(o.status||"Open")}</td></tr>`; }).join("")}</table>`;
   });
@@ -659,6 +739,7 @@ function viewAuditRA(){
     return `<div class="card"><div class="empty"><div class="big">◈</div>No auditable units yet.<br><br>
       <button class="btn dark ai-generate-btn" onclick="modalRAPrompt()">Generate audit universe</button> &nbsp; <button class="btn" onclick="modalRA()">+ Add auditable unit</button></div></div>`;
   }
+  rolloverPlan();
   const py=+planYear();
   const en=U.map(e=>{ const score=raComposite(e.factors); const band=e.ratingOverride||raBand(score); const due=raDue(e,band); return {...e,score,band,due,incl:raInPlan(e,band,due),freq:e.frequencyOverride||raFreqLabel(band)}; }).sort((a,b)=>b.score-a.score);
   const counts={Critical:0,High:0,Medium:0,Low:0}; en.forEach(e=>counts[e.band]++);
@@ -692,13 +773,17 @@ function viewAuditRA(){
     </tbody></table>
     <div class="hint" style="margin-top:8px">Risk score = weighted average of factors (1–5). Frequency: Critical/High = annual · Medium = 2 yrs · Low = 3 yrs. “Due” = last audited + cycle ≤ plan year (or never audited).</div>
   </div>
-  <div class="card"><div class="row"><div class="seclabel" style="margin:0">Annual Audit Plan — ${esc(planYear())}</div><div class="spacer"></div><span class="hint">${planned.length} engagement(s) · ${doneOcc}/${totalOcc} quarter-reviews done (${pctPlan}%)</span></div>
-    ${planned.length?`<table class="ra-plan-table" style="margin-top:6px"><thead><tr><th class="ra-plan-num-col">#</th><th>Auditable unit</th><th>Rating</th><th class="ra-timing-col">Timing</th><th>Status</th><th>Linked audit</th><th>Rationale</th></tr></thead><tbody>
-      ${planned.map((e,i)=>`<tr><td class="ra-plan-num-col">${i+1}</td><td><b>${esc(e.name)}</b><div class="hint">${esc(e.freq)}</div></td><td><span class="pill" style="background:${hx2rgba(RA_HEX[e.band],.16)};color:${RA_HEX[e.band]}">${e.band}</span></td>
-        <td class="ra-timing-col">${raTimingSelect(e)}</td>
-        <td>${engStatusCell(e)}</td>
-        <td>${auditLinksCell(e)}</td>
-        <td class="hint">${esc(e.rationale||(e.due?"Due per "+e.freq.toLowerCase()+" cycle":e.band+" risk"))}</td></tr>`).join("")}
+  <div class="card"><div class="row" style="align-items:center;gap:10px"><div class="seclabel" style="margin:0">Annual Audit Plan — ${esc(planYear())}</div><div class="spacer"></div><span class="hint">${planned.length} engagement(s) · ${doneOcc}/${totalOcc} quarter-reviews done (${pctPlan}%)</span><button class="btn sm dark ai-generate-btn" onclick="modalAnnualPlanPrompt()">Generate plan (AI)</button></div>
+    ${planned.length?`<div class="hint" style="margin:2px 0 8px">Click a row for full details, linked audits and to update its status.</div><table class="ra-plan-table" style="margin-top:6px"><thead><tr><th class="ra-plan-num-col">#</th><th>Auditable unit</th><th class="ra-rating-col">Rating</th><th class="ra-timing-col">Timing</th><th>Status</th><th class="ra-link-col">Linked audit</th><th>Rationale</th></tr></thead><tbody>
+      ${planned.map((e,i)=>{ const isOpen=!!raPlanOpen[e.id]; return `<tr class="ra-plan-row${isOpen?" open":""}" onclick="raPlanToggle('${e.id}',event)" title="Click for details">
+        <td class="ra-plan-num-col">${i+1}</td>
+        <td><span class="watch-caret" aria-hidden="true">${isOpen?"▾":"▸"}</span> <b>${esc(e.name)}</b><div class="hint">${esc(e.freq)}${e.carryOverFrom?` · <span class="ra-carry">carried over from ${esc(String(e.carryOverFrom))}</span>`:""}</div></td>
+        <td class="ra-rating-col"><span class="pill" style="background:${hx2rgba(RA_HEX[e.band],.16)};color:${RA_HEX[e.band]}">${e.band}</span></td>
+        <td class="ra-timing-col">${e.plannedPeriod?esc(e.plannedPeriod):`<span class="hint">—</span>`}</td>
+        <td>${engStatusSummary(e)}</td>
+        <td class="ra-link-col">${auditLinksCell(e)}</td>
+        <td class="hint">${esc(e.rationale||(e.due?"Due per "+e.freq.toLowerCase()+" cycle":e.band+" risk"))}</td>
+      </tr>`+(isOpen?`<tr class="ra-plan-detail-row"><td colspan="7">${raPlanDetailHTML(e)}</td></tr>`:""); }).join("")}
     </tbody></table>`:`<div class="hint" style="margin:8px 0">No units in plan for this year.</div>`}
   </div>`;
   return h;
@@ -708,7 +793,14 @@ function auditLinksCell(e){
   const ids=raLinkIds(e);
   const linked=ids.map(id=>DB.audits.find(a=>a.id===id)).filter(Boolean);
   const avail=DB.audits.filter(a=>!ids.includes(a.id));
-  return `${linked.map(a=>`<span class="tag" style="cursor:pointer;margin-bottom:3px;display:inline-block" title="Open audit" onclick="go('audit',{audit:'${a.id}'})">${esc(a.name.length>20?a.name.slice(0,19)+"…":a.name)} <span class="tag-unlink" title="Unlink" onclick="event.stopPropagation();raLinkRemove('${e.id}','${a.id}')">${ICON_TRASH}</span></span>`).join(" ")}${avail.length?`<select class="mini" onchange="raLinkAdd('${e.id}',this.value)"><option value="">${linked.length?"+ link another…":"+ link audit…"}</option>${avail.map(a=>`<option value="${a.id}">${esc(a.name.length>22?a.name.slice(0,21)+"…":a.name)}</option>`).join("")}</select>`:(linked.length?"":`<span class="hint">no audits yet</span>`)}`;
+  return `<div class="ra-linkbox">${linked.map(a=>`<span class="tag ra-link-tag" title="Open audit" onclick="event.stopPropagation();go('audit',{audit:'${a.id}'})">${esc(a.name)} <span class="tag-unlink" title="Unlink" onclick="event.stopPropagation();raLinkRemove('${e.id}','${a.id}')">${ICON_TRASH}</span></span>`).join("")}${avail.length?`<div class="ra-link-search"><input class="ra-link-input" placeholder="${linked.length?"+ link another…":"+ link audit…"}" oninput="raLinkFilter(this)" onfocus="raLinkFilter(this)" onclick="event.stopPropagation()"><div class="ra-link-menu">${avail.map(a=>`<div class="ra-link-opt" data-name="${esc(a.name.toLowerCase())}" onmousedown="event.preventDefault()" onclick="event.stopPropagation();raLinkAdd('${e.id}','${a.id}')">${esc(a.name)}</div>`).join("")}</div></div>`:(linked.length?"":`<span class="hint">no audits yet</span>`)}</div>`;
+}
+function raLinkFilter(input){
+  const q=input.value.toLowerCase().trim();
+  const menu=input.parentNode.querySelector(".ra-link-menu"); if(!menu)return;
+  menu.querySelectorAll(".ra-link-empty").forEach(x=>x.remove());
+  let n=0; menu.querySelectorAll(".ra-link-opt").forEach(o=>{ const dn=o.getAttribute("data-name")||""; const show=(!q||dn.indexOf(q)>=0); o.style.display=show?"":"none"; if(show)n++; });
+  if(!n){ const d=document.createElement("div"); d.className="ra-link-opt ra-link-empty"; d.style.color="#94a3b8"; d.textContent="No matches"; menu.appendChild(d); }
 }
 function raLinkAdd(id,aid){ if(!aid)return; const e=auditUniverse().find(x=>x.id===id); if(!e)return; const ids=raLinkIds(e).slice(); if(!ids.includes(aid))ids.push(aid); e.linkedAuditIds=ids; delete e.linkedAuditId; save(); render(); }
 function raLinkRemove(id,aid){ const e=auditUniverse().find(x=>x.id===id); if(!e)return; e.linkedAuditIds=raLinkIds(e).filter(x=>x!==aid); delete e.linkedAuditId; save(); render(); }
@@ -725,16 +817,131 @@ function unitOcc(e){ const qs=parseQuarters(e.plannedPeriod); const d={}; (e.occ
 function unitOccTotal(e){ return Math.max(1,parseQuarters(e.plannedPeriod).length); }
 function unitOccDone(e){ const occ=unitOcc(e); return occ.length>1? occ.filter(o=>o.done).length : (e.engStatus==="Completed"?1:0); }
 function engStatusText(e){ const occ=unitOcc(e); if(occ.length>1){ const d=occ.filter(o=>o.done).length; return d>=occ.length?"Completed (all quarters)":d>0?d+"/"+occ.length+" quarters done":"Not started"; } return e.engStatus||"Not started"; }
-function engStatusCell(e){
-  const occ=unitOcc(e);
-  if(occ.length>1){
-    const done=occ.filter(o=>o.done).length;
-    return `<div class="hint" style="margin-bottom:4px">${done}/${occ.length} quarters${done>=occ.length?` · <b style="color:#2e7d32">Completed</b>`:done>0?" · in progress":""}</div>`+
-      occ.map(o=>`<span data-q="${esc(o.q)}" onclick="raOccToggle('${e.id}',this.getAttribute('data-q'))" title="Toggle this quarter complete" style="cursor:pointer;display:inline-block;margin:0 3px 3px 0;font-size:11px;padding:2px 7px;border-radius:5px;font-weight:600;background:${o.done?"#eaf5eb":"#eef2f7"};color:${o.done?"#2e7d32":"#64748b"};border:1px solid ${o.done?"#bfe3c4":"#dbe3ea"}">${o.done?"✓ ":""}${esc(o.q)}</span>`).join("");
+function engStatusLabel(e){ if(engIsComplete(e))return "Completed"; if(pendingCompletion(e.id))return "Pending approval"; return e.engStatus||"Not started"; }
+function engStatusSummary(e){
+  if(pendingCompletion(e.id)) return `<span class="pill ra-pending-pill">⏳ Pending approval</span>`;
+  const occ=unitOcc(e); const total=occ.length; const done=occ.filter(o=>o.done).length;
+  const complete=engIsComplete(e);
+  const label=complete?"completed":(e.engStatus==="In progress"||done>0)?"in progress":e.engStatus==="Deferred"?"deferred":"not started";
+  if(total>1) return `<span class="ra-status-text${complete?" done":""}">${done}/${total} quarters · ${label}</span>`;
+  return `<span class="ra-status-text${complete?" done":""}">${label.charAt(0).toUpperCase()+label.slice(1)}</span>`;
+}
+let raPlanOpen={};
+function raPlanToggle(id,ev){
+  if(ev&&(ev.target.closest("button")||ev.target.closest("a")||ev.target.closest("select")||ev.target.closest("input")||ev.target.closest(".ra-linkbox")||ev.target.closest(".tag"))) return;
+  raPlanOpen[id]=!raPlanOpen[id];
+  render();
+}
+function raPlanDetailHTML(e){
+  const score=raComposite(e.factors); const band=e.ratingOverride||raBand(score);
+  const factorRows=RA_FACTORS.map(([k,lab,w])=>`<div class="ra-factor"><span class="ra-factor-lbl">${esc(lab)} <span class="hint">(${Math.round(w*100)}%)</span></span><span class="ra-factor-val">${(+(e.factors&&e.factors[k])||3)}/5</span></div>`).join("");
+  const ids=raLinkIds(e); const linked=ids.map(id=>DB.audits.find(a=>a.id===id)).filter(Boolean);
+  return `<div class="ra-plan-detail anim-fade-in">
+    <div class="watch-detail-meta">
+      <div class="watch-meta-item"><span class="watch-meta-label">Category</span><span class="watch-meta-value">${esc(e.category||"—")}</span></div>
+      <div class="watch-meta-item"><span class="watch-meta-label">Owner</span><span class="watch-meta-value">${esc(e.owner||"—")}</span></div>
+      <div class="watch-meta-item"><span class="watch-meta-label">Risk score</span><span class="watch-meta-value">${score.toFixed(2)} · ${band}</span></div>
+      <div class="watch-meta-item"><span class="watch-meta-label">Frequency</span><span class="watch-meta-value">${esc(e.frequencyOverride||raFreqLabel(band))}</span></div>
+      <div class="watch-meta-item"><span class="watch-meta-label">Planned timing</span><span class="watch-meta-value">${esc(e.plannedPeriod||"—")}${e.carryOverFrom?` <span class="hint">(carried over from ${esc(String(e.carryOverFrom))})</span>`:""}</span></div>
+      <div class="watch-meta-item"><span class="watch-meta-label">Last audited</span><span class="watch-meta-value">${esc(e.lastAudited||"—")}</span></div>
+    </div>
+    <div class="ra-factor-grid">${factorRows}</div>
+    ${e.rationale?`<div class="obs-detail-sections"><section class="obs-detail-section"><h4 class="obs-detail-label">Rationale</h4><div class="obs-detail-content">${esc(e.rationale)}</div></section></div>`:""}
+    ${linked.length?`<div class="ra-detail-linked"><span class="watch-meta-label">Linked audits</span> ${linked.map(a=>`<span class="tag" style="cursor:pointer" onclick="go('audit',{audit:'${a.id}'})">${esc(a.name)}</span>`).join(" ")}</div>`:""}
+    ${raStatusSection(e)}
+    <div class="row" style="margin-top:12px;gap:8px"><button class="btn ghost sm" onclick="modalRA('${e.id}')">Edit unit &amp; timing</button></div>
+  </div>`;
+}
+function raStatusSection(e){
+  const pend=pendingCompletion(e.id);
+  const complete=engIsComplete(e);
+  let body;
+  if(complete){
+    body=`<span class="ra-status-text done">✓ Completed</span> <button class="btn ghost sm" onclick="raReopen('${e.id}')">Reopen</button>`;
+  } else if(pend){
+    const who=esc(pend.requestedByName||"a staff member"); const when=pend.requestedAt?esc(fmtDateTime(pend.requestedAt)):"";
+    body=`<span class="pill ra-pending-pill">⏳ Pending Head of Audit approval</span> <span class="hint">requested by ${who}${when?" · "+when:""}</span>`+
+      (isHeadUser()?` <button class="btn sm" onclick="approveCompletion('${pend.id}')">Approve</button> <button class="btn ghost sm danger" onclick="rejectCompletion('${pend.id}')">Reject</button>`:"");
+  } else {
+    body=`<span class="ra-status-text">${esc(engStatusLabel(e))}</span>`+
+      (e.engStatus==="In progress"?"":` <button class="btn ghost sm" onclick="raSetInProgress('${e.id}')">Mark in progress</button>`)+
+      ` <button class="btn sm" onclick="raRequestComplete('${e.id}')">${isHeadUser()?"Mark completed":"Request completion"}</button>`;
   }
-  return `<select class="mini" onchange="raEngSet('${e.id}',this.value)">${ENG_STATUS.map(s=>`<option${(e.engStatus||"Not started")===s?" selected":""}>${s}</option>`).join("")}</select>`;
+  return `<div class="ra-status-section"><div class="watch-meta-label" style="margin-bottom:6px">Status</div><div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">${body}</div>${!isHeadUser()&&!complete&&!pend?`<div class="hint" style="margin-top:6px">Marking an engagement complete needs Head of Audit approval.</div>`:""}</div>`;
+}
+function raSetInProgress(id){ const e=auditUniverse().find(x=>x.id===id); if(!e)return; e.engStatus="In progress"; save(); render(); }
+function raReopen(id){ const e=auditUniverse().find(x=>x.id===id); if(!e)return; e.engStatus="In progress"; e.occDone=[]; save(); render(); }
+function raMarkComplete(e){ e.engStatus="Completed"; e.occDone=parseQuarters(e.plannedPeriod).slice(); save(); render(); }
+function raRequestComplete(id){
+  const e=auditUniverse().find(x=>x.id===id); if(!e)return;
+  if(isHeadUser()){ raMarkComplete(e); logAudit("plan.completed","Marked engagement complete: "+e.name,{unitId:id}); return; }
+  if(pendingCompletion(id)){ alert("A completion approval is already pending for this engagement."); return; }
+  const u=window.AMS_USER||{};
+  approvals().push({id:uid(),kind:"engagement_completion",unitId:id,unitName:e.name,requestedBy:u.id||"",requestedByName:u.name||"",requestedAt:new Date().toISOString(),status:"pending"});
+  logAudit("plan.completion_requested","Requested completion approval: "+e.name,{unitId:id});
+  save(); render(); alert("Sent to the Head of Audit for approval.");
+}
+function approveCompletion(aid){
+  if(!isHeadUser()){ alert("Only the Head of Audit can approve."); return; }
+  const a=approvals().find(x=>x.id===aid); if(!a||a.status!=="pending")return;
+  const e=auditUniverse().find(x=>x.id===a.unitId);
+  const u=window.AMS_USER||{}; a.status="approved"; a.decidedBy=u.id||""; a.decidedByName=u.name||""; a.decidedAt=new Date().toISOString();
+  if(e){ e.engStatus="Completed"; e.occDone=parseQuarters(e.plannedPeriod).slice(); }
+  logAudit("plan.completion_approved","Approved completion: "+(a.unitName||""),{unitId:a.unitId});
+  save(); render();
+}
+function rejectCompletion(aid){
+  if(!isHeadUser()){ alert("Only the Head of Audit can reject."); return; }
+  const a=approvals().find(x=>x.id===aid); if(!a||a.status!=="pending")return;
+  const u=window.AMS_USER||{}; a.status="rejected"; a.decidedBy=u.id||""; a.decidedByName=u.name||""; a.decidedAt=new Date().toISOString();
+  logAudit("plan.completion_rejected","Rejected completion: "+(a.unitName||""),{unitId:a.unitId});
+  save(); render();
 }
 function raOccToggle(id,q){ const e=auditUniverse().find(x=>x.id===id); if(!e)return; e.occDone=e.occDone||[]; e.occDone=e.occDone.includes(q)?e.occDone.filter(x=>x!==q):e.occDone.concat(q); save(); render(); }
+/* ---- Head of Audit approvals ---- */
+function updateApprovalsBadge(){
+  const btn=document.querySelector('#nav button[data-view="approvals"]'); if(!btn) return;
+  let b=btn.querySelector(".nav-badge");
+  const n=isHeadUser()?pendingApprovalCount():0;
+  if(n>0){ if(!b){ b=document.createElement("span"); b.className="nav-badge"; btn.appendChild(b); } b.textContent=String(n); }
+  else if(b){ b.remove(); }
+}
+function viewApprovals(){
+  if(!isHeadUser()) return `<div class="card"><div class="empty">Approvals are only available to the Head of Audit.</div></div>`;
+  const all=approvals().slice().sort((a,b)=>String(b.requestedAt||"").localeCompare(String(a.requestedAt||"")));
+  const pend=all.filter(a=>a.status==="pending");
+  const decided=all.filter(a=>a.status!=="pending").slice(0,20);
+  const unitName=a=>{ const e=auditUniverse().find(x=>x.id===a.unitId); return e?e.name:(a.unitName||"(removed unit)"); };
+  let h=`<div class="dash-kpis" style="grid-template-columns:repeat(3,1fr)">
+    ${kpi("warn","Pending",pend.length,"awaiting your decision")}
+    ${kpi("good","Approved",all.filter(a=>a.status==="approved").length,"engagements signed off")}
+    ${kpi("base","Rejected",all.filter(a=>a.status==="rejected").length,"sent back")}
+  </div>
+  <div class="card"><div class="seclabel">Pending completion approvals</div>`;
+  if(!pend.length){ h+=`<div class="empty">Nothing awaiting approval. When staff mark a plan engagement complete, it appears here for your sign-off.</div>`; }
+  else {
+    h+=`<table style="margin-top:6px"><thead><tr><th>Engagement</th><th>Requested by</th><th>Requested</th><th style="text-align:right">Decision</th></tr></thead><tbody>`+
+      pend.map(a=>`<tr>
+        <td><b>${esc(unitName(a))}</b></td>
+        <td>${esc(a.requestedByName||"—")}</td>
+        <td>${a.requestedAt?esc(fmtDateTime(a.requestedAt)):"—"}</td>
+        <td style="text-align:right;white-space:nowrap"><button class="btn sm" onclick="approveCompletion('${a.id}')">Approve</button> <button class="btn ghost sm danger" onclick="rejectCompletion('${a.id}')">Reject</button></td>
+      </tr>`).join("")+`</tbody></table>`;
+  }
+  h+=`</div>`;
+  if(decided.length){
+    h+=`<div class="card"><div class="seclabel">Recent decisions</div>
+      <table style="margin-top:6px"><thead><tr><th>Engagement</th><th>Requested by</th><th>Decision</th><th>Decided by</th><th>When</th></tr></thead><tbody>`+
+      decided.map(a=>`<tr>
+        <td>${esc(unitName(a))}</td>
+        <td>${esc(a.requestedByName||"—")}</td>
+        <td>${a.status==="approved"?`<span class="pill c-Low">Approved</span>`:`<span class="pill c-Critical">Rejected</span>`}</td>
+        <td>${esc(a.decidedByName||"—")}</td>
+        <td>${a.decidedAt?esc(fmtDateTime(a.decidedAt)):"—"}</td>
+      </tr>`).join("")+`</tbody></table></div>`;
+  }
+  return h;
+}
 function raLinkSet(id,v){ const e=auditUniverse().find(x=>x.id===id); if(e){ e.linkedAuditId=v||""; save(); } }
 function modalRA(id){
   const U=auditUniverse(); const e=id?U.find(x=>x.id===id):{name:"",category:"",owner:"",factors:{},lastAudited:"",ratingOverride:"",frequencyOverride:"",rationale:""};
@@ -754,13 +961,22 @@ function modalRA(id){
       <div><label>Rating override</label><select id="ra_rate"><option value="">Auto</option>${RA_BANDS.slice().reverse().map(b=>`<option${e.ratingOverride===b?" selected":""}>${b}</option>`).join("")}</select></div>
       <div><label>Frequency override</label><input id="ra_freq" value="${esc(e.frequencyOverride||"")}" placeholder="blank = auto"></div>
     </div>
+    <div style="margin-top:8px"><label>Planned timing <span class="hint">(quarter(s) for the plan year)</span></label>
+      <select id="ra_timing">${raTimingOptions(e.plannedPeriod)}</select></div>
     <label>Rationale / notes (for the plan)</label><textarea id="ra_note">${esc(e.rationale||"")}</textarea>`,
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveRA('${id||""}')">Save</button>`);
+}
+function raTimingOptions(cur){
+  const py=planYear(); cur=(cur||"").trim();
+  const presets=["",`Q1 ${py}`,`Q2 ${py}`,`Q3 ${py}`,`Q4 ${py}`,`Q1-Q2 ${py}`,`Q3-Q4 ${py}`,`Q1-Q4 ${py}`];
+  let o=presets.map(p=>`<option value="${esc(p)}"${cur===p?" selected":""}>${p?esc(p):"— none —"}</option>`).join("");
+  if(cur && !presets.includes(cur)) o+=`<option value="${esc(cur)}" selected>${esc(cur)}</option>`;
+  return o;
 }
 function saveRA(id){
   const U=auditUniverse(); const name=val("ra_name"); if(!name){alert("Unit name required");return;}
   const factors={}; RA_FACTORS.forEach(([k])=>factors[k]=+val("ra_"+k)||3);
-  const data={name,category:val("ra_cat"),owner:val("ra_owner"),factors,lastAudited:val("ra_last"),ratingOverride:val("ra_rate"),frequencyOverride:val("ra_freq"),rationale:val("ra_note")};
+  const data={name,category:val("ra_cat"),owner:val("ra_owner"),factors,lastAudited:val("ra_last"),ratingOverride:val("ra_rate"),frequencyOverride:val("ra_freq"),plannedPeriod:val("ra_timing"),rationale:val("ra_note")};
   if(id){ Object.assign(U.find(x=>x.id===id),data); } else { U.push({id:uid(),...data,createdAt:new Date().toISOString()}); }
   save(); closeModal(); render();
 }
@@ -810,6 +1026,56 @@ function doImportRA(raw){
     n++;
   });
   if(!n){ showAiErr("raImpErr","No auditable units found in that JSON."); return false; }
+  save(); closeModal(); render(); return true;
+}
+function modalAnnualPlanPrompt(){
+  const U=auditUniverse();
+  if(!U.length){ alert("Add or generate auditable units first."); return; }
+  openModal("Generate annual audit plan",`
+    <div class="hint" style="margin-bottom:8px">AI will select which units belong in the <b>${esc(planYear())}</b> plan (by risk rating &amp; the audit-frequency cycle) and schedule each into quarters. This updates the plan selection, timing and rationale for the ${U.length} unit(s) in your universe.</div>
+    <label>Constraints / context (optional)</label>
+    <textarea id="ap_ctx" style="min-height:80px" placeholder="e.g. Only 2 auditors; core banking go-live in Q2 so defer IT audit to Q3; regulator expects Credit &amp; Treasury covered this year."></textarea>
+    <div id="apImpErr" style="margin-top:10px"></div>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark ai-generate-btn" onclick="generateAnnualPlan()">Generate annual audit plan</button>`);
+}
+function buildAnnualPlanPrompt(ctx){
+  const py=planYear();
+  const units=auditUniverse().map(e=>{ const score=raComposite(e.factors); const band=e.ratingOverride||raBand(score); const due=raDue(e,band); return `- "${e.name}" [${e.category||"unit"}] · rating ${band} · frequency ${e.frequencyOverride||raFreqLabel(band)} · last audited ${e.lastAudited||"never"} · ${due?"DUE":"not due"} in ${py}`; }).join("\n");
+  return `Act as Chief Audit Executive for ${DB.org}. Build the risk-based Annual Audit Plan for ${py} from the audit universe below, in line with IIA Standard 2010. Prioritise Critical/High-rated and due units; balance the workload across the four quarters (Q1–Q4 ${py}). Only defer a due unit if capacity requires it.
+${ctx?`\nConstraints / context:\n${ctx}\n`:""}
+Audit universe:
+${units}
+
+Return ONLY a JSON array (no commentary). One object per unit above, matched by exact name:
+[
+  {
+    "name": "must exactly match a unit name above",
+    "include": true,
+    "timing": "Q2 ${py}"  /* one of: "Q1 ${py}", "Q2 ${py}", "Q3 ${py}", "Q4 ${py}", "Q1-Q2 ${py}", "Q3-Q4 ${py}", "Q1-Q4 ${py}", or "" when not included */,
+    "rationale": "why included/deferred and why this timing"
+  }
+]`;
+}
+async function generateAnnualPlan(){
+  await runAiJson(buildAnnualPlanPrompt(val("ap_ctx")),"apImpErr",d=>{ doImportAnnualPlan(d); });
+}
+function doImportAnnualPlan(raw){
+  raw=importRaw(raw);
+  if(!raw){ showAiErr("apImpErr","Nothing to import."); return false; }
+  let d; try{ d=parseAiJson(raw); }catch(e){ showAiErr("apImpErr",e.message); return false; }
+  const arr=Array.isArray(d)?d:[d]; const U=auditUniverse(); let n=0;
+  arr.forEach(x=>{ if(!x||typeof x!=="object")return;
+    const nm=String(x.name||x.unit||"").trim().toLowerCase(); if(!nm)return;
+    const e=U.find(u=>u.name.trim().toLowerCase()===nm); if(!e)return;
+    const inc = x.include!=null? !!x.include : (x.timing?true:false);
+    e.includeInPlan=inc;
+    const tm=String(x.timing||x.plannedPeriod||"").trim();
+    if(inc){ if(tm) e.plannedPeriod=tm.replace(/20\d{2}/g,planYear()).trim(); }
+    if(x.rationale) e.rationale=String(x.rationale);
+    if(inc && !engIsComplete(e) && e.engStatus!=="In progress") e.engStatus=e.engStatus||"Not started";
+    n++;
+  });
+  if(!n){ showAiErr("apImpErr","No matching units found in that JSON. Names must match your audit universe."); return false; }
   save(); closeModal(); render(); return true;
 }
 function exportRA(){
@@ -2063,8 +2329,9 @@ function exportExternal(){
 /* ============================ AUDITS LIST ============================ */
 const AUDIT_STATUS=["Planned","In progress","Completed","On hold"];
 const AUDIT_STATUS_HEX={"Planned":"#64748b","In progress":"#c9a300","Completed":"#2e7d32","On hold":"#b00020"};
-let auditFilter={q:"",status:"All",period:"All"};
+let auditFilter={q:"",status:"All",period:"All",year:"All"};
 function periodKey(p){ p=p||""; const ym=p.match(/(20\d{2})/); const qm=p.match(/Q\s*([1-4])/i); return (ym?+ym[1]:0)*10+(qm?+qm[1]:0); }
+function periodYear(p){ const m=(p||"").match(/(20\d{2})/); return m?m[1]:""; }
 function auditCard(a){
   const obs=a.reports.flatMap(r=>r.observations); const c=zc(); obs.forEach(o=>c[o.criticality]++);
   const sh=AUDIT_STATUS_HEX[a.status]||"#64748b";
@@ -2120,7 +2387,7 @@ function auditSummaryHTML(a){
       ${kpi("base","Observations",s.total,s.open+" open · "+(s.total-s.open)+" closed","obs")}
       ${kpi("warn","Key exposures",(s.c["Critical"]||0)+(s.c["High"]||0),"Critical &amp; High","alert")}
       ${kpi("accent","Open actions",s.open,"in progress across reports","audit")}
-      ${kpi(s.overall==="Critical"||s.overall==="High"?"warn":"good","Residual risk",s.overall,"portfolio posture","check")}
+      ${kpi(s.overall==="Critical"||s.overall==="High"?"warn":"good","Risk assessment scope",s.overall,"portfolio posture","check")}
     </div>
   </div>`;
 }
@@ -2135,12 +2402,13 @@ function reportSummaryHTML(r){
       ${kpi("base","Observations",obs.length,open+" open · "+(obs.length-open)+" closed","obs")}
       ${kpi("warn","Key exposures",(c["Critical"]||0)+(c["High"]||0),"Critical &amp; High","alert")}
       ${kpi("accent","Open actions",open,"in progress","audit")}
-      ${kpi(overall==="Critical"||overall==="High"?"warn":"good","Residual risk",overall,"report posture","check")}
+      ${kpi(overall==="Critical"||overall==="High"?"warn":"good","Risk assessment scope",overall,"report posture","check")}
     </div>
   </div>`;
 }
 function auditMatches(a,q){
   if(auditFilter.status!=="All" && (a.status||"")!==auditFilter.status) return false;
+  if(auditFilter.year!=="All" && periodYear(a.period)!==auditFilter.year) return false;
   if(auditFilter.period!=="All" && (a.period||"")!==auditFilter.period) return false;
   if(q){ const hay=(a.name+" "+(a.area||"")+" "+(a.period||"")+" "+(a.leadAuditor||"")+" "+a.reports.map(r=>r.title+" "+(r.refNo||"")).join(" ")).toLowerCase(); if(!hay.includes(q)) return false; }
   return true;
@@ -2160,15 +2428,18 @@ function viewAudits(){
   if(!DB.audits.length) return `<div class="card"><div class="empty"><div class="big">▤</div>
     No audits yet.<br><br><button class="btn" onclick="modalAudit()">+ Create your first audit</button></div></div>`;
   const periods=[...new Set(DB.audits.map(a=>a.period||"").filter(Boolean))].sort((x,y)=>periodKey(y)-periodKey(x));
+  const years=[...new Set(DB.audits.map(a=>periodYear(a.period)).filter(Boolean))].sort((x,y)=>+y-+x);
   const shown=DB.audits.filter(a=>auditMatches(a,(auditFilter.q||"").toLowerCase().trim())).length;
   return `<div class="audit-filters-bar filter-row-right anim-fade-in">
     <span class="hint" id="afCount">${shown} of ${DB.audits.length} audits</span>
     <div class="spacer"></div>
+    <div class="filter-group"><span class="filter-label">Year</span>
+      <select class="field-select field-select-sm" onchange="auditFilter.year=this.value;refreshAuditList()"><option value="All"${auditFilter.year==="All"?" selected":""}>All years</option>${years.map(y=>`<option value="${esc(y)}"${auditFilter.year===y?" selected":""}>${esc(y)}</option>`).join("")}</select></div>
     <div class="filter-group"><span class="filter-label">Quarter</span>
       <select class="field-select field-select-sm" onchange="auditFilter.period=this.value;refreshAuditList()"><option value="All"${auditFilter.period==="All"?" selected":""}>All quarters</option>${periods.map(p=>`<option value="${esc(p)}"${auditFilter.period===p?" selected":""}>${esc(p)}</option>`).join("")}</select></div>
     <div class="filter-group"><span class="filter-label">Status</span>
       <select class="field-select field-select-sm" onchange="auditFilter.status=this.value;refreshAuditList()">${["All",...AUDIT_STATUS].map(s=>`<option value="${esc(s)}"${auditFilter.status===s?" selected":""}>${esc(s)}</option>`).join("")}</select></div>
-    <button class="btn ghost sm" onclick="auditFilter={q:'',status:'All',period:'All'};render()">Clear</button>
+    <button class="btn ghost sm" onclick="auditFilter={q:'',status:'All',period:'All',year:'All'};render()">Clear</button>
   </div>
   <div id="auditList">${auditListHTML()}</div>`;
 }
@@ -2718,6 +2989,8 @@ function renderObservation(C,T,A){
       ${detailSection("Proposed SOP update",o.sopUpdate)}
       ${detailSection("Management response",o.managementResponse)}
     </div>
+    ${notesHTML(o)}
+    <div class="row" style="margin-top:12px"><button class="btn sm" onclick="modalAddNote('${a.id}','${r.id}','${o.id}')">+ Add note</button></div>
     ${o.status==="Closed"?`<div class="obs-detail-closure hint">✓ Closed${o.closedDateISO?" "+fmtDate(isoToDate(o.closedDateISO)):""}${o.verifiedBy?" · Verified by "+esc(o.verifiedBy):""}${o.closureEvidence?" · Evidence: "+esc(o.closureEvidence):""}${o.closureNote?" — "+esc(o.closureNote):""}</div>`:""}
   </div>`;
 }

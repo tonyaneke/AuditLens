@@ -6,6 +6,7 @@ import {
   Alert02Icon,
   Analytics01Icon,
   BookOpen01Icon,
+  CheckmarkBadge01Icon,
   DashboardSquare01Icon,
   File01Icon,
   JusticeScale01Icon,
@@ -43,6 +44,12 @@ const SECTIONS: { label: string; items: NavItem[] }[] = [
       { view: "process", label: "Process Review", icon: WorkflowSquare01Icon },
       { view: "external", label: "External Findings", icon: BookOpen01Icon },
       { view: "iasa", label: "IA Self-Assessment", icon: JusticeScale01Icon },
+    ],
+  },
+  {
+    label: "Oversight",
+    items: [
+      { view: "approvals", label: "Approvals", icon: CheckmarkBadge01Icon },
     ],
   },
 ];
@@ -94,7 +101,7 @@ async function signOut() {
 export default function SidebarNav({ user }: SidebarNavProps) {
   const isHead = user.role === "head_of_audit";
   const access = isHead
-    ? new Set<string>([...MAIN_VIEWS, ...ASSESSMENT_VIEWS])
+    ? new Set<string>([...MAIN_VIEWS, ...ASSESSMENT_VIEWS, "approvals"])
     : new Set<string>([...MAIN_VIEWS, ...(user.sidebarAccess || [])]);
 
   return (
