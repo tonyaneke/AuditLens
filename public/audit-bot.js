@@ -68,9 +68,22 @@ function raDue(e,band){ const py=+planYear(); const la=parseInt(e.lastAudited,10
 function raInPlan(e,band,due){ return e.includeInPlan!=null? e.includeInPlan : (due || band==="Critical" || band==="High"); }
 // ---- Annual plan: completion approvals + year rollover ----
 function isHeadUser(){ return !!(window.AMS_USER && window.AMS_USER.role==="head_of_audit"); }
+function isActionOwner(){ return !!(window.AMS_USER && window.AMS_USER.role==="action_owner"); }
+function isAuditorUser(){ const r=window.AMS_USER&&window.AMS_USER.role; return r==="head_of_audit"||r==="audit_staff"||!r; }
 function approvals(){ DB.approvals=DB.approvals||[]; return DB.approvals; }
 function pendingCompletion(unitId){ return approvals().find(x=>x.kind==="engagement_completion" && x.unitId===unitId && x.status==="pending"); }
 function pendingApprovalCount(){ return approvals().filter(x=>x.status==="pending").length; }
+/* ---- Notifications + observation approval ---- */
+function notifications(){ DB.notifications=DB.notifications||[]; return DB.notifications; }
+function myNotifications(){ const me=window.AMS_USER; if(!me) return []; return notifications().filter(n=>n.userId===me.id).sort((a,b)=>String(b.at||"").localeCompare(String(a.at||""))); }
+function notify(userId,kind,text,link){ if(!userId)return; notifications().push({id:uid(),userId,kind:kind||"info",text:text||"",link:link||"",read:false,at:new Date().toISOString()}); }
+function headUsers(){ return (_directoryCache||[]).filter(u=>u.role==="head_of_audit"); }
+function emailNotify(to,subject,text){ const list=(Array.isArray(to)?to:[to]).filter(Boolean); if(!list.length)return; try{ fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:list,subject:subject||"AuditLens notification",text:text||""})}).catch(()=>{}); }catch(e){} }
+function notifyHeadsApproval(title){ const heads=headUsers(); heads.forEach(h=>notify(h.id,"approval_needed","Approval needed: "+title,"approvals")); emailNotify(heads.map(h=>h.email),"AuditLens — approval needed",`The observation "${title}" was raised and needs your approval in AuditLens.`); }
+function notifyOwnerAssigned(o){ if(!o||!o.ownerUserId)return; notify(o.ownerUserId,"assigned","New action assigned to you: "+o.title,"myobs"); const dept=(o.departmentId&&deptById(o.departmentId))||departments().find(d=>d.headUserId===o.ownerUserId); if(dept&&dept.headEmail) emailNotify([dept.headEmail],"AuditLens — an action was assigned to you",`An audit observation "${o.title}" has been assigned to you. Sign in to AuditLens to view the details, respond, and upload evidence.`); }
+function obsIsApproved(o){ return o.obsApproval!=="pending" && o.obsApproval!=="rejected"; }
+function obsApprovalBadge(o){ if(o.obsApproval==="pending") return `<span class="pill sop-pending-pill">⏳ Pending Head approval</span>`; if(o.obsApproval==="rejected") return `<span class="pill c-Critical">Rejected</span>`; return ""; }
+function pendingObsRaise(){ return approvals().filter(x=>x.kind==="observation_raise" && x.status==="pending"); }
 function engIsComplete(e){ if(e.engStatus==="Completed") return true; const occ=unitOcc(e); return occ.length>0 && occ.every(o=>o.done); }
 function raYearsIn(period){ const out=[]; const re=/(20\d{2})/g; let m; while((m=re.exec(String(period||"")))) out.push(+m[1]); return out; }
 function rolloverPlan(){
@@ -144,12 +157,15 @@ let _dataReady = false;
 function defaultDB(){
   return { org:"Nigerian Consumer Credit Corporation (CREDICORP)", signOffName:"Awa Michael", signOffTitle:"Head, Internal Audit", audits:[] };
 }
+let _lastUpdatedAt=null;
+let _pendingSave=false;
 async function loadFromServer(){
   try{
     const res = await fetch("/api/data");
     if(res.ok){
       const json = await res.json();
       if(json.data) DB = json.data;
+      _lastUpdatedAt = json.updatedAt || _lastUpdatedAt;
     }
   }catch(e){}
   if(!DB || !Array.isArray(DB.audits)) DB = defaultDB();
@@ -157,11 +173,34 @@ async function loadFromServer(){
 }
 function save(){
   if(!_dataReady) return;
+  _pendingSave = true;
   clearTimeout(_saveTimer);
   _saveTimer = setTimeout(()=>{ saveNow().catch(()=>{}); }, 400);
 }
 function saveNow(){
-  return fetch("/api/data", { method:"PUT", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ data: DB }) });
+  return fetch("/api/data", { method:"PUT", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ data: DB }) })
+    .then(res=>{ _pendingSave=false; if(res&&res.ok){ return res.json().then(j=>{ if(j&&j.updatedAt) _lastUpdatedAt=j.updatedAt; }).catch(()=>{}); } })
+    .catch(e=>{ _pendingSave=false; throw e; });
+}
+/* ---- Near-real-time polling: refresh when another user changes the shared workspace ---- */
+let _pollTimer=null;
+function startPolling(){ if(_pollTimer) return; _pollTimer=setInterval(pollData, 4000); }
+async function pollData(){
+  if(!_dataReady || _pendingSave) return;
+  if(typeof _aiBusy!=="undefined" && _aiBusy) return;
+  const ovEl=document.getElementById("overlay"); if(ovEl && ovEl.classList.contains("show")) return; // a modal is open — don't clobber
+  try{
+    const res=await fetch("/api/data"); if(!res.ok) return;
+    const json=await res.json();
+    if(json && json.updatedAt && json.updatedAt!==_lastUpdatedAt){
+      _lastUpdatedAt=json.updatedAt;
+      if(json.data && Array.isArray(json.data.audits)){
+        DB=json.data;
+        render();
+        if(window.AMS_USER && window.AMS_USER.role==="head_of_audit") refreshUsersTable();
+      }
+    }
+  }catch(e){}
 }
 function logAudit(action,summary,metadata){
   if(!summary) return;
@@ -337,6 +376,7 @@ function render(){
     C.innerHTML=`<div class="empty">This section is not available.</div>`;
   }
   updateApprovalsBadge();
+  renderNotifBell();
 }
 
 /* ============================ DASHBOARD ============================ */
@@ -582,7 +622,7 @@ function trackerSet(k,v){ trackerFilter[k]=v; render(); }
 function parseDate(s){ if(!s)return null; const d=new Date(s); return isNaN(d.getTime())?null:d; }
 function trackerBucketOf(o){ const d=daysToClose(o,o._r); return d==null?"No date":closeBucket(d); }
 function viewTracker(){
-  const obs=allObs();
+  const obs=allObs().filter(obsIsApproved);
   if(!obs.length){
     return `<div class="card"><div class="empty"><div class="big">◷</div>No observations yet. Once you raise observations, every open remediation action shows up here — grouped by expected close, with overdue flags.</div></div>`;
   }
@@ -641,7 +681,7 @@ function viewTracker(){
           <td>${esc(o._a.name)}<div class="hint">${esc(o._r.title)}${o._a.area?" · "+esc(o._a.area):""}</div></td>
           <td>${esc(o.owner||"—")}</td>
           <td>${ec?`${fmtDate(ec)}${od?` <span class="pill c-Critical">overdue</span>`:""}`:`<span class="hint">—</span>`}</td>
-          <td onclick="event.stopPropagation()"><select class="status-select status-${stCls}" onchange="updateObsStatus('${o._a.id}','${o._r.id}','${o.id}',this.value);this.className='status-select status-'+(this.value==='Closed'?'closed':this.value==='In Progress'?'progress':'open')">${STATUSES.map(s=>`<option value="${esc(s)}"${st===s?" selected":""}>${esc(s)}</option>`).join("")}</select></td>
+          <td onclick="event.stopPropagation()"><div class="tracker-status-cell">${statusPill(o.status)}${pendingStatusChange(o.id)?` <span class="pill sop-pending-pill" title="Change to ${esc(pendingStatusChange(o.id).newStatus)} awaiting Head approval">⏳</span>`:""}${o.updateRequestedAt?` <span class="pill sop-pending-pill" title="Update requested from owner">🔔</span>`:""}<span class="tracker-status-actions">${iconBtn(`modalStatusEdit('${o._a.id}','${o._r.id}','${o.id}')`,"✎","Edit status")}${st!=="Closed"?iconBtn(`requestOwnerUpdate('${o._a.id}','${o._r.id}','${o.id}')`,"🔔","Request update from owner"):""}</span></div></td>
         </tr>`;
       }).join("")}
       </tbody></table></div>`;
@@ -653,8 +693,62 @@ function updateObsStatus(aid,rid,oid,v){
   const a=audit(aid); const r=report(a,rid); if(!r)return;
   const o=r.observations.find(x=>x.id===oid); if(o){ stampClosed(o,v); o.status=v; save(); render(); }
 }
+/* ---- Status-change approval + owner update requests ---- */
+function pendingStatusChange(oid){ return approvals().find(a=>a.kind==="observation_status_change"&&a.obsId===oid&&a.status==="pending"); }
+function applyStatusChange(o,v){ stampClosed(o,v); o.status=v; }
+function cancelPendingStatusChange(oid){ const u=window.AMS_USER||{}; approvals().forEach(a=>{ if(a.kind==="observation_status_change"&&a.obsId===oid&&a.status==="pending"){ a.status="superseded"; a.decidedBy=u.id||""; a.decidedByName=u.name||""; a.decidedAt=new Date().toISOString(); } }); }
+function modalStatusEdit(aid,rid,oid){
+  const o=findObs(aid,rid,oid); if(!o)return;
+  const pend=pendingStatusChange(oid);
+  openModal("Update status",`
+    <div class="note" style="margin-bottom:10px"><b>${esc(o.title)}</b> · current: ${statusPill(o.status||"Open")}</div>
+    ${pend?`<div class="hint" style="color:#a15c00;margin-bottom:8px">⏳ A change to <b>${esc(pend.newStatus)}</b> is already awaiting Head approval.</div>`:""}
+    <label>New status</label><select id="st_new">${STATUSES.map(s=>`<option${(o.status||"Open")===s?" selected":""}>${s}</option>`).join("")}</select>
+    <div class="hint" style="margin-top:8px">${isHeadUser()?"As Head of Audit, the change is applied immediately.":"Every status change requires Head of Audit approval."}</div>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="submitStatusEdit('${aid}','${rid}','${oid}')">${isHeadUser()?"Apply":"Request change"}</button>`);
+}
+function submitStatusEdit(aid,rid,oid){ const v=val("st_new"); closeModal(); requestStatusChange(aid,rid,oid,v); }
+function requestStatusChange(aid,rid,oid,v){
+  const o=findObs(aid,rid,oid); if(!o)return;
+  if(!STATUSES.includes(v)) return;
+  if((o.status||"Open")===v) return;
+  if(isHeadUser()){ applyStatusChange(o,v); cancelPendingStatusChange(oid); logAudit("obs.status_changed","Status → "+v+": "+o.title,{observationId:oid}); if(o.ownerUserId) notify(o.ownerUserId,"status",o.title+" status is now "+v,"myobs"); save(); render(); return; }
+  if(pendingStatusChange(oid)){ alert("A status change for this observation is already awaiting approval."); return; }
+  const u=window.AMS_USER||{};
+  approvals().push({id:uid(),kind:"observation_status_change",obsId:oid,auditId:aid,reportId:rid,obsTitle:o.title,fromStatus:o.status||"Open",newStatus:v,requestedBy:u.id||"",requestedByName:u.name||"",requestedAt:new Date().toISOString(),status:"pending"});
+  logAudit("obs.status_change_requested","Requested status → "+v+": "+o.title,{observationId:oid});
+  notifyHeadsApproval(o.title+" (status → "+v+")");
+  save(); render(); alert("Status change submitted to the Head of Audit for approval.");
+}
+function approveStatusChange(aid){
+  if(!isHeadUser()){ alert("Only the Head of Audit can approve."); return; }
+  const ap=approvals().find(x=>x.id===aid); if(!ap||ap.status!=="pending")return;
+  const o=findObs(ap.auditId,ap.reportId,ap.obsId);
+  const u=window.AMS_USER||{}; ap.status="approved"; ap.decidedBy=u.id||""; ap.decidedByName=u.name||""; ap.decidedAt=new Date().toISOString();
+  if(o){ applyStatusChange(o,ap.newStatus); if(o.raisedBy) notify(o.raisedBy,"status_approved","Status change approved: "+o.title,"tracker"); if(o.ownerUserId) notify(o.ownerUserId,"status",o.title+" status is now "+ap.newStatus,"myobs"); }
+  logAudit("obs.status_change_approved","Approved status → "+ap.newStatus+": "+(ap.obsTitle||""),{observationId:ap.obsId});
+  save(); render();
+}
+function rejectStatusChange(aid){
+  if(!isHeadUser()){ alert("Only the Head of Audit can reject."); return; }
+  const ap=approvals().find(x=>x.id===aid); if(!ap||ap.status!=="pending")return;
+  const u=window.AMS_USER||{}; ap.status="rejected"; ap.decidedBy=u.id||""; ap.decidedByName=u.name||""; ap.decidedAt=new Date().toISOString();
+  const o=findObs(ap.auditId,ap.reportId,ap.obsId); if(o&&o.raisedBy) notify(o.raisedBy,"status_rejected","Status change rejected: "+o.title,"tracker");
+  logAudit("obs.status_change_rejected","Rejected status change: "+(ap.obsTitle||""),{observationId:ap.obsId});
+  save(); render();
+}
+function requestOwnerUpdate(aid,rid,oid){
+  const o=findObs(aid,rid,oid); if(!o)return;
+  if(!o.ownerUserId){ alert("This observation has no assigned action owner — assign one first."); return; }
+  const u=window.AMS_USER||{};
+  o.updateRequestedAt=new Date().toISOString(); o.updateRequestedBy=u.name||"";
+  notify(o.ownerUserId,"update_request","Update requested on: "+o.title,"myobs");
+  const dept=deptById(o.departmentId); if(dept&&dept.headEmail) emailNotify([dept.headEmail],"AuditLens — update requested",`The audit team requested an update on "${o.title}". Sign in to AuditLens to respond.`);
+  logAudit("obs.update_requested","Requested owner update: "+o.title,{observationId:oid});
+  save(); render(); alert("Update requested from the action owner.");
+}
 function exportTracker(){
-  const obs=allObs().filter(o=>o.status!=="Closed");
+  const obs=allObs().filter(obsIsApproved).filter(o=>o.status!=="Closed");
   const od=o=>isOverdueObs(o,o._r);
   const crank=o=>CRITS.indexOf(o.criticality);
   let inner=`<h1>Remediation Tracker — Open Actions</h1><div class="meta">${esc(DB.org)} — Internal Audit · ${obs.length} open action(s) · ${obs.filter(o=>o.isRepeat).length} repeat finding(s)</div>`;
@@ -672,7 +766,7 @@ function exportTracker(){
 
 /* ============================ INSIGHTS ============================ */
 function viewInsights(){
-  const obs=allObs();
+  const obs=allObs().filter(obsIsApproved);
   if(!obs.length) return `<div class="card"><div class="empty"><div class="big">◎</div>No observations yet. Once you log observations, this tab analyses recurring root causes and plots a risk heat map.</div></div>`;
   const themeCount={}; const themeAreas={};
   obs.forEach(o=>{ rcThemes(o.rootCause).forEach(t=>{ themeCount[t]=(themeCount[t]||0)+1; (themeAreas[t]=themeAreas[t]||new Set()).add(o._a.area||o._a.name); }); });
@@ -716,7 +810,7 @@ function clusterRootCauses(obs){
   return clusters.sort((a,b)=>b.items.length-a.items.length).slice(0,8);
 }
 function exportInsights(){
-  const obs=allObs(); if(!obs.length){ alert("No observations to analyse."); return; }
+  const obs=allObs().filter(obsIsApproved); if(!obs.length){ alert("No observations to analyse."); return; }
   const themeCount={}; obs.forEach(o=>rcThemes(o.rootCause).forEach(t=>themeCount[t]=(themeCount[t]||0)+1));
   const themeRows=Object.entries(themeCount).sort((a,b)=>b[1]-a[1]);
   const areas={}; obs.forEach(o=>{ const k=o._a.area||o._a.name; (areas[k]=areas[k]||zc())[o.criticality]++; });
@@ -906,34 +1000,64 @@ function updateApprovalsBadge(){
   if(n>0){ if(!b){ b=document.createElement("span"); b.className="nav-badge"; btn.appendChild(b); } b.textContent=String(n); }
   else if(b){ b.remove(); }
 }
+/* ---- Notification center (topbar bell) ---- */
+function unreadNotifCount(){ return myNotifications().filter(n=>!n.read).length; }
+function renderNotifBell(){
+  const el=document.getElementById("notifBell"); if(!el) return;
+  if(!window.AMS_USER){ el.innerHTML=""; return; }
+  const open=el.querySelector(".notif-panel") && el.querySelector(".notif-panel").style.display==="block";
+  const n=unreadNotifCount();
+  el.innerHTML=`<button class="notif-bell-btn" type="button" onclick="toggleNotifPanel(event)" title="Notifications" aria-label="Notifications">🔔${n>0?`<span class="notif-badge">${n>99?"99+":n}</span>`:""}</button>
+    <div class="notif-panel" id="notifPanel" style="display:${open?"block":"none"}">${notifPanelHTML()}</div>`;
+}
+function notifPanelHTML(){
+  const list=myNotifications().slice(0,30);
+  return `<div class="notif-head"><b>Notifications</b>${list.some(n=>!n.read)?`<button class="btn ghost sm" type="button" onclick="markAllNotifsRead(event)">Mark all read</button>`:""}</div>
+    <div class="notif-list">${list.length?list.map(n=>`<div class="notif-item${n.read?"":" unread"}" onclick="openNotif('${n.id}')"><div class="notif-text">${esc(n.text)}</div><div class="notif-time">${esc(fmtDateTime(n.at))}</div></div>`).join(""):`<div class="notif-empty hint">No notifications yet.</div>`}</div>`;
+}
+function toggleNotifPanel(ev){ if(ev){ ev.stopPropagation(); } const p=document.getElementById("notifPanel"); if(p) p.style.display=p.style.display==="none"?"block":"none"; }
+function closeNotifPanel(){ const p=document.getElementById("notifPanel"); if(p) p.style.display="none"; }
+function markAllNotifsRead(ev){ if(ev) ev.stopPropagation(); const me=window.AMS_USER; if(!me) return; let ch=false; notifications().forEach(n=>{ if(n.userId===me.id && !n.read){ n.read=true; ch=true; } }); if(ch){ save(); render(); } }
+function openNotif(id){
+  const n=notifications().find(x=>x.id===id); if(!n) return;
+  if(!n.read){ n.read=true; save(); }
+  closeNotifPanel();
+  const nav={observation:"audits",tracker:"tracker"}[n.link]||n.link;
+  if(nav && canAccessView(nav)){ go(nav); } else { render(); }
+}
+function approvalKindLabel(k){ return k==="observation_raise"?"New observation":k==="engagement_completion"?"Plan completion":k==="observation_status_change"?"Status change":k==="observation_update_request"?"Update request":(k||"—"); }
+function approvalItemTitle(a){ if(a.kind==="engagement_completion"){ const e=auditUniverse().find(x=>x.id===a.unitId); return e?e.name:(a.unitName||"(removed unit)"); } return a.obsTitle||a.unitName||"(item)"; }
+function approveAny(aid){ const a=approvals().find(x=>x.id===aid); if(!a)return; if(a.kind==="engagement_completion") return approveCompletion(aid); if(a.kind==="observation_raise") return approveObservation(aid); if(a.kind==="observation_status_change") return approveStatusChange(aid); }
+function rejectAny(aid){ const a=approvals().find(x=>x.id===aid); if(!a)return; if(a.kind==="engagement_completion") return rejectCompletion(aid); if(a.kind==="observation_raise") return rejectObservation(aid); if(a.kind==="observation_status_change") return rejectStatusChange(aid); }
 function viewApprovals(){
   if(!isHeadUser()) return `<div class="card"><div class="empty">Approvals are only available to the Head of Audit.</div></div>`;
   const all=approvals().slice().sort((a,b)=>String(b.requestedAt||"").localeCompare(String(a.requestedAt||"")));
   const pend=all.filter(a=>a.status==="pending");
-  const decided=all.filter(a=>a.status!=="pending").slice(0,20);
-  const unitName=a=>{ const e=auditUniverse().find(x=>x.id===a.unitId); return e?e.name:(a.unitName||"(removed unit)"); };
+  const decided=all.filter(a=>a.status!=="pending").slice(0,25);
   let h=`<div class="dash-kpis" style="grid-template-columns:repeat(3,1fr)">
     ${kpi("warn","Pending",pend.length,"awaiting your decision")}
-    ${kpi("good","Approved",all.filter(a=>a.status==="approved").length,"engagements signed off")}
+    ${kpi("good","Approved",all.filter(a=>a.status==="approved").length,"signed off")}
     ${kpi("base","Rejected",all.filter(a=>a.status==="rejected").length,"sent back")}
   </div>
-  <div class="card"><div class="seclabel">Pending completion approvals</div>`;
-  if(!pend.length){ h+=`<div class="empty">Nothing awaiting approval. When staff mark a plan engagement complete, it appears here for your sign-off.</div>`; }
+  <div class="card"><div class="seclabel">Pending approvals</div>`;
+  if(!pend.length){ h+=`<div class="empty">Nothing awaiting approval. Observations raised by staff, plan completions and status changes appear here for your sign-off.</div>`; }
   else {
-    h+=`<table style="margin-top:6px"><thead><tr><th>Engagement</th><th>Requested by</th><th>Requested</th><th style="text-align:right">Decision</th></tr></thead><tbody>`+
+    h+=`<table style="margin-top:6px"><thead><tr><th>Type</th><th>Item</th><th>Requested by</th><th>Requested</th><th style="text-align:right">Decision</th></tr></thead><tbody>`+
       pend.map(a=>`<tr>
-        <td><b>${esc(unitName(a))}</b></td>
+        <td><span class="tag">${esc(approvalKindLabel(a.kind))}</span></td>
+        <td><b>${esc(approvalItemTitle(a))}</b>${a.newStatus?`<div class="hint">→ ${esc(a.newStatus)}</div>`:""}</td>
         <td>${esc(a.requestedByName||"—")}</td>
         <td>${a.requestedAt?esc(fmtDateTime(a.requestedAt)):"—"}</td>
-        <td style="text-align:right;white-space:nowrap"><button class="btn sm" onclick="approveCompletion('${a.id}')">Approve</button> <button class="btn ghost sm danger" onclick="rejectCompletion('${a.id}')">Reject</button></td>
+        <td style="text-align:right;white-space:nowrap"><button class="btn sm" onclick="approveAny('${a.id}')">Approve</button> <button class="btn ghost sm danger" onclick="rejectAny('${a.id}')">Reject</button></td>
       </tr>`).join("")+`</tbody></table>`;
   }
   h+=`</div>`;
   if(decided.length){
     h+=`<div class="card"><div class="seclabel">Recent decisions</div>
-      <table style="margin-top:6px"><thead><tr><th>Engagement</th><th>Requested by</th><th>Decision</th><th>Decided by</th><th>When</th></tr></thead><tbody>`+
+      <table style="margin-top:6px"><thead><tr><th>Type</th><th>Item</th><th>Requested by</th><th>Decision</th><th>Decided by</th><th>When</th></tr></thead><tbody>`+
       decided.map(a=>`<tr>
-        <td>${esc(unitName(a))}</td>
+        <td><span class="tag">${esc(approvalKindLabel(a.kind))}</span></td>
+        <td>${esc(approvalItemTitle(a))}</td>
         <td>${esc(a.requestedByName||"—")}</td>
         <td>${a.status==="approved"?`<span class="pill c-Low">Approved</span>`:`<span class="pill c-Critical">Rejected</span>`}</td>
         <td>${esc(a.decidedByName||"—")}</td>
@@ -2682,12 +2806,14 @@ function doRaiseException(aid,tid,raw){
   let d; try{ d=parseAiJson(raw); }catch(e){ showAiErr("excErr",e.message); return false; }
   if(Array.isArray(d)) d=d[0];
   if(typeof d!=="object"||!d){ showAiErr("excErr","Expected a JSON object."); return false; }
-  let crit=CRITS.find(c=>c.toLowerCase()===String(d.criticality||"Moderate").toLowerCase())||"Moderate";
-  r.observations.push({id:uid(),ref:d.ref||t.ref||"",title:d.title||t.title||"(untitled)",category:d.category||t.controlTested||"",
-    description:d.description||"",criteria:d.criteria||"",risk:d.risk||d.impact||"",rootCause:d.rootCause||d.root_cause||"",
-    recommendation:d.recommendation||"",sopUpdate:d.sopUpdate||d.proposedSOP||"",criticality:crit,managementResponse:"",owner:d.owner||"",timeline:TIMELINES.includes(d.timeline)?d.timeline:"",dueDate:"",isRepeat:!!d.isRepeat,repeatOf:d.repeatOf||"",status:"Open",
-    sourceTest:t.id, sourceTestRef:t.ref||"", evidenceRef:t.evidenceRef||"", createdAt:new Date().toISOString()});
-  save(); closeModal(); go("report",{audit:aid,report:r.id}); return true;
+  const obs=obsFromAi(d);
+  if(!d.ref&&t.ref) obs.ref=t.ref;
+  if((!d.title||d.title==="(untitled)")&&t.title) obs.title=t.title;
+  if(!d.category&&t.controlTested) obs.category=t.controlTested;
+  obs.sourceTest=t.id; obs.sourceTestRef=t.ref||""; obs.evidenceRef=t.evidenceRef||"";
+  _pendingRaise={aid,rid:r.id,obs};
+  openRaiseModal();
+  return true;
 }
 function exportExceptions(aid){
   const a=audit(aid); const tests=(a.plan&&a.plan.tests||[]).filter(t=>t.result==="Exception"||t.result==="Partial");
@@ -2946,6 +3072,7 @@ function obsGridCard(a,r,o){
     <div class="obs-grid-head">
       <span class="pill c-${ck(o.criticality)}">${o.criticality}</span>
       ${statusPill(o.status||"Open")}
+      ${obsApprovalBadge(o)}
     </div>
     <h4 class="obs-grid-title">${esc(o.ref?o.ref+" — ":"")}${esc(o.title)}</h4>
     ${o.category?`<span class="tag">${esc(o.category)}</span>`:""}
@@ -2957,6 +3084,121 @@ function obsGridCard(a,r,o){
 function detailSection(t,v){
   if(!v) return "";
   return `<section class="obs-detail-section"><h4 class="obs-detail-label">${t}</h4><div class="obs-detail-content">${esc(v)}</div></section>`;
+}
+/* ---- Observation remediation: evidence, updates, verification chain ---- */
+function obsUpdates(o){ o.updates=o.updates||[]; return o.updates; }
+function findObs(aid,rid,oid){ const r=report(audit(aid),rid); return r?r.observations.find(x=>x.id===oid):null; }
+function canVerifyReport(a){ return isHeadUser() || (!!a && !!a.leadAuditorId && !!window.AMS_USER && a.leadAuditorId===window.AMS_USER.id); }
+async function uploadEvidenceFile(obsId,inputEl){
+  const f=inputEl&&inputEl.files&&inputEl.files[0]; if(!f) return null;
+  const fd=new FormData(); fd.append("file",f); fd.append("obsId",obsId);
+  try{ const res=await fetch("/api/files",{method:"POST",body:fd}); const data=await res.json().catch(()=>({})); if(!res.ok){ alert(data.error||"Upload failed."); return null; } return data.file; }
+  catch(e){ alert("Upload failed (network)."); return null; }
+}
+async function addObsUpdate(aid,rid,oid){
+  const o=findObs(aid,rid,oid); if(!o) return;
+  const text=val("upd_text"); const fileEl=document.getElementById("upd_file");
+  const hasFile=fileEl&&fileEl.files&&fileEl.files.length;
+  if(!text && !hasFile){ alert("Add a comment or attach a file."); return; }
+  const btn=document.getElementById("upd_save"); if(btn){ btn.disabled=true; btn.textContent="Saving…"; }
+  let ev=null;
+  if(hasFile){ ev=await uploadEvidenceFile(oid,fileEl); if(!ev){ if(btn){ btn.disabled=false; btn.textContent="Post update"; } return; } }
+  const u=window.AMS_USER||{};
+  obsUpdates(o).push({id:uid(),by:u.id||"",byName:u.name||"",role:u.role||"",at:new Date().toISOString(),text:text||"",evidence:ev?[ev]:[]});
+  const a=audit(aid);
+  if(isActionOwner()){ o.updateRequestedAt=""; const ids=[]; if(a&&a.leadAuditorId) ids.push(a.leadAuditorId); headUsers().forEach(h=>ids.push(h.id)); ids.forEach(id=>notify(id,"update","Owner update on: "+o.title,"observation")); emailNotify(headUsers().map(h=>h.email),"AuditLens — owner update",`The action owner posted an update on "${o.title}".`); }
+  else if(o.ownerUserId){ notify(o.ownerUserId,"update","Update on: "+o.title,"myobs"); const dept=deptById(o.departmentId); if(dept&&dept.headEmail) emailNotify([dept.headEmail],"AuditLens — update on your action",`There is a new update on "${o.title}".`); }
+  logAudit("obs.update","Update posted on: "+o.title,{observationId:oid});
+  save(); render();
+}
+async function ownerReuploadSop(aid,rid,oid){
+  const o=findObs(aid,rid,oid); if(!o) return;
+  const fileEl=document.getElementById("sop_file");
+  if(!(fileEl&&fileEl.files&&fileEl.files.length)){ alert("Choose a SOP file to upload."); return; }
+  const ev=await uploadEvidenceFile(oid,fileEl); if(!ev) return;
+  o.ownerSop=ev; logAudit("obs.sop_reupload","Owner re-uploaded SOP for: "+o.title,{observationId:oid}); save(); render();
+}
+function ownerMarkRectified(aid,rid,oid){
+  if(!isActionOwner()&&!isHeadUser()){ alert("Only the action owner can mark rectified."); return; }
+  const o=findObs(aid,rid,oid); if(!o||o.ownerRectifiedAt) return;
+  const u=window.AMS_USER||{};
+  o.ownerRectifiedBy=u.id||""; o.ownerRectifiedByName=u.name||""; o.ownerRectifiedAt=new Date().toISOString();
+  if(o.status==="Open") o.status="In Progress";
+  const a=audit(aid); const ids=[]; if(a&&a.leadAuditorId) ids.push(a.leadAuditorId); headUsers().forEach(h=>ids.push(h.id));
+  ids.forEach(id=>notify(id,"rectified",o.title+" marked rectified by the owner","observation"));
+  const emails=headUsers().map(h=>h.email); const lead=(_directoryCache||[]).find(x=>x.id===(a&&a.leadAuditorId)); if(lead&&lead.email) emails.push(lead.email);
+  emailNotify(emails,"AuditLens — remediation rectified",`The action owner marked "${o.title}" as rectified. Please verify.`);
+  logAudit("obs.rectified","Owner marked rectified: "+o.title,{observationId:oid});
+  save(); render();
+}
+function auditorVerify(aid,rid,oid){
+  const a=audit(aid); if(!canVerifyReport(a)){ alert("Only the lead auditor of this audit or the Head of Audit can verify."); return; }
+  const o=findObs(aid,rid,oid); if(!o||!o.ownerRectifiedAt||o.reportVerifiedAt) return;
+  const u=window.AMS_USER||{};
+  o.reportVerifiedBy=u.id||""; o.reportVerifiedByName=u.name||""; o.reportVerifiedAt=new Date().toISOString();
+  headUsers().forEach(h=>notify(h.id,"verify",o.title+" verified — ready for Head sign-off","observation"));
+  emailNotify(headUsers().map(h=>h.email),"AuditLens — ready for closure",`"${o.title}" was verified by the auditor and is ready for your closure sign-off.`);
+  logAudit("obs.report_verified","Auditor verified: "+o.title,{observationId:oid});
+  save(); render();
+}
+function modalHeadClose(aid,rid,oid){
+  const o=findObs(aid,rid,oid); if(!o) return;
+  openModal("Verify &amp; close observation",`
+    <div class="note" style="margin-bottom:10px"><b>${esc(o.title)}</b></div>
+    <div class="f2">
+      <div><label>Closed date</label><input type="date" id="hc_date" value="${esc(o.closedDateISO||isoNow())}"></div>
+      <div><label>Verified by</label><input id="hc_by" value="${esc((window.AMS_USER&&window.AMS_USER.name)||o.verifiedBy||"")}"></div>
+    </div>
+    <label>Closure evidence / WP ref</label><input id="hc_ev" value="${esc(o.closureEvidence||"")}">
+    <label>Closure note</label><textarea id="hc_note">${esc(o.closureNote||"")}</textarea>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="headVerifyClose('${aid}','${rid}','${oid}')">Verify &amp; close</button>`);
+}
+function headVerifyClose(aid,rid,oid){
+  if(!isHeadUser()){ alert("Only the Head of Audit can close."); return; }
+  const o=findObs(aid,rid,oid); if(!o) return;
+  const u=window.AMS_USER||{};
+  o.headVerifiedBy=u.id||""; o.headVerifiedByName=u.name||""; o.headVerifiedAt=new Date().toISOString();
+  o.verifiedBy=val("hc_by")||u.name||""; o.closureEvidence=val("hc_ev"); o.closureNote=val("hc_note");
+  o.closedDateISO=val("hc_date")||isoNow(); o.closureDate=o.closedDateISO;
+  o.status="Closed";
+  if(o.ownerUserId) notify(o.ownerUserId,"closed",o.title+" has been closed","myobs");
+  if(o.raisedBy) notify(o.raisedBy,"closed",o.title+" has been closed","audits");
+  logAudit("obs.closed","Head verified & closed: "+o.title,{observationId:oid});
+  save(); closeModal(); render();
+}
+function verifyStepperHTML(o){
+  const steps=[
+    {label:"Raised",done:!!o.raisedAt,who:o.raisedByName,at:o.raisedAt},
+    {label:"Owner rectified",done:!!o.ownerRectifiedAt,who:o.ownerRectifiedByName,at:o.ownerRectifiedAt},
+    {label:"Auditor verified",done:!!o.reportVerifiedAt,who:o.reportVerifiedByName,at:o.reportVerifiedAt},
+    {label:"Head verified & closed",done:!!o.headVerifiedAt,who:o.headVerifiedByName,at:o.closedDateISO}
+  ];
+  return `<div class="verify-steps">${steps.map(s=>`<div class="verify-step${s.done?" done":""}"><span class="verify-dot">${s.done?"✓":""}</span><div><div class="verify-step-label">${esc(s.label)}</div>${s.done&&(s.who||s.at)?`<div class="hint">${esc(s.who||"")}${s.who&&s.at?" · ":""}${s.at?esc(fmtDate(isoToDate(s.at))||""):""}</div>`:""}</div></div>`).join("")}</div>`;
+}
+function obsRemediationHTML(o,a,r){
+  const owner=isActionOwner(); const canVerify=canVerifyReport(a); const head=isHeadUser();
+  const closed=o.status==="Closed";
+  const updates=obsUpdates(o).slice().sort((x,y)=>String(y.at||"").localeCompare(String(x.at||"")));
+  let actions="";
+  if(!closed){
+    if(owner && !o.ownerRectifiedAt) actions+=`<button class="btn sm" onclick="ownerMarkRectified('${a.id}','${r.id}','${o.id}')">Mark rectified</button>`;
+    if(canVerify && o.ownerRectifiedAt && !o.reportVerifiedAt) actions+=`<button class="btn sm" onclick="auditorVerify('${a.id}','${r.id}','${o.id}')">Verify remediation</button>`;
+    if(head && o.reportVerifiedAt) actions+=`<button class="btn sm" onclick="modalHeadClose('${a.id}','${r.id}','${o.id}')">Verify &amp; close</button>`;
+  }
+  const canPost=owner||canVerify;
+  return `<div class="obs-notes">
+    <div class="obs-notes-label">Remediation &amp; verification</div>
+    ${verifyStepperHTML(o)}
+    ${o.ownerSop?`<div class="hint" style="margin:8px 0 4px">Owner re-uploaded SOP: <a href="/api/files/${esc(o.ownerSop.itemId)}" target="_blank" rel="noopener">${esc(o.ownerSop.name)}</a></div>`:""}
+    <div style="margin-top:8px" class="obs-notes-label">Updates &amp; evidence</div>
+    ${updates.length?updates.map(u=>`<div class="obs-note"><div class="obs-note-text">${esc(u.text||"")}</div>${(u.evidence||[]).map(e=>`<div class="hint">📎 <a href="/api/files/${esc(e.itemId)}" target="_blank" rel="noopener">${esc(e.name)}</a></div>`).join("")}<div class="obs-note-meta">${esc(u.byName||"")}${u.role?" ("+esc(roleLabel(u.role))+")":""}${u.at?" · "+esc(fmtDateTime(u.at)):""}</div></div>`).join(""):`<div class="hint">No updates yet.</div>`}
+    ${canPost&&!closed?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">
+      <textarea id="upd_text" placeholder="Add a comment / progress update…" style="min-height:70px"></textarea>
+      <div class="row" style="margin-top:6px;gap:8px;align-items:center"><label class="btn sec sm" style="display:inline-block;margin:0">📎 Attach file<input type="file" id="upd_file" style="display:none"></label><button class="btn sm" id="upd_save" onclick="addObsUpdate('${a.id}','${r.id}','${o.id}')">Post update</button></div>
+    </div>`:""}
+    ${owner&&!closed?`<div style="margin-top:10px"><label class="btn sec sm" style="display:inline-block;margin:0">⤒ Re-upload SOP<input type="file" id="sop_file" style="display:none" onchange="ownerReuploadSop('${a.id}','${r.id}','${o.id}')"></label></div>`:""}
+    ${actions?`<div class="row" style="margin-top:12px;gap:8px">${actions}</div>`:""}
+  </div>`;
 }
 function renderObservation(C,T,A){
   const a=audit(curAudit); const r=report(a,curReport);
@@ -2973,6 +3215,7 @@ function renderObservation(C,T,A){
       <div class="obs-detail-badges">
         <span class="pill c-${ck(o.criticality)}">${o.criticality}</span>
         ${statusPill(o.status||"Open")}
+        ${obsApprovalBadge(o)}
         ${o.isRepeat?`<span class="pill repeat-pill" title="${esc(o.repeatOf||"Repeat finding")}">↻ REPEAT</span>`:""}
         ${o.category?`<span class="tag">${esc(o.category)}</span>`:""}
       </div>
@@ -2994,8 +3237,9 @@ function renderObservation(C,T,A){
       ${detailSection("Proposed SOP update",o.sopUpdate)}
       ${detailSection("Management response",o.managementResponse)}
     </div>
-    ${notesHTML(o)}
-    <div class="row" style="margin-top:12px"><button class="btn sm" onclick="modalAddNote('${a.id}','${r.id}','${o.id}')">+ Add note</button></div>
+    ${obsRemediationHTML(o,a,r)}
+    ${isOwner?"":notesHTML(o)}
+    ${isOwner?"":`<div class="row" style="margin-top:12px"><button class="btn sm" onclick="modalAddNote('${a.id}','${r.id}','${o.id}')">+ Add note</button></div>`}
     ${o.status==="Closed"?`<div class="obs-detail-closure hint">✓ Closed${o.closedDateISO?" "+fmtDate(isoToDate(o.closedDateISO)):""}${o.verifiedBy?" · Verified by "+esc(o.verifiedBy):""}${o.closureEvidence?" · Evidence: "+esc(o.closureEvidence):""}${o.closureNote?" — "+esc(o.closureNote):""}</div>`:""}
   </div>`;
 }
@@ -3112,9 +3356,7 @@ async function generateObsFromPicker(){
   if(!ol){ showAiErr("obsGenErr","Enter your one-liner first."); return; }
   if(!v){ showAiErr("obsGenErr","Choose a target report."); return; }
   const [aid,rid]=v.split("|");
-  await runAiJson(buildObsPrompt(ol,area,ctx),"obsGenErr",d=>{
-    if(doImport(aid,rid,d)){ closeModal(); go("report",{audit:aid,report:rid}); }
-  });
+  await runAiJson(buildObsPrompt(ol,area,ctx),"obsGenErr",d=>{ doImport(aid,rid,d,"obsGenErr"); });
 }
 function modalGenerateObs(aid,rid){
   openModal("Generate observation",`
@@ -3130,7 +3372,7 @@ function modalGenerateObs(aid,rid){
 async function generateObsForReport(aid,rid){
   const ol=val("go_ol"), area=val("go_area"), ctx=val("go_ctx");
   if(!ol){ showAiErr("go_err","Enter a one-liner first."); return; }
-  await runAiJson(buildObsPrompt(ol,area,ctx),"go_err",d=>{ doImport(aid,rid,d); });
+  await runAiJson(buildObsPrompt(ol,area,ctx),"go_err",d=>{ doImport(aid,rid,d,"go_err"); });
 }
 function buildPrompt(){ generateObsFromPicker(); }
 
@@ -3319,7 +3561,7 @@ function delDepartment(id){
   DB.departments=departments().filter(d=>d.id!==id); save(); render();
 }
 /* ---- Action Owner portal ---- */
-function myObsList(){ const me=window.AMS_USER||{}; return allObs().filter(o=>o.ownerUserId&&o.ownerUserId===me.id); }
+function myObsList(){ const me=window.AMS_USER||{}; return allObs().filter(o=>o.ownerUserId&&o.ownerUserId===me.id&&obsIsApproved(o)); }
 function viewMyObs(){
   const me=window.AMS_USER||{};
   const mine=myObsList();
@@ -3673,11 +3915,31 @@ function saveObs(aid,rid,oid){
     isRepeat:!!document.getElementById("o_rep").checked,repeatOf:val("o_repof"),
     verifiedBy:val("o_vby"),closureEvidence:val("o_cev"),closureNote:val("o_cnote")};
   const cdate=val("o_cdate");
-  let obj;
-  if(oid){ obj=r.observations.find(x=>x.id===oid); stampClosed(obj,status); Object.assign(obj,data); }
-  else{ obj={id:uid(),...data,createdAt:new Date().toISOString()}; stampClosed(obj,status); r.observations.push(obj); markObsHighlight(obj.id); logAudit("workspace.observation_created","Created observation "+title,{ auditId:aid, reportId:rid, observationId:obj.id, title }); }
-  if(status==="Closed" && cdate) obj.closedDateISO=cdate;
+  let obj, statusPendingMsg=false;
+  if(oid){
+    obj=r.observations.find(x=>x.id===oid);
+    const oldStatus=obj.status||"Open";
+    if(status!==oldStatus && !isHeadUser()){
+      // Non-head status changes must be approved by the Head of Audit — keep the old status, route the change.
+      data.status=oldStatus;
+      Object.assign(obj,data);
+      if(!pendingStatusChange(oid)){
+        const u=window.AMS_USER||{};
+        approvals().push({id:uid(),kind:"observation_status_change",obsId:oid,auditId:aid,reportId:rid,obsTitle:title,fromStatus:oldStatus,newStatus:status,requestedBy:u.id||"",requestedByName:u.name||"",requestedAt:new Date().toISOString(),status:"pending"});
+        notifyHeadsApproval(title+" (status → "+status+")");
+        statusPendingMsg=true;
+      }
+    } else {
+      stampClosed(obj,status); Object.assign(obj,data);
+      if(status==="Closed" && cdate) obj.closedDateISO=cdate;
+      if(status!==oldStatus) cancelPendingStatusChange(oid); // head applied directly — supersede any pending request
+    }
+  } else {
+    obj={id:uid(),...data,createdAt:new Date().toISOString()}; stampClosed(obj,status); r.observations.push(obj); markObsHighlight(obj.id); logAudit("workspace.observation_created","Created observation "+title,{ auditId:aid, reportId:rid, observationId:obj.id, title });
+    if(status==="Closed" && cdate) obj.closedDateISO=cdate;
+  }
   save(); closeModal(); render();
+  if(statusPendingMsg) alert("Saved. The status change was submitted to the Head of Audit for approval.");
 }
 function delObs(aid,rid,oid){
   if(!confirm("Delete this observation?"))return;
@@ -3719,7 +3981,7 @@ function repeatSuggestHTML(title,rid,oid){
     </div>`).join("");
 }
 function suggestRepeats(rid,oid){ const el=document.getElementById("repSug"); if(el) el.innerHTML=repeatSuggestHTML(val("o_title"),rid,oid||""); }
-function markRepeatIdx(i){ const t=_repSug[i]; if(t==null)return; const cb=document.getElementById("o_rep"); if(cb)cb.checked=true; const f=document.getElementById("o_repof"); if(f)f.value=t; const s=document.getElementById("repSug"); if(s) s.insertAdjacentHTML("afterbegin",`<div class="hint" style="color:var(--low);font-weight:600">✓ Flagged as repeat of: ${esc(t)}</div>`); }
+function markRepeatIdx(i){ const t=_repSug[i]; if(t==null)return; const cb=document.getElementById("rz_rep")||document.getElementById("o_rep"); if(cb)cb.checked=true; const f=document.getElementById("rz_repof")||document.getElementById("o_repof"); if(f)f.value=t; const s=document.getElementById("rzRepSug")||document.getElementById("repSug"); if(s) s.insertAdjacentHTML("afterbegin",`<div class="hint" style="color:var(--low);font-weight:600">✓ Flagged as repeat of: ${esc(t)}</div>`); }
 let _scanLabels={};
 function scanRepeats(aid,rid){
   const r=report(audit(aid),rid); _scanLabels={};
@@ -3741,30 +4003,122 @@ function flagRepeat(aid,rid,oid){
 }
 
 function modalImport(aid,rid){ modalGenerateObs(aid,rid); }
-function doImport(aid,rid,raw){
-  const r=report(audit(aid),rid);
+function obsFromAi(d){
+  let crit=(d.criticality||"Moderate"); crit=CRITS.find(c=>c.toLowerCase()===String(crit).toLowerCase())||"Moderate";
+  return {id:uid(),ref:d.ref||"",title:d.title||"(untitled)",category:d.category||"",
+    description:d.description||"",criteria:d.criteria||"",risk:d.risk||d.impact||"",rootCause:d.rootCause||d.root_cause||"",
+    recommendation:d.recommendation||"",sopUpdate:"",criticality:crit,managementResponse:"",
+    owner:d.owner||"",timeline:TIMELINES.includes(d.timeline)?d.timeline:"",dueDate:"",isRepeat:false,repeatOf:"",status:"Open",createdAt:new Date().toISOString()};
+}
+function doImport(aid,rid,raw,errId){
+  errId=errId||"impErr";
   if(raw==null) raw=val("imp").trim(); else raw=importRaw(raw);
-  if(!raw){ showAiErr("impErr","Nothing to import."); return false; }
-  let data; try{ data=parseAiJson(raw); }catch(e){ showAiErr("impErr",e.message); return false; }
+  if(!raw){ showAiErr(errId,"Nothing to import."); return false; }
+  let data; try{ data=parseAiJson(raw); }catch(e){ showAiErr(errId,e.message); return false; }
   const arr=Array.isArray(data)?data:[data];
-  let added=0;
-  const newIds=[];
-  arr.forEach(d=>{
-    if(typeof d!=="object"||!d) return;
-    let crit=(d.criticality||"Moderate"); crit=CRITS.find(c=>c.toLowerCase()===String(crit).toLowerCase())||"Moderate";
-    const id=uid();
-    r.observations.push({id,ref:d.ref||"",title:d.title||"(untitled)",category:d.category||"",
-      description:d.description||"",criteria:d.criteria||"",risk:d.risk||d.impact||"",rootCause:d.rootCause||d.root_cause||"",
-      recommendation:d.recommendation||"",sopUpdate:d.sopUpdate||d.proposedSOP||"",criticality:crit,managementResponse:d.managementResponse||"",
-      owner:d.owner||"",timeline:TIMELINES.includes(d.timeline)?d.timeline:"",dueDate:d.dueDate||"",isRepeat:!!d.isRepeat,repeatOf:d.repeatOf||"",status:d.status&&STATUSES.includes(d.status)?d.status:"Open",createdAt:new Date().toISOString()});
-    newIds.push(id);
-    added++;
-  });
-  if(!added){ showAiErr("impErr","No observations found in that JSON."); return false; }
-  markObsHighlight(newIds);
-  save(); closeModal(); render();
-  if(view!=="report"){ go("report",{audit:aid,report:rid}); }
+  const d=arr.find(x=>x&&typeof x==="object");
+  if(!d){ showAiErr(errId,"No observation found in that response."); return false; }
+  _pendingRaise={aid,rid,obs:obsFromAi(d)};
+  openRaiseModal();
   return true;
+}
+/* ---- Raise → assign → approval flow ---- */
+let _pendingRaise=null;
+function openRaiseModal(){
+  const pr=_pendingRaise; if(!pr) return;
+  const o=pr.obs; const head=isHeadUser();
+  const haveOwners=departments().filter(d=>d.headUserId).length>0;
+  openModal("Raise observation — assign owner",`
+    <div class="note" style="margin-bottom:10px"><b>${esc(o.ref?o.ref+" — ":"")}${esc(o.title)}</b> · <span class="pill c-${ck(o.criticality)}">${o.criticality}</span></div>
+    <div class="hint" style="margin-bottom:12px">${esc((o.description||"").length>240?o.description.slice(0,239)+"…":o.description)}</div>
+    <label>Action owner (department head) *</label>
+    <select id="rz_owner">${ownerOptions("")}</select>
+    ${haveOwners?"":`<div class="hint" style="color:var(--crit);margin-top:4px">No department heads exist yet — add departments in Settings to assign an owner (you can still raise without one).</div>`}
+    <div class="f3" style="margin-top:8px">
+      <div><label>Resolution timeline</label><select id="rz_tl"><option value="">— select —</option>${TIMELINES.map(t=>`<option${o.timeline===t?" selected":""}>${t}</option>`).join("")}</select></div>
+      <div><label>Due date</label><input type="date" id="rz_due"></div>
+      <div><label>Agreed target <span class="hint">(optional)</span></label><input id="rz_target" placeholder="e.g. 31 Aug 2026"></div>
+    </div>
+    <div class="f2" style="margin-top:6px">
+      <div><label>Repeat observation?</label><label style="display:flex;align-items:center;gap:8px;font-weight:400;margin-top:4px"><input type="checkbox" id="rz_rep" style="width:auto"> Raised in a prior audit</label></div>
+      <div><label>Repeat of <span class="hint">(prior ref / period)</span></label><input id="rz_repof" placeholder="e.g. IA/2025/014"></div>
+    </div>
+    <div style="margin-top:10px"><button class="btn sec sm" type="button" onclick="suggestRaiseRepeats()">🔁 Suggest possible repeats</button> <button class="btn sec sm ai-generate-btn" type="button" onclick="aiScanRepeats()">AI scan for repeats</button></div>
+    <div id="rzRepSug" style="margin-top:6px;font-size:13px"></div>
+    <div id="rz_err" style="margin-top:10px"></div>
+    <div class="hint" style="margin-top:10px">${head?"As Head of Audit, this observation is raised and the action owner is notified immediately.":"This observation will be sent to the Head of Audit for approval before the action owner is notified."}</div>`,
+    `<button class="btn sec" onclick="cancelRaise()">Cancel</button><button class="btn" onclick="raiseObs()">${head?"Raise &amp; notify owner":"Submit for approval"}</button>`);
+}
+function cancelRaise(){ _pendingRaise=null; closeModal(); }
+function suggestRaiseRepeats(){ const pr=_pendingRaise; if(!pr)return; const el=document.getElementById("rzRepSug"); if(el) el.innerHTML=repeatSuggestHTML(pr.obs.title,pr.rid,pr.obs.id); }
+function priorObsForRepeat(rid){ const out=[]; DB.audits.forEach(a=>a.reports.forEach(r=>{ if(r.id===rid) return; r.observations.forEach(o=>out.push({ref:o.ref||o.id,title:o.title,audit:a.name,report:r.title,status:o.status||"Open"})); })); return out; }
+async function aiScanRepeats(){
+  const pr=_pendingRaise; if(!pr)return;
+  const el=document.getElementById("rzRepSug");
+  const priors=priorObsForRepeat(pr.rid);
+  if(!priors.length){ if(el) el.innerHTML=`<div class="hint">No prior observations in other reports to compare against.</div>`; return; }
+  const prompt=`You are checking whether a new internal-audit observation repeats a prior finding. New observation:\nTitle: ${pr.obs.title}\nDescription: ${pr.obs.description}\n\nPrior observations from other reports:\n${priors.slice(0,60).map((p,i)=>`${i+1}. [${p.ref}] ${p.title} (${p.audit} · ${p.report} · ${p.status})`).join("\n")}\n\nReturn ONLY a JSON object: {"isRepeat": true or false, "repeatOf": "the [ref] of the best matching prior observation, else empty", "reason": "one short sentence"}`;
+  if(el) el.innerHTML=`<div class="hint">AI scanning ${priors.length} prior observation(s)…</div>`;
+  await runAiJson(prompt,"rzRepSug",d=>{
+    if(d&&(d.isRepeat===true||String(d.isRepeat).toLowerCase()==="true")){
+      const cb=document.getElementById("rz_rep"); if(cb)cb.checked=true;
+      const f=document.getElementById("rz_repof"); if(f&&d.repeatOf)f.value=String(d.repeatOf);
+      if(el) el.innerHTML=`<div class="hint" style="color:var(--low);font-weight:600">✓ AI flagged this as a likely repeat of ${esc(d.repeatOf||"a prior finding")}.</div>${d.reason?`<div class="hint">${esc(d.reason)}</div>`:""}`;
+    } else { if(el) el.innerHTML=`<div class="hint">AI found no strong repeat match.${d&&d.reason?" "+esc(d.reason):""}</div>`; }
+  });
+}
+function raiseObs(){
+  const pr=_pendingRaise; if(!pr){ closeModal(); return; }
+  const r=report(audit(pr.aid),pr.rid); if(!r){ cancelRaise(); return; }
+  const o=pr.obs;
+  const ownerId=val("rz_owner");
+  const dept=departments().find(d=>d.headUserId===ownerId);
+  o.timeline=val("rz_tl");
+  const dueEl=document.getElementById("rz_due"); o.dueDate=(dueEl&&dueEl.value)||"";
+  o.agreedTarget=val("rz_target");
+  o.isRepeat=!!(document.getElementById("rz_rep")&&document.getElementById("rz_rep").checked);
+  o.repeatOf=val("rz_repof");
+  o.ownerUserId=ownerId||"";
+  o.owner=dept?dept.headName:(o.owner||"");
+  o.departmentId=dept?dept.id:"";
+  o.raisedBy=(window.AMS_USER&&window.AMS_USER.id)||"";
+  o.raisedByName=(window.AMS_USER&&window.AMS_USER.name)||"";
+  o.raisedAt=new Date().toISOString();
+  r.observations.push(o);
+  markObsHighlight([o.id]);
+  const head=isHeadUser();
+  if(head){
+    o.obsApproval="approved";
+    logAudit("obs.raised","Raised observation: "+o.title,{auditId:pr.aid,reportId:pr.rid,observationId:o.id});
+    notifyOwnerAssigned(o);
+  } else {
+    o.obsApproval="pending";
+    approvals().push({id:uid(),kind:"observation_raise",obsId:o.id,auditId:pr.aid,reportId:pr.rid,obsTitle:o.title,ownerUserId:o.ownerUserId,requestedBy:o.raisedBy,requestedByName:o.raisedByName,requestedAt:o.raisedAt,status:"pending"});
+    logAudit("obs.raise_requested","Submitted observation for approval: "+o.title,{auditId:pr.aid,reportId:pr.rid,observationId:o.id});
+    notifyHeadsApproval(o.title);
+  }
+  _pendingRaise=null;
+  save(); closeModal();
+  go("report",{audit:pr.aid,report:pr.rid});
+  alert(head?"Observation raised. The action owner has been notified.":"Submitted to the Head of Audit for approval.");
+}
+function approveObservation(aid){
+  if(!isHeadUser()){ alert("Only the Head of Audit can approve."); return; }
+  const ap=approvals().find(x=>x.id===aid); if(!ap||ap.status!=="pending")return;
+  const r=report(audit(ap.auditId),ap.reportId); const o=r&&r.observations.find(x=>x.id===ap.obsId);
+  const u=window.AMS_USER||{}; ap.status="approved"; ap.decidedBy=u.id||""; ap.decidedByName=u.name||""; ap.decidedAt=new Date().toISOString();
+  if(o){ o.obsApproval="approved"; notifyOwnerAssigned(o); if(o.raisedBy) notify(o.raisedBy,"obs_approved","Approved: "+o.title,"audits"); }
+  logAudit("obs.approved","Approved observation: "+(ap.obsTitle||""),{observationId:ap.obsId});
+  save(); render();
+}
+function rejectObservation(aid){
+  if(!isHeadUser()){ alert("Only the Head of Audit can reject."); return; }
+  const ap=approvals().find(x=>x.id===aid); if(!ap||ap.status!=="pending")return;
+  const r=report(audit(ap.auditId),ap.reportId); const o=r&&r.observations.find(x=>x.id===ap.obsId);
+  const u=window.AMS_USER||{}; ap.status="rejected"; ap.decidedBy=u.id||""; ap.decidedByName=u.name||""; ap.decidedAt=new Date().toISOString();
+  if(o){ o.obsApproval="rejected"; if(o.raisedBy) notify(o.raisedBy,"obs_rejected","Rejected: "+o.title,"audits"); }
+  logAudit("obs.rejected","Rejected observation: "+(ap.obsTitle||""),{observationId:ap.obsId});
+  save(); render();
 }
 
 /* ============================ AI (Gemini) ============================ */
@@ -4162,6 +4516,7 @@ function initAuditBot(){
   ov = document.getElementById("overlay");
   if (ov) ov.addEventListener("click", (e) => { if (e.target === ov) closeModal(); });
   document.addEventListener("click", (e) => { if(e.target.closest(".split-btn-wrap")) return; closeSplitMenus(); });
+  document.addEventListener("click", (e) => { if(e.target.closest("#notifBell")) return; closeNotifPanel(); });
   document.getElementById("nav").addEventListener("click", (e) => {
     const b = e.target.closest("button");
     if (!b) return;
@@ -4170,8 +4525,9 @@ function initAuditBot(){
   (function(){ const s=logoSrc(); if(s){ const f=document.getElementById("favicon"), t=document.getElementById("touchicon"); if(f)f.href=s; if(t)t.href=s; } })();
   loadFromServer().then(()=>{
     if(window.AMS_USER&&window.AMS_USER.role==="head_of_audit") refreshUsersTable();
-    loadDirectory().then(()=>{ if(document.querySelector('.ra-plan-table')||view==="audits"||view==="audit") render(); });
+    loadDirectory().then(()=>{ render(); });
     render();
+    startPolling();
   }).catch(()=>{ render(); });
 }
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initAuditBot);

@@ -34,6 +34,7 @@ export default function AuditApp() {
                   <div className="topbar-center" id="topSearch" />
                   <div className="topbar-right">
                     <div className="row" id="topActions" />
+                    <div id="notifBell" className="notif-bell-wrap" />
                   </div>
                 </div>
                 <div id="banner" />

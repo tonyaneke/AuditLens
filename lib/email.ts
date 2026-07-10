@@ -40,11 +40,11 @@ export async function sendWelcomeEmail(params: WelcomeEmailParams) {
     };
   }
 
-  const subject = "Your AMS account has been created";
+  const subject = "Your AuditLens account has been created";
   const text = [
     `Hello ${params.name},`,
     "",
-    "An account has been created for you on the Audit Management System (AMS).",
+    "An account has been created for you on AuditLens.",
     "",
     `Sign in: ${params.loginUrl}`,
     `Email: ${params.to}`,
@@ -57,7 +57,7 @@ export async function sendWelcomeEmail(params: WelcomeEmailParams) {
 
   const html = `
     <p>Hello ${escapeHtml(params.name)},</p>
-    <p>An account has been created for you on the <strong>Audit Management System (AMS)</strong>.</p>
+    <p>An account has been created for you on <strong>AuditLens</strong>.</p>
     <p><strong>Sign in:</strong> <a href="${escapeHtml(params.loginUrl)}">${escapeHtml(params.loginUrl)}</a><br>
     <strong>Email:</strong> ${escapeHtml(params.to)}<br>
     <strong>Temporary password:</strong> <code>${escapeHtml(params.tempPassword)}</code></p>
@@ -73,7 +73,7 @@ export async function sendWelcomeEmail(params: WelcomeEmailParams) {
     },
     body: JSON.stringify({
       personalizations: [{ to: [{ email: params.to, name: params.name }] }],
-      from: { email: from, name: "Audit Management System" },
+      from: { email: from, name: "AuditLens" },
       subject,
       content: [
         { type: "text/plain", value: text },
@@ -88,6 +88,43 @@ export async function sendWelcomeEmail(params: WelcomeEmailParams) {
       sent: false as const,
       error: detail || `SendGrid returned ${res.status}.`,
     };
+  }
+
+  return { sent: true as const };
+}
+
+export async function sendNotificationEmail(params: {
+  to: string[];
+  subject: string;
+  text: string;
+}) {
+  const apiKey = process.env.SENDGRID_API_KEY?.trim();
+  const from = process.env.SENDGRID_SENDER?.trim();
+  const recipients = params.to.filter(Boolean);
+  if (!apiKey || !from) {
+    return { sent: false as const, error: "Email is not configured." };
+  }
+  if (!recipients.length) {
+    return { sent: false as const, error: "No recipients." };
+  }
+
+  const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      personalizations: recipients.map((email) => ({ to: [{ email }] })),
+      from: { email: from, name: "AuditLens" },
+      subject: params.subject,
+      content: [{ type: "text/plain", value: params.text }],
+    }),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    return { sent: false as const, error: detail || `SendGrid returned ${res.status}.` };
   }
 
   return { sent: true as const };
