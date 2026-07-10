@@ -2028,6 +2028,38 @@ td.timeline-cell {
   min-width: 0;
 }
 
+.np-unit-cat {
+  text-transform: none;
+  font-weight: 400;
+}
+
+/* Audits list — quarter group headers */
+.audit-quarter-group {
+  margin-bottom: 24px;
+}
+
+.audit-quarter-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 6px 0 12px;
+  padding-bottom: 7px;
+  border-bottom: 2px solid color-mix(in oklch, var(--accent) 28%, var(--line));
+}
+
+/* Annual plan table — column breathing room */
+.ra-plan-table th,
+.ra-plan-table td {
+  padding-top: 11px;
+  padding-bottom: 11px;
+  padding-right: 14px;
+}
+
+.ra-plan-table th:first-child,
+.ra-plan-table td:first-child {
+  padding-left: 6px;
+}
+
 /* Pronounced hover highlight on all in-content table rows */
 .card table tbody tr,
 .ra-universe-table tbody tr {
@@ -3177,6 +3209,129 @@ td.timeline-cell {
   color: var(--accent);
 }
 
+/* Clickable table rows show a pointer */
+.card table tbody tr[onclick] {
+  cursor: pointer;
+}
+
+/* Success modal */
+.success-modal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+  padding: 14px 6px 4px;
+}
+
+.success-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: color-mix(in oklch, var(--accent) 16%, #fff);
+  color: var(--accent);
+  animation: successPop 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes successPop {
+  from { transform: scale(0.6); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.success-msg {
+  font-size: 15px;
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+/* Onboarding */
+.onboard-hero {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: var(--brand-700);
+  color: #fff;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  font-size: 19px;
+}
+
+.onboard-step {
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--ink);
+  padding: 4px 2px 2px;
+}
+
+.onboard-dots {
+  display: flex;
+  gap: 7px;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.onboard-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--line);
+  transition: background 0.15s;
+}
+
+.onboard-dot.on {
+  background: var(--accent);
+}
+
+/* Executive summary layout */
+.exec-summary-wrap {
+  margin: 16px 0 2px;
+}
+
+.exec-summary-wrap .findings-summary {
+  margin-bottom: 6px;
+}
+
+.exec-summary-wrap .obs-field {
+  padding: 15px 0;
+  border-top: 1px solid var(--line);
+}
+
+.exec-summary-wrap .obs-field:first-of-type {
+  border-top: none;
+  padding-top: 8px;
+}
+
+.exec-summary-wrap .obs-field .ttl {
+  margin-bottom: 7px;
+  font-weight: 800;
+  color: var(--brand-700);
+}
+
+.exec-summary-wrap .obs-field .txt,
+.exec-summary-wrap .obs-field ul {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--ink);
+}
+
+/* Inline button spinner */
+.btn-spin {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  vertical-align: -2px;
+  animation: ai-spin 0.7s linear infinite;
+}
+
 .obs-detail-closure {
   padding: 14px 28px 20px;
   border-top: 1px solid var(--line);
@@ -3386,6 +3541,14 @@ td.timeline-cell {
   margin-top: 22px;
   padding-top: 16px;
   border-top: 1px solid var(--line);
+}
+
+.obs-actions-block {
+  margin: 16px 0;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in oklch, var(--accent) 30%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--accent) 5%, #fff);
 }
 
 .obs-note {

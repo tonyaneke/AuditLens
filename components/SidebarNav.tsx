@@ -1,6 +1,7 @@
 "use client";
 
 import type { MouseEvent } from "react";
+import { useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Alert02Icon,
@@ -101,18 +102,23 @@ function onProfileNav(
   navigate(view);
 }
 
-async function signOut() {
-  await fetch("/api/auth/logout", { method: "POST" });
-  window.location.href = "/login";
-}
-
 export default function SidebarNav({ user }: SidebarNavProps) {
+  const [signingOut, setSigningOut] = useState(false);
+  async function handleSignOut() {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } finally {
+      window.location.href = "/login";
+    }
+  }
   const isHead = user.role === "head_of_audit";
   const isOwner = user.role === "action_owner";
   const access = isHead
     ? new Set<string>([...MAIN_VIEWS, ...ASSESSMENT_VIEWS, "approvals"])
     : isOwner
-      ? new Set<string>(["myobs"])
+      ? new Set<string>(["dashboard", "myobs"])
       : new Set<string>([...MAIN_VIEWS, ...(user.sidebarAccess || [])]);
 
   return (
@@ -192,10 +198,15 @@ export default function SidebarNav({ user }: SidebarNavProps) {
         <button
           type="button"
           className="sidebar-signout"
-          onClick={() => void signOut()}
+          onClick={() => void handleSignOut()}
+          disabled={signingOut}
         >
-          <HugeiconsIcon icon={Logout01Icon} size={16} strokeWidth={1.75} />
-          Sign out
+          {signingOut ? (
+            <span className="btn-spin" aria-hidden="true" />
+          ) : (
+            <HugeiconsIcon icon={Logout01Icon} size={16} strokeWidth={1.75} />
+          )}
+          {signingOut ? "Signing out…" : "Sign out"}
         </button>
       </div>
     </>

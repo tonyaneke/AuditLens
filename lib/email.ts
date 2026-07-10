@@ -108,6 +108,16 @@ export async function sendNotificationEmail(params: {
     return { sent: false as const, error: "No recipients." };
   }
 
+  const appUrl = (process.env.APP_URL?.trim() || "http://localhost:3000").replace(/\/$/, "");
+  const loginUrl = `${appUrl}/login`;
+  const html = `
+    <p>${escapeHtml(params.text)}</p>
+    <p style="margin:20px 0">
+      <a href="${escapeHtml(loginUrl)}" style="display:inline-block;background:#1f8a5b;color:#ffffff;text-decoration:none;padding:11px 20px;border-radius:8px;font-weight:600">Sign in to AuditLens</a>
+    </p>
+    <p style="color:#64807a;font-size:12px">Or open ${escapeHtml(loginUrl)}</p>
+  `.trim();
+
   const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
     method: "POST",
     headers: {
@@ -118,7 +128,10 @@ export async function sendNotificationEmail(params: {
       personalizations: recipients.map((email) => ({ to: [{ email }] })),
       from: { email: from, name: "AuditLens" },
       subject: params.subject,
-      content: [{ type: "text/plain", value: params.text }],
+      content: [
+        { type: "text/plain", value: `${params.text}\n\nSign in to AuditLens: ${loginUrl}` },
+        { type: "text/html", value: html },
+      ],
     }),
   });
 

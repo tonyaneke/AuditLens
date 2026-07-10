@@ -80,7 +80,7 @@ function notify(userId,kind,text,link){ if(!userId)return; notifications().push(
 function headUsers(){ return (_directoryCache||[]).filter(u=>u.role==="head_of_audit"); }
 function emailNotify(to,subject,text){ const list=(Array.isArray(to)?to:[to]).filter(Boolean); if(!list.length)return; try{ fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:list,subject:subject||"AuditLens notification",text:text||""})}).catch(()=>{}); }catch(e){} }
 function notifyHeadsApproval(title){ const heads=headUsers(); heads.forEach(h=>notify(h.id,"approval_needed","Approval needed: "+title,"approvals")); emailNotify(heads.map(h=>h.email),"AuditLens — approval needed",`The observation "${title}" was raised and needs your approval in AuditLens.`); }
-function notifyOwnerAssigned(o){ if(!o||!o.ownerUserId)return; notify(o.ownerUserId,"assigned","New action assigned to you: "+o.title,"myobs"); const dept=(o.departmentId&&deptById(o.departmentId))||departments().find(d=>d.headUserId===o.ownerUserId); if(dept&&dept.headEmail) emailNotify([dept.headEmail],"AuditLens — an action was assigned to you",`An audit observation "${o.title}" has been assigned to you. Sign in to AuditLens to view the details, respond, and upload evidence.`); }
+function notifyOwnerAssigned(o){ if(!o||!o.ownerUserId)return; notify(o.ownerUserId,"assigned","New action assigned to you: "+o.title,"myobs"); const dept=(o.departmentId&&deptById(o.departmentId))||departments().find(d=>d.headUserId===o.ownerUserId); if(dept&&dept.headEmail) emailNotify([dept.headEmail],"AuditLens — an action was raised against your department ",`An audit observation "${o.title}" has been assigned to you. Sign in to AuditLens to view the details, respond, and upload evidence.`); }
 function obsIsApproved(o){ return o.obsApproval!=="pending" && o.obsApproval!=="rejected"; }
 function obsApprovalBadge(o){ if(o.obsApproval==="pending") return `<span class="pill sop-pending-pill">⏳ Pending Head approval</span>`; if(o.obsApproval==="rejected") return `<span class="pill c-Critical">Rejected</span>`; return ""; }
 function pendingObsRaise(){ return approvals().filter(x=>x.kind==="observation_raise" && x.status==="pending"); }
@@ -122,7 +122,7 @@ function fmtDateTime(iso){ if(!iso)return ""; const d=new Date(iso); if(isNaN(d.
 function obsSortByAdded(a,b){ const ta=a.createdAt?new Date(a.createdAt).getTime():0, tb=b.createdAt?new Date(b.createdAt).getTime():0; return tb-ta; }
 function isRecentlyCreated(o){ if(!o||!o.createdAt)return false; return Date.now()-new Date(o.createdAt).getTime()<24*60*60*1000; }
 function markObsHighlight(ids){ const arr=Array.isArray(ids)?ids:[ids]; arr.forEach(id=>{ if(id)_highlightObsIds.add(id); }); if(arr.length) setTimeout(()=>{ arr.forEach(id=>_highlightObsIds.delete(id)); if(view==="report"||view==="observation") render(); },8000); }
-function hasExecSummary(r){ return !!(r&&(r.objective||r.scope||r.outOfScope||r.strengths||r.areasForImprovement||r.auditOpinion||r.conclusion||r.assuranceLevel)); }
+function hasExecSummary(r){ return !!(r&&(r.objective||r.outOfScope||r.strengths||r.areasForImprovement||r.auditOpinion||r.conclusion||r.assuranceLevel)); }
 function boldSectionTitle(t){ const m=String(t||"").match(/^(\d+\.\d+)\s*(.+)$/); return m?`<b>${m[1]}</b> ${m[2]}`:t; }
 function closeSplitMenus(){ document.querySelectorAll(".split-btn-wrap.open").forEach(el=>el.classList.remove("open")); }
 function toggleSplitMenu(id,ev){ if(ev) ev.stopPropagation(); const el=document.getElementById(id); if(!el)return; const open=el.classList.contains("open"); closeSplitMenus(); if(!open) el.classList.add("open"); }
@@ -215,7 +215,7 @@ function fmtAuditWhen(iso){
 function canAccessView(v){
   const u = window.AMS_USER;
   if(!u) return ["dashboard","audits","tracker","audit","report","observation","newobs","insights","guide"].includes(v);
-  if(u.role==="action_owner"){ return v==="myobs"||v==="observation"; }
+  if(u.role==="action_owner"){ return v==="myobs"||v==="observation"||v==="dashboard"; }
   if(u.role==="head_of_audit"){
     if(["dashboard","audits","tracker","auditra","fraud","process","external","iasa","approvals","settings","auditlog","audit","report","observation","newobs","insights","guide"].includes(v)) return true;
     return false;
@@ -303,6 +303,7 @@ function setTopBack(html){
 }
 let bannerDismissed=false;
 function backupBanner(){
+  if(!isHeadUser()) return "";
   const hasData = (DB.audits&&DB.audits.length) || (DB.fraudRisks||[]).length || (DB.auditUniverse||[]).length || (DB.processReviews||[]).length;
   if(!hasData || bannerDismissed) return "";
   const last=DB.lastBackup?isoToDate(DB.lastBackup):null;
@@ -325,18 +326,19 @@ function render(){
   const T=document.getElementById("pageTitle");
   const A=document.getElementById("topActions");
   A.innerHTML=""; setTopSearch(""); setTopBack("");
-  if(window.AMS_USER && window.AMS_USER.role==="action_owner" && !["myobs","observation"].includes(view)){ view="myobs"; }
-  if(view==="dashboard"){ T.textContent=pageTitleFor("dashboard"); A.innerHTML=`<button class="btn sec sm" onclick="exportDashboard()">⤓ Export dashboard</button><button class="btn sec sm" onclick="modalCaeReport()">⤓ Quarterly BAC report</button>`; C.innerHTML=viewDashboard(); }
-  else if(view==="auditra"){ T.textContent=pageTitleFor("auditra"); A.innerHTML=auditUniverse().length?`${iconBtn("modalRADownload()","⤓","Download")}<button class="btn sm" onclick="modalNewAuditPlan()">+ New audit plan</button>`:`<button class="btn sm dark ai-generate-btn" onclick="modalRAPrompt()">Generate audit universe</button>`; C.innerHTML=viewAuditRA(); }
+  if(window.AMS_USER && window.AMS_USER.role==="action_owner" && !["myobs","observation","dashboard"].includes(view)){ view="myobs"; }
+  if(view==="dashboard" && isActionOwner()){ T.textContent=pageTitleFor("dashboard"); C.innerHTML=viewOwnerDashboard(); }
+  else if(view==="dashboard"){ T.textContent=pageTitleFor("dashboard"); A.innerHTML=`<button class="btn sec sm" onclick="exportDashboard()">⤓ Export dashboard</button><button class="btn sec sm" onclick="modalCaeReport()">⤓ Quarterly BAC report</button>`; C.innerHTML=viewDashboard(); }
+  else if(view==="auditra"){ T.textContent=pageTitleFor("auditra"); A.innerHTML=isStaff()?`${iconBtn("modalRADownload()","⤓","Download")}`:(auditUniverse().length?`${iconBtn("modalRADownload()","⤓","Download")}<button class="btn sm" onclick="modalNewAuditPlan()">+ New audit plan</button>`:`<button class="btn sm dark ai-generate-btn" onclick="modalRAPrompt()">Generate audit universe</button>`); C.innerHTML=viewAuditRA(); }
   else if(view==="raunit"){ renderRaUnit(C,T,A); }
   else if(view==="fraudrisk"){ renderFraudRisk(C,T,A); }
-  else if(view==="fraud"){ T.textContent=pageTitleFor("fraud"); A.innerHTML=`${btnDownload("modalFraudDownload()","Download")}<button class="btn sm dark ai-generate-btn" onclick="modalFraudPrompt()">Generate fraud risks</button><button class="btn sm" onclick="modalFraud()">+ Add fraud risk</button>`; C.innerHTML=viewFraud(); }
+  else if(view==="fraud"){ T.textContent=pageTitleFor("fraud"); A.innerHTML=`${btnDownload("modalFraudDownload()","Download")}${isStaff()?"":`<button class="btn sm dark ai-generate-btn" onclick="modalFraudPrompt()">Generate fraud risks</button><button class="btn sm" onclick="modalFraud()">+ Add fraud risk</button>`}`; C.innerHTML=viewFraud(); }
   else if(view==="external"){ T.textContent=pageTitleFor("external"); A.innerHTML=`<button class="btn sec sm" onclick="exportExternal()">⤓ Status report (Word)</button><button class="btn sm dark" onclick="modalExtImport()">⤒ Import findings</button><button class="btn sm" onclick="modalExt()">+ Add finding</button>`; C.innerHTML=viewExternal(); }
   else if(view==="iasa"){ T.textContent=pageTitleFor("iasa"); A.innerHTML=`<button class="btn sec sm" onclick="exportIASA()">⤓ Self-assessment (Word)</button><button class="btn sm dark ai-generate-btn" onclick="modalIASAPrompt()">Generate assessment</button>`; C.innerHTML=viewIASA(); }
   else if(view==="audits"){
     T.textContent=pageTitleFor("audits");
     setTopSearch(`<input id="afq" class="topbar-search" value="${esc(auditFilter.q||"")}" placeholder="Search audits &amp; reports…" oninput="auditFilter.q=this.value;refreshAuditList()">`);
-    A.innerHTML=`<button class="btn" onclick="modalAudit()">+ New Audit</button>`;
+    A.innerHTML=isStaff()?"":`<button class="btn" onclick="modalAudit()">+ New Audit</button>`;
     C.innerHTML=viewAudits();
   }
   else if(view==="audit"){ renderAudit(C,T,A); }
@@ -843,6 +845,7 @@ function planYearsList(){
 function raPlanYearOptions(sel){ return planYearsList().map(y=>`<option value="${esc(y)}"${String(sel)===y?" selected":""}>${esc(y)}</option>`).join(""); }
 function planYearHasData(y){ return auditUniverse().some(e=>raYearsIn(e.plannedPeriod).includes(+y)) || (DB.planYears||[]).map(String).includes(String(y)); }
 function modalNewAuditPlan(){
+  if(!requireHead())return;
   const cur=(new Date()).getFullYear();
   const U=auditUniverse().slice().sort((a,b)=>raComposite(b.factors)-raComposite(a.factors));
   openModal("New annual audit plan",`
@@ -852,7 +855,7 @@ function modalNewAuditPlan(){
     <div class="seclabel" style="margin:16px 0 6px">Which units go into this plan?</div>
     <label class="filter-check" style="display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:8px"><input type="checkbox" id="np_all" checked onchange="npToggleAll(this)" style="width:auto"> Include all ${U.length} unit(s)</label>
     <div class="np-unit-list">
-      ${U.map(e=>{ const band=e.ratingOverride||raBand(raComposite(e.factors)); return `<label class="filter-check np-unit-row"><input type="checkbox" class="np_unit" value="${e.id}" checked onchange="npSyncAll()" style="width:auto"><span class="np-unit-name">${esc(e.name)}</span><span class="pill" style="background:${hx2rgba(RA_HEX[band],.16)};color:${RA_HEX[band]}">${band}</span>${e.plannedPeriod?`<span class="hint">${esc(e.plannedPeriod)}</span>`:""}</label>`; }).join("")}
+      ${U.map(e=>{ const band=e.ratingOverride||raBand(raComposite(e.factors)); return `<label class="filter-check np-unit-row"><input type="checkbox" class="np_unit" value="${e.id}" checked onchange="npSyncAll()" style="width:auto"><span class="np-unit-name">${esc(e.name)}</span>${e.category?`<span class="hint np-unit-cat">${esc(e.category)}</span>`:""}<span class="pill" style="background:${hx2rgba(RA_HEX[band],.16)};color:${RA_HEX[band]}">${band}</span></label>`; }).join("")}
     </div>
     <div class="hint" style="margin-top:8px">Checked units are scheduled into the plan year (their timing rolls to that year — edit a unit to set quarters). Unchecked units are excluded from this year's plan.</div>`,
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="createAuditPlan()">Create plan</button>`);
@@ -897,7 +900,7 @@ function viewAuditRA(){
     ${kpi("base","In "+py+" plan",planned.length,"selected for the year")}
     ${kpi("good","Plan delivered",pctPlan+"%",doneOcc+" of "+totalOcc+" reviews done")}
   </div>
-  <div class="card"><div class="row" style="align-items:center;gap:10px;margin-bottom:2px"><div class="seclabel" style="margin:0">Risk-ranked audit universe</div><div class="spacer"></div><button class="btn sm" onclick="modalRA()">+ Add unit</button></div>
+  <div class="card"><div class="row" style="align-items:center;gap:10px;margin-bottom:2px"><div class="seclabel" style="margin:0">Risk-ranked audit universe</div><div class="spacer"></div>${isStaff()?"":`<button class="btn sm" onclick="modalRA()">+ Add unit</button>`}</div>
     <table class="ra-universe-table" style="margin-top:6px"><thead><tr><th>Auditable unit</th><th>Category</th><th>Risk score</th><th>Rating</th><th>Last audited</th><th>Frequency</th><th>Due</th><th></th></tr></thead><tbody>
     ${en.map(e=>`<tr>
       <td><b>${esc(e.name)}</b>${e.owner?`<div class="hint">${esc(e.owner)}</div>`:""}</td>
@@ -912,7 +915,7 @@ function viewAuditRA(){
     </tbody></table>
     <div class="hint" style="margin-top:8px">Risk score = weighted average of factors (1–5). Frequency: Critical/High = annual · Medium = 2 yrs · Low = 3 yrs. “Due” = last audited + cycle ≤ plan year (or never audited).</div>
   </div>
-  <div class="card"><div class="row" style="align-items:center;gap:10px"><div class="seclabel" style="margin:0">Annual Audit Plan — ${esc(planYear())}</div><div class="spacer"></div><span class="hint">${planned.length} engagement(s) · ${doneOcc}/${totalOcc} quarter-reviews done (${pctPlan}%)</span><button class="btn sm dark ai-generate-btn" onclick="modalAnnualPlanPrompt()">${planned.some(e=>(e.plannedPeriod||"").trim()||(e.rationale||"").trim())?"Regenerate":"Generate"} plan (AI)</button></div>
+  <div class="card"><div class="row" style="align-items:center;gap:10px"><div class="seclabel" style="margin:0">Annual Audit Plan — ${esc(planYear())}</div><div class="spacer"></div><span class="hint">${planned.length} engagement(s) · ${doneOcc}/${totalOcc} quarter-reviews done (${pctPlan}%)</span>${isStaff()?"":`<button class="btn sm dark ai-generate-btn" onclick="modalAnnualPlanPrompt()">${planned.some(e=>(e.plannedPeriod||"").trim()||(e.rationale||"").trim())?"Regenerate":"Generate"} plan (AI)</button>`}</div>
     ${planned.length?`<div class="hint" style="margin:2px 0 8px">Click a row to open the full engagement — details, linked audits and status.</div><table class="ra-plan-table" style="margin-top:6px"><thead><tr><th class="ra-plan-num-col">#</th><th>Auditable unit</th><th class="ra-rating-col">Rating</th><th class="ra-timing-col">Timing</th><th>Status</th><th class="ra-link-col">Linked audit</th></tr></thead><tbody>
       ${planned.map((e,i)=>`<tr class="ra-plan-row" onclick="raPlanOpenUnit('${e.id}',event)" title="Open engagement">
         <td class="ra-plan-num-col">${i+1}</td>
@@ -1003,7 +1006,7 @@ function raPlanDetailHTML(e){
     </div>
     <div class="ra-factor-grid">${factorRows}</div>
     ${e.rationale?`<div class="obs-detail-sections"><section class="obs-detail-section"><h4 class="obs-detail-label">Rationale</h4><div class="obs-detail-content">${esc(e.rationale)}</div></section></div>`:""}
-    ${linked.length?`<div class="ra-detail-linked"><span class="watch-meta-label">Linked audits</span> ${linked.map(a=>`<span class="tag" style="cursor:pointer" onclick="go('audit',{audit:'${a.id}'})">${esc(a.name)}</span>`).join(" ")}</div>`:""}
+    <div class="ra-detail-linked"><span class="watch-meta-label">Linked audits</span> ${auditLinksCell(e)}</div>
     ${raStatusSection(e)}
     <div class="row" style="margin-top:12px;gap:8px"><button class="btn ghost sm" onclick="modalRA('${e.id}')">Edit unit &amp; timing</button></div>
   </div>`;
@@ -1130,6 +1133,7 @@ function viewApprovals(){
 }
 function raLinkSet(id,v){ const e=auditUniverse().find(x=>x.id===id); if(e){ e.linkedAuditId=v||""; save(); } }
 function modalRA(id){
+  if(!requireHead())return;
   const U=auditUniverse(); const e=id?U.find(x=>x.id===id):{name:"",category:"",owner:"",factors:{},lastAudited:"",ratingOverride:"",frequencyOverride:"",rationale:""};
   const f=e.factors||{};
   openModal(id?"Edit auditable unit":"Add auditable unit",`
@@ -1166,8 +1170,9 @@ function saveRA(id){
   if(id){ Object.assign(U.find(x=>x.id===id),data); } else { U.push({id:uid(),...data,createdAt:new Date().toISOString()}); }
   save(); closeModal(); render();
 }
-function delRA(id){ if(!confirm("Delete this auditable unit?"))return; DB.auditUniverse=auditUniverse().filter(x=>x.id!==id); save(); render(); }
+function delRA(id){ if(!requireHead())return; if(!confirm("Delete this auditable unit?"))return; DB.auditUniverse=auditUniverse().filter(x=>x.id!==id); save(); render(); }
 function modalRAPrompt(){
+  if(!requireHead())return;
   openModal("Generate audit universe",`
     <label>Organisation context / areas</label><textarea id="rap_ctx" style="min-height:90px" placeholder="e.g. CREDICORP: Credit Operations, Treasury, Finance, IT, HR, Procurement, Risk & Compliance, Internal Control. New core banking go-live 2026; regulated by CBN."></textarea>
     <div id="raImpErr"></div>`,
@@ -1215,6 +1220,7 @@ function doImportRA(raw){
   save(); closeModal(); render(); return true;
 }
 function modalAnnualPlanPrompt(){
+  if(!requireHead())return;
   const U=auditUniverse();
   if(!U.length){ alert("Add or generate auditable units first."); return; }
   openModal("Generate annual audit plan",`
@@ -1372,6 +1378,7 @@ function fraudHeatHTML(grid){
   return h;
 }
 function modalFraud(id){
+  if(!requireHead())return;
   const F=fraudList(); const f=id?F.find(x=>x.id===id):{year:String((new Date()).getFullYear()),process:"",category:"Asset Misappropriation",scheme:"",description:"",likelihood:3,impact:3,existingControls:"",controlStrength:"Moderate",residualOverride:"",preventionAction:"",owner:"",status:"Identified"};
   openModal(id?"Edit fraud risk":"Add fraud risk",`
     <div class="f3">
@@ -1404,7 +1411,7 @@ function saveFraud(id){
   rollupFraud(obj);
   save(); closeModal(); render();
 }
-function delFraud(id){ if(!confirm("Delete this fraud risk?"))return; DB.fraudRisks=fraudList().filter(x=>x.id!==id); save(); render(); }
+function delFraud(id){ if(!requireHead())return; if(!confirm("Delete this fraud risk?"))return; DB.fraudRisks=fraudList().filter(x=>x.id!==id); save(); render(); }
 let curFraud=null;
 function renderFraudRisk(C,T,A){
   const f=fraudList().find(x=>x.id===curFraud);
@@ -1506,6 +1513,7 @@ function doImportFraudActions(raw){
   save(); closeModal(); render(); return true;
 }
 function modalFraudPrompt(){
+  if(!requireHead())return;
   openModal("Generate fraud risks",`
     <label>Process / Department</label><input id="frp_proc" placeholder="e.g. Credit Operations / Loan disbursement">
     <label>Context (optional)</label><textarea id="frp_ctx" placeholder="e.g. manual disbursement approvals; PFIs onboarded without bureau checks"></textarea>
@@ -2639,6 +2647,7 @@ function auditMatches(a,q){
   if(auditFilter.status!=="All" && (a.status||"")!==auditFilter.status) return false;
   if(auditFilter.year!=="All" && periodYear(a.period)!==auditFilter.year) return false;
   if(auditFilter.period!=="All" && (a.period||"")!==auditFilter.period) return false;
+  if(auditFilter.mine && a.leadAuditorId!==(window.AMS_USER&&window.AMS_USER.id)) return false;
   if(q){ const hay=(a.name+" "+(a.area||"")+" "+(a.period||"")+" "+(a.leadAuditor||"")+" "+a.reports.map(r=>r.title+" "+(r.refNo||"")).join(" ")).toLowerCase(); if(!hay.includes(q)) return false; }
   return true;
 }
@@ -2646,7 +2655,10 @@ function auditListHTML(){
   const q=(auditFilter.q||"").toLowerCase().trim();
   const list=DB.audits.filter(a=>auditMatches(a,q));
   if(!list.length) return `<div class="card"><div class="empty">No audits match the current filter.</div></div>`;
-  return `<div class="entity-card-grid">${list.slice().sort((a,b)=>periodKey(b.period)-periodKey(a.period)||a.name.localeCompare(b.name)).map(auditCard).join("")}</div>`;
+  const sorted=list.slice().sort((a,b)=>periodKey(b.period)-periodKey(a.period)||a.name.localeCompare(b.name));
+  const groups=[]; const idx={};
+  sorted.forEach(a=>{ const k=a.period||"No period set"; if(idx[k]==null){ idx[k]=groups.length; groups.push({k,items:[]}); } groups[idx[k]].items.push(a); });
+  return groups.map(g=>`<div class="audit-quarter-group"><div class="audit-quarter-head"><span class="seclabel" style="margin:0">${esc(g.k)}</span><span class="hint">${g.items.length} audit${g.items.length!==1?"s":""}</span></div><div class="entity-card-grid">${g.items.map(auditCard).join("")}</div></div>`).join("");
 }
 function refreshAuditList(){
   const el=document.getElementById("auditList"); if(el) el.innerHTML=auditListHTML();
@@ -2654,8 +2666,9 @@ function refreshAuditList(){
   const qEl=document.getElementById("afq"); if(qEl && qEl.value!==(auditFilter.q||"")) qEl.value=auditFilter.q||"";
 }
 function viewAudits(){
+  if(auditFilter.mine==null) auditFilter.mine=isStaff();
   if(!DB.audits.length) return `<div class="card"><div class="empty"><div class="big">▤</div>
-    No audits yet.<br><br><button class="btn" onclick="modalAudit()">+ Create your first audit</button></div></div>`;
+    No audits yet.<br><br>${isStaff()?"Ask your Head of Audit to create an audit and assign you as lead.":`<button class="btn" onclick="modalAudit()">+ Create your first audit</button>`}</div></div>`;
   const periods=[...new Set(DB.audits.map(a=>a.period||"").filter(Boolean))].sort((x,y)=>periodKey(y)-periodKey(x));
   const years=[...new Set(DB.audits.map(a=>periodYear(a.period)).filter(Boolean))].sort((x,y)=>+y-+x);
   const shown=DB.audits.filter(a=>auditMatches(a,(auditFilter.q||"").toLowerCase().trim())).length;
@@ -2668,7 +2681,8 @@ function viewAudits(){
       <select class="field-select field-select-sm" onchange="auditFilter.period=this.value;refreshAuditList()"><option value="All"${auditFilter.period==="All"?" selected":""}>All quarters</option>${periods.map(p=>`<option value="${esc(p)}"${auditFilter.period===p?" selected":""}>${esc(p)}</option>`).join("")}</select></div>
     <div class="filter-group"><span class="filter-label">Status</span>
       <select class="field-select field-select-sm" onchange="auditFilter.status=this.value;refreshAuditList()">${["All",...AUDIT_STATUS].map(s=>`<option value="${esc(s)}"${auditFilter.status===s?" selected":""}>${esc(s)}</option>`).join("")}</select></div>
-    <button class="btn ghost sm" onclick="auditFilter={q:'',status:'All',period:'All',year:'All'};render()">Clear</button>
+    <label class="filter-check" style="display:flex;align-items:center;gap:6px;font-size:12.5px"><input type="checkbox" style="width:auto"${auditFilter.mine?" checked":""} onchange="auditFilter.mine=this.checked;refreshAuditList()"> Assigned to me</label>
+    <button class="btn ghost sm" onclick="auditFilter={q:'',status:'All',period:'All',year:'All',mine:false};render()">Clear</button>
   </div>
   <div id="auditList">${auditListHTML()}</div>`;
 }
@@ -2896,7 +2910,8 @@ Return ONLY a JSON object (no commentary) with these exact keys:
   "recommendation": "specific, actionable recommendation per best practice",
   "criticality": "Critical | High | Moderate | Low | Process Improvement",
   "owner": "the role/function best placed to own remediation, e.g. Head, Credit Operations",
-  "timeline": "Immediate | Short-term | Long-term"
+  "timeline": "Immediate | Short-term | Long-term",
+  "agreedTarget": "a realistic proposed agreed remediation target — a date or timeframe consistent with the timeline, e.g. 'Complete by 30 Sep 2026' or 'within 60 days'"
 }`;
 }
 async function generateException(aid,tid){
@@ -2985,9 +3000,9 @@ function renderReport(C,T,A){
 
   // exec summary
   html+=`<div class="card anim-fade-in"><div class="row"><h3 style="margin:0">Executive Summary</h3><div class="spacer"></div>
-    <button class="btn ghost sm ai-generate-btn" onclick="modalExecPrompt('${a.id}','${r.id}')">${hasExecSummary(r)?"Regenerate exec summary":"Generate exec summary"}</button>
-    <button class="btn ghost sm" onclick="modalFrontMatter('${a.id}','${r.id}')">Edit</button></div>
-    <div style="margin:12px 0">${reportSummaryHTML(r)}${execSummaryHTML(r)}</div></div>`;
+    ${isStaff()?"":`<button class="btn ghost sm ai-generate-btn" onclick="generateExecSummary('${a.id}','${r.id}')">${hasExecSummary(r)?"Regenerate exec summary":"Generate exec summary"}</button>
+    <button class="btn ghost sm" onclick="modalFrontMatter('${a.id}','${r.id}')">Edit</button>`}</div>
+    <div class="exec-summary-wrap">${reportSummaryHTML(r)}${execSummaryHTML(r)}</div></div>`;
 
   // observations
   html+=`<div class="card report-obs-section anim-fade-in">
@@ -3230,9 +3245,11 @@ async function ownerReuploadSop(aid,rid,oid){
   const ev=await uploadEvidenceFile(oid,fileEl); if(!ev) return;
   o.ownerSop=ev; logAudit("obs.sop_reupload","Owner re-uploaded SOP for: "+o.title,{observationId:oid}); save(); render();
 }
+function obsHasEvidence(o){ return obsUpdates(o).some(u=>(u.evidence||[]).length) || !!o.ownerSop; }
 function ownerMarkRectified(aid,rid,oid){
   if(!isActionOwner()&&!isHeadUser()){ alert("Only the action owner can mark rectified."); return; }
   const o=findObs(aid,rid,oid); if(!o||o.ownerRectifiedAt) return;
+  if(!obsHasEvidence(o)){ alert("Attach at least one piece of evidence (in Updates & evidence) before marking this rectified."); return; }
   const u=window.AMS_USER||{};
   o.ownerRectifiedBy=u.id||""; o.ownerRectifiedByName=u.name||""; o.ownerRectifiedAt=new Date().toISOString();
   if(o.status==="Open") o.status="In Progress";
@@ -3241,7 +3258,7 @@ function ownerMarkRectified(aid,rid,oid){
   const emails=headUsers().map(h=>h.email); const lead=(_directoryCache||[]).find(x=>x.id===(a&&a.leadAuditorId)); if(lead&&lead.email) emails.push(lead.email);
   emailNotify(emails,"AuditLens — remediation rectified",`The action owner marked "${o.title}" as rectified. Please verify.`);
   logAudit("obs.rectified","Owner marked rectified: "+o.title,{observationId:oid});
-  save(); render();
+  save(); render(); modalSuccess("Marked as rectified. Internal Audit has been notified to verify.");
 }
 function auditorVerify(aid,rid,oid){
   const a=audit(aid); if(!canVerifyReport(a)){ alert("Only the lead auditor of this audit or the Head of Audit can verify."); return; }
@@ -3251,7 +3268,7 @@ function auditorVerify(aid,rid,oid){
   headUsers().forEach(h=>notify(h.id,"verify",o.title+" verified — ready for Head sign-off","observation"));
   emailNotify(headUsers().map(h=>h.email),"AuditLens — ready for closure",`"${o.title}" was verified by the auditor and is ready for your closure sign-off.`);
   logAudit("obs.report_verified","Auditor verified: "+o.title,{observationId:oid});
-  save(); render();
+  save(); render(); modalSuccess("Remediation verified. Sent to the Head of Audit for closure sign-off.");
 }
 function modalHeadClose(aid,rid,oid){
   const o=findObs(aid,rid,oid); if(!o) return;
@@ -3261,13 +3278,20 @@ function modalHeadClose(aid,rid,oid){
       <div><label>Closed date</label><input type="date" id="hc_date" value="${esc(o.closedDateISO||isoNow())}"></div>
       <div><label>Verified by</label><input id="hc_by" value="${esc((window.AMS_USER&&window.AMS_USER.name)||o.verifiedBy||"")}"></div>
     </div>
-    <label>Closure evidence / WP ref</label><input id="hc_ev" value="${esc(o.closureEvidence||"")}">
-    <label>Closure note</label><textarea id="hc_note">${esc(o.closureNote||"")}</textarea>`,
+    <label>Closure evidence / WP ref <span class="hint">(text)</span></label><input id="hc_ev" value="${esc(o.closureEvidence||"")}">
+    <label>Closure evidence file <span class="hint">(optional upload)</span></label>
+    <div class="row" style="gap:8px;align-items:center"><label class="btn sec sm" style="display:inline-block;margin:0">📎 Choose file<input type="file" id="hc_file" style="display:none" onchange="hcFilePicked(this)"></label><span class="hint" id="hc_fileName">${o.closureFile?esc(o.closureFile.name):"No file chosen"}</span></div>
+    <label>Closure note</label><textarea id="hc_note">${esc(o.closureNote||"")}</textarea>
+    <div id="hc_err" style="margin-top:8px"></div>`,
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="headVerifyClose('${aid}','${rid}','${oid}')">Verify &amp; close</button>`);
 }
-function headVerifyClose(aid,rid,oid){
+function hcFilePicked(inp){ const el=document.getElementById("hc_fileName"); if(el) el.textContent=(inp.files&&inp.files[0])?inp.files[0].name:"No file chosen"; }
+async function headVerifyClose(aid,rid,oid){
   if(!isHeadUser()){ alert("Only the Head of Audit can close."); return; }
   const o=findObs(aid,rid,oid); if(!o) return;
+  const btn=event&&event.currentTarget; const done=btnBusy(btn,"Closing…");
+  const fileEl=document.getElementById("hc_file");
+  if(fileEl&&fileEl.files&&fileEl.files.length){ const ev=await uploadEvidenceFile(oid,fileEl); if(ev) o.closureFile=ev; else { done(); return; } }
   const u=window.AMS_USER||{};
   o.headVerifiedBy=u.id||""; o.headVerifiedByName=u.name||""; o.headVerifiedAt=new Date().toISOString();
   o.verifiedBy=val("hc_by")||u.name||""; o.closureEvidence=val("hc_ev"); o.closureNote=val("hc_note");
@@ -3275,8 +3299,10 @@ function headVerifyClose(aid,rid,oid){
   o.status="Closed";
   if(o.ownerUserId) notify(o.ownerUserId,"closed",o.title+" has been closed","myobs");
   if(o.raisedBy) notify(o.raisedBy,"closed",o.title+" has been closed","audits");
+  const dept=deptById(o.departmentId); const closeEmails=[]; if(dept&&dept.headEmail) closeEmails.push(dept.headEmail); const raiser=(_directoryCache||[]).find(x=>x.id===o.raisedBy); if(raiser&&raiser.email) closeEmails.push(raiser.email);
+  emailNotify(closeEmails,"AuditLens — observation closed",`The observation "${o.title}" has been verified and closed by the Head of Audit.`);
   logAudit("obs.closed","Head verified & closed: "+o.title,{observationId:oid});
-  save(); closeModal(); render();
+  done(); save(); closeModal(); render(); modalSuccess("Observation verified and closed.");
 }
 function verifyStepperHTML(o){
   const steps=[
@@ -3293,15 +3319,28 @@ function obsRemediationHTML(o,a,r){
   const updates=obsUpdates(o).slice().sort((x,y)=>String(y.at||"").localeCompare(String(x.at||"")));
   let actions="";
   if(!closed){
-    if(owner && !o.ownerRectifiedAt) actions+=`<button class="btn sm" onclick="ownerMarkRectified('${a.id}','${r.id}','${o.id}')">Mark rectified</button>`;
+    if(owner && !o.ownerRectifiedAt) actions+=`<button class="btn sm" onclick="ownerMarkRectified('${a.id}','${r.id}','${o.id}')">✓ Mark rectified</button>`;
     if(canVerify && o.ownerRectifiedAt && !o.reportVerifiedAt) actions+=`<button class="btn sm" onclick="auditorVerify('${a.id}','${r.id}','${o.id}')">Verify remediation</button>`;
     if(head && o.reportVerifiedAt) actions+=`<button class="btn sm" onclick="modalHeadClose('${a.id}','${r.id}','${o.id}')">Verify &amp; close</button>`;
+    if((canVerify||head) && o.ownerUserId) actions+=`<button class="btn sec sm" onclick="requestOwnerUpdate('${a.id}','${r.id}','${o.id}')">${o.updateRequestedAt?"🔔 Update requested":"Request feedback from owner"}</button>`;
   }
   const canPost=owner||canVerify;
+  const nextHint = closed ? "" :
+    owner && !o.ownerRectifiedAt ? "Attach evidence, then mark rectified for Internal Audit to verify." :
+    canVerify && o.ownerRectifiedAt && !o.reportVerifiedAt ? "Owner has rectified — verify the remediation." :
+    head && o.reportVerifiedAt ? "Verified by the auditor — ready for your closure sign-off." :
+    !o.ownerRectifiedAt ? "Awaiting the action owner's remediation." :
+    !o.reportVerifiedAt ? "Awaiting auditor verification." : "Awaiting Head of Audit closure.";
   return `<div class="obs-notes">
     <div class="obs-notes-label">Remediation &amp; verification</div>
     ${verifyStepperHTML(o)}
     ${o.ownerSop?`<div class="hint" style="margin:8px 0 4px">Owner re-uploaded SOP: <a href="/api/files/${esc(o.ownerSop.itemId)}" target="_blank" rel="noopener">${esc(o.ownerSop.name)}</a></div>`:""}
+    ${o.closureFile?`<div class="hint" style="margin:8px 0 4px">Closure evidence: <a href="/api/files/${esc(o.closureFile.itemId)}" target="_blank" rel="noopener">${esc(o.closureFile.name)}</a></div>`:""}
+    ${(actions||nextHint)?`<div class="obs-actions-block">
+      <div class="obs-notes-label obs-updates-label" style="border-top:none;padding-top:0;margin-top:0">Actions</div>
+      ${nextHint?`<div class="hint" style="margin-bottom:8px">${esc(nextHint)}</div>`:""}
+      ${actions?`<div class="row" style="gap:8px;flex-wrap:wrap">${actions}</div>`:`<div class="hint">No action for you at this stage.</div>`}
+    </div>`:""}
     <div class="obs-notes-label obs-updates-label">Updates &amp; evidence</div>
     ${updates.length?updates.map(u=>`<div class="obs-note"><div class="obs-note-text">${esc(u.text||"")}</div>${(u.evidence||[]).map(e=>`<div class="hint">📎 <a href="/api/files/${esc(e.itemId)}" target="_blank" rel="noopener">${esc(e.name)}</a></div>`).join("")}<div class="obs-note-meta">${esc(u.byName||"")}${u.role?" ("+esc(roleLabel(u.role))+")":""}${u.at?" · "+esc(fmtDateTime(u.at)):""}</div></div>`).join(""):`<div class="hint">No updates yet.</div>`}
     ${canPost&&!closed?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">
@@ -3309,7 +3348,6 @@ function obsRemediationHTML(o,a,r){
       <div class="row" style="margin-top:6px;gap:8px;align-items:center"><label class="btn sec sm" style="display:inline-block;margin:0">📎 Attach file<input type="file" id="upd_file" style="display:none"></label><button class="btn sm" id="upd_save" onclick="addObsUpdate('${a.id}','${r.id}','${o.id}')">Post update</button></div>
     </div>`:""}
     ${owner&&!closed?`<div style="margin-top:10px"><label class="btn sec sm" style="display:inline-block;margin:0">⤒ Re-upload SOP<input type="file" id="sop_file" style="display:none" onchange="ownerReuploadSop('${a.id}','${r.id}','${o.id}')"></label></div>`:""}
-    ${actions?`<div class="row" style="margin-top:12px;gap:8px">${actions}</div>`:""}
   </div>`;
 }
 function renderObservation(C,T,A){
@@ -3319,8 +3357,8 @@ function renderObservation(C,T,A){
   const isOwner=window.AMS_USER&&window.AMS_USER.role==="action_owner";
   T.textContent=pageTitleFor(isOwner?"myobs":"audits");
   setTopBack(backBtn(isOwner?"go('myobs')":("go('report',{audit:'"+a.id+"',report:'"+r.id+"'})")));
-  A.innerHTML=isOwner?"":`<button class="btn sec sm" onclick="modalObs('${a.id}','${r.id}','${o.id}')">Edit</button>
-    <button class="btn ghost sm danger" onclick="delObs('${a.id}','${r.id}','${o.id}')">Delete</button>`;
+  A.innerHTML=(isHeadUser()||canVerifyReport(a))?`<button class="btn sec sm" onclick="modalObs('${a.id}','${r.id}','${o.id}')">Edit</button>
+    <button class="btn ghost sm danger" onclick="delObs('${a.id}','${r.id}','${o.id}')">Delete</button>`:"";
   const ec=effectiveClose(o,r); const age=obsAge(o,r); const od=isOverdueObs(o,r);
   C.innerHTML=`<div class="obs-detail-page anim-fade-in">
     <header class="obs-detail-hero">
@@ -3457,7 +3495,8 @@ Return ONLY a JSON object (no commentary) with these exact keys — every field 
   "recommendation": "specific, actionable recommendation per best practice",
   "criticality": "Critical | High | Moderate | Low | Process Improvement",
   "owner": "the role/function best placed to own remediation, e.g. Head, Credit Operations",
-  "timeline": "Immediate | Short-term | Long-term"
+  "timeline": "Immediate | Short-term | Long-term",
+  "agreedTarget": "a realistic proposed agreed remediation target — a date or timeframe consistent with the timeline, e.g. 'Complete by 30 Sep 2026' or 'within 60 days'"
 }`;
 }
 async function generateObsFromPicker(){
@@ -3474,17 +3513,16 @@ function modalGenerateObs(aid,rid){
   openModal("Generate observation",`
     <label>One-liner observation</label>
     <input id="go_ol" placeholder="e.g. Loan disbursements approved without credit committee sign-off">
-    <div class="f2">
-      <div><label>Process / Department</label><input id="go_area" placeholder="e.g. Credit Operations"></div>
-      <div><label>Context (optional)</label><input id="go_ctx"></div>
-    </div>
+    <label>Additional context (optional)</label>
+    <textarea id="go_ctx" style="min-height:80px" placeholder="Any extra detail to steer the draft — prior findings, system, timing…"></textarea>
     <div id="go_err" style="margin-top:10px"></div>`,
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark ai-generate-btn" onclick="generateObsForReport('${aid}','${rid}')">Generate observation</button>`);
 }
 async function generateObsForReport(aid,rid){
-  const ol=val("go_ol"), area=val("go_area"), ctx=val("go_ctx");
+  const ol=val("go_ol"), ctx=val("go_ctx");
   if(!ol){ showAiErr("go_err","Enter a one-liner first."); return; }
-  await runAiJson(buildObsPrompt(ol,area,ctx),"go_err",d=>{ doImport(aid,rid,d,"go_err"); });
+  const a=audit(aid);
+  await runAiJson(buildObsPrompt(ol,a&&a.area||"",ctx),"go_err",d=>{ doImport(aid,rid,d,"go_err"); });
 }
 function buildPrompt(){ generateObsFromPicker(); }
 
@@ -3685,7 +3723,7 @@ function viewMyObs(){
     ${kpi("warn","Open",open.length,"awaiting your action")}
     ${kpi("good","Closed",closed.length,"resolved")}
   </div>`;
-  if(!mine.length){ h+=`<div class="card"><div class="empty"><div class="big">✦</div>No observations have been assigned to you yet. When Internal Audit raises and approves an observation against your department, it will appear here for you to respond, add updates and evidence.</div></div>`; return h; }
+  if(!mine.length){ h+=`<div class="card"><div class="empty"><div class="big">✦</div>No observations have been assigned to you yet.<br><br>When Internal Audit raises and approves an observation against your department, it will appear here for you to respond, add updates and evidence.</div></div>`; return h; }
   const rows=[...open,...closed];
   h+=`<div class="card"><div class="seclabel">Observations raised against my department</div>
     <table><thead><tr><th>Criticality</th><th>Observation</th><th>Audit / Area</th><th>Expected close</th><th>Status</th></tr></thead><tbody>
@@ -3697,6 +3735,36 @@ function viewMyObs(){
       <td>${statusPill(o.status)}</td>
     </tr>`; }).join("")}
     </tbody></table></div>`;
+  return h;
+}
+function viewOwnerDashboard(){
+  const me=window.AMS_USER||{};
+  const mine=myObsList();
+  const open=mine.filter(o=>o.status!=="Closed");
+  const overdue=open.filter(o=>isOverdueObs(o,o._r));
+  const dueSoon=open.filter(o=>{ const d=daysToClose(o,o._r); return d!=null && d>=0 && d<=14; });
+  const closed=mine.filter(o=>o.status==="Closed");
+  const attention=[...overdue,...dueSoon.filter(o=>!overdue.includes(o))];
+  let h=`<div class="dash-welcome anim-fade-in"><div class="dash-welcome-text"><h1>Welcome, ${esc((me.name||"there").split(/\s+/)[0])}</h1><p class="dash-welcome-role">${esc(me.department||"Action Owner")}</p></div><div class="spacer"></div><button class="btn" onclick="go('myobs')">My observations →</button></div>
+  <div class="dash-kpis" style="grid-template-columns:repeat(4,1fr)">
+    ${kpi("accent","Assigned to me",mine.length,"remediation actions")}
+    ${kpi("warn","Open",open.length,"awaiting your action")}
+    ${kpi("warn","Overdue",overdue.length,"past expected close")}
+    ${kpi("good","Closed",closed.length,"resolved")}
+  </div>`;
+  h+=`<div class="card"><div class="seclabel">Needs your attention</div>`;
+  if(!attention.length){ h+=`<div class="empty">${mine.length?"Nothing overdue or due within 2 weeks — you're on track.":"No observations have been assigned to you yet.<br><br>They'll appear here once Internal Audit approves them."}</div>`; }
+  else {
+    h+=`<table><thead><tr><th>Criticality</th><th>Observation</th><th>Audit / Area</th><th>Expected close</th><th>Status</th></tr></thead><tbody>`+
+      attention.map(o=>{ const ec=effectiveClose(o,o._r); const od=isOverdueObs(o,o._r); return `<tr class="tracker-row" onclick="go('observation',{audit:'${o._a.id}',report:'${o._r.id}',obs:'${o.id}'})" title="Open observation">
+        <td><span class="pill c-${ck(o.criticality)}">${o.criticality}</span></td>
+        <td><b>${esc(o.title)}</b></td>
+        <td>${esc(o._a.name)}<div class="hint">${esc(o._a.area||"")}</div></td>
+        <td>${ec?fmtDate(ec):"—"}${od?` <span class="pill c-Critical">overdue</span>`:""}</td>
+        <td>${statusPill(o.status)}</td>
+      </tr>`; }).join("")+`</tbody></table>`;
+  }
+  h+=`</div>`;
   return h;
 }
 let _usersCache=[];
@@ -3750,11 +3818,11 @@ function modalUser(id){
   openModal(isEdit?"Edit user":"Add user",`
     <div class="f2">
       <div><label>Name *</label><input id="ua_name" value="${esc(u?u.name:"")}"></div>
-      <div><label>Department</label><input id="ua_dept" value="${esc(u?u.department:"")}"></div>
+      <div><label>Department</label><input id="ua_dept" value="${esc(u?u.department:"Internal Audit")}"></div>
     </div>
     <div class="f2">
       <div><label>Email *</label><input id="ua_email" type="email" value="${esc(u?u.email:"")}"></div>
-      <div><label>Role</label><select id="ua_role" onchange="toggleUserAccessFields()">${[["audit_staff","Audit Staff"],["action_owner","Action Owner"],["head_of_audit","Head of Audit"]].map(([v,l])=>`<option value="${v}"${(u?u.role:"audit_staff")===v?" selected":""}>${l}</option>`).join("")}</select></div>
+      <div><label>Role</label><select id="ua_role" onchange="toggleUserAccessFields()">${[["audit_staff","Audit Staff"]].concat(u&&u.role!=="audit_staff"?[[u.role,roleLabel(u.role)]]:[]).map(([v,l])=>`<option value="${v}"${(u?u.role:"audit_staff")===v?" selected":""}>${l}</option>`).join("")}</select></div>
     </div>
     ${isEdit?"":`<p class="hint" style="margin:10px 0 0">A welcome email with a temporary password will be sent. The user sets their own password on first sign-in.</p>`}
     <div id="ua_access_block" style="margin-top:10px${(u?u.role:"audit_staff")!=="audit_staff"?" ;display:none":""}">
@@ -3838,6 +3906,73 @@ function closeModal(){
   const m=document.getElementById("modal");
   if(m) m.classList.remove("wide");
 }
+/* ---- Feedback: success modal + button progress ---- */
+function isStaff(){ const r=window.AMS_USER&&window.AMS_USER.role; return !r||r==="audit_staff"; }
+function requireHead(){ if(!isHeadUser()){ alert("Only the Head of Audit can perform this action."); return false; } return true; }
+function modalSuccess(msg,title){
+  openModal(title||"Success",`<div class="success-modal"><div class="success-check" aria-hidden="true"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div><div class="success-msg">${esc(msg||"Done.")}</div></div>`,
+    `<button class="btn" onclick="closeModal()">Done</button>`);
+}
+function btnBusy(btn,label){
+  if(!btn) return function(){};
+  const orig=btn.innerHTML, od=btn.disabled;
+  btn.disabled=true; btn.innerHTML=`<span class="btn-spin" aria-hidden="true"></span> ${esc(label||"Saving…")}`;
+  return function(){ btn.disabled=od; btn.innerHTML=orig; };
+}
+// Run a (sync-mutating) save with visible progress on the clicked button, then a success modal.
+function saveWithFeedback(ev,mutate,successMsg){
+  const btn=ev&&(ev.currentTarget||ev.target); const done=btnBusy(btn,"Saving…");
+  Promise.resolve().then(()=>{
+    let ok=true; try{ ok=mutate()!==false; }catch(e){ ok=false; }
+    return (ok?saveNow().catch(()=>{}):Promise.resolve()).then(()=>{ done(); if(ok){ render(); modalSuccess(successMsg||"Saved successfully."); } });
+  });
+}
+/* ---- First-login welcome + onboarding tour ---- */
+function onboardKey(){ const u=window.AMS_USER; return u?"al_onboarded_"+u.id:null; }
+function maybeStartOnboarding(){
+  const k=onboardKey(); if(!k) return;
+  try{ if(localStorage.getItem(k)) return; }catch(e){ return; }
+  const u=window.AMS_USER;
+  const ovEl=document.getElementById("overlay");
+  const blocked = (u&&u.mustChangePassword) || document.querySelector(".pw-change-overlay") || (ovEl&&ovEl.classList.contains("show"));
+  if(blocked){ setTimeout(maybeStartOnboarding, 1500); return; } // wait out the forced password change / any open modal
+  modalWelcome();
+}
+function markOnboarded(){ const k=onboardKey(); try{ if(k) localStorage.setItem(k,"1"); }catch(e){} }
+function finishOnboarding(){ markOnboarded(); closeModal(); }
+function modalWelcome(){
+  const u=window.AMS_USER||{}; const first=esc((u.name||"there").split(/\s+/)[0]);
+  const role=isActionOwner()?"You'll see the remediation actions assigned to your department — respond, upload evidence and track them to closure.":isStaff()?"You can work the audits assigned to you — add reports, raise observations and track remediation.":"You have full oversight — audits, risk assessment, fraud, approvals and reporting.";
+  openModal("Welcome to AuditLens 👋",`<div class="success-modal" style="gap:12px"><div class="onboard-hero">AL</div><div class="success-msg">Hi ${first}, welcome to <b>AuditLens</b> — your internal audit workspace.<br><br>${role}</div></div>`,
+    `<button class="btn sec" onclick="finishOnboarding()">Skip</button><button class="btn" onclick="startTour()">Take a quick tour →</button>`);
+}
+function tourSteps(){
+  if(isActionOwner()) return [
+    {title:"Your dashboard",body:"The <b>Dashboard</b> highlights what needs your attention — overdue and due-soon actions assigned to your department."},
+    {title:"My Observations",body:"<b>My Observations</b> lists every finding raised against your department. Open one to see the full details."},
+    {title:"Respond & upload evidence",body:"On each observation, add updates and <b>attach evidence</b> in “Updates & evidence”, then <b>Mark rectified</b> for Internal Audit to verify."},
+  ];
+  if(isStaff()) return [
+    {title:"Your audits",body:"In <b>Audits & Reports</b>, the “Assigned to me” filter shows the audits you lead. Open one to add reports."},
+    {title:"Raise observations",body:"Inside a report, use <b>+ Add observation (AI)</b> to draft a finding, assign an action owner and submit it for Head of Audit approval."},
+    {title:"Track remediation",body:"The <b>Remediation Tracker</b> shows approved observations by expected close. You'll be notified as owners respond."},
+  ];
+  return [
+    {title:"Oversight at a glance",body:"The <b>Dashboard</b> rolls up every audit, observation and exposure across the organisation."},
+    {title:"Plan & assess",body:"Use <b>Audit Risk Assessment</b> to build the universe and annual plan, and <b>Fraud Risk</b> for the fraud register."},
+    {title:"Approvals",body:"The <b>Approvals</b> inbox is where you sign off staff-raised observations, status changes and plan completions — the bell and badge flag new requests."},
+    {title:"People & departments",body:"In <b>Settings</b>, add departments (each head becomes an action-owner login) and manage user access."},
+  ];
+}
+let _tourIdx=0;
+function startTour(){ _tourIdx=0; showTourStep(); }
+function showTourStep(){
+  const steps=tourSteps(); const s=steps[_tourIdx]; if(!s){ finishOnboarding(); return; }
+  openModal(s.title,`<div class="onboard-step">${s.body}</div><div class="onboard-dots">${steps.map((_,i)=>`<span class="onboard-dot${i===_tourIdx?" on":""}"></span>`).join("")}</div>`,
+    `${_tourIdx>0?`<button class="btn sec" onclick="tourPrev()">Back</button>`:`<button class="btn sec" onclick="finishOnboarding()">Skip</button>`}<button class="btn" onclick="tourNext()">${_tourIdx>=steps.length-1?"Get started":"Next →"}</button>`);
+}
+function tourNext(){ const steps=tourSteps(); if(_tourIdx>=steps.length-1){ finishOnboarding(); return; } _tourIdx++; showTourStep(); }
+function tourPrev(){ if(_tourIdx>0){ _tourIdx--; showTourStep(); } }
 function modalNewObs(){
   openModal("New Observation", viewNewObs(), `<button class="btn sec" onclick="closeModal()">Close</button>`);
   const m=document.getElementById("modal");
@@ -3845,24 +3980,28 @@ function modalNewObs(){
 }
 
 
+function curQuarter(){ const d=new Date(); return "Q"+(Math.floor(d.getMonth()/3)+1)+" "+d.getFullYear(); }
+function deptDatalistHTML(id){ const D=departments(); return `<datalist id="${id||"deptList"}">${D.map(d=>`<option value="${esc(d.name)}"></option>`).join("")}</datalist>`; }
 async function modalAudit(id){
+  if(isStaff()){ alert("Only the Head of Audit can create or edit audits."); return; }
   if(!_directoryCache.length) await loadDirectory();
-  const a=id?audit(id):{name:"",type:"process",area:"",period:"",leadAuditor:"",leadAuditorId:"",status:"In progress"};
+  const a=id?audit(id):{name:"",type:"process",area:"",period:curQuarter(),leadAuditor:"",leadAuditorId:"",status:"In progress"};
   const leadKnown=_directoryCache.some(u=>u.id===a.leadAuditorId);
   openModal(id?"Edit audit":"New audit",`
     <label>Audit name *</label><input id="m_name" value="${esc(a.name)}" placeholder="e.g. Credit Operations Audit 2026">
     <div class="f2">
       <div><label>Basis</label><select id="m_type"><option value="process"${a.type==="process"?" selected":""}>Process audit</option><option value="department"${a.type==="department"?" selected":""}>Department audit</option></select></div>
-      <div><label>Process / Department</label><input id="m_area" value="${esc(a.area)}" placeholder="e.g. Credit Operations"></div>
+      <div><label>Process / Department</label><input id="m_area" list="deptList" value="${esc(a.area)}" placeholder="Select or type…">${deptDatalistHTML()}</div>
     </div>
     <div class="f3">
-      <div><label>Period</label><input id="m_period" value="${esc(a.period)}" placeholder="e.g. Q2 2026"></div>
+      <div><label>Period <span class="hint">(auto)</span></label><input id="m_period" value="${esc(a.period)}" placeholder="e.g. Q2 2026"></div>
       <div><label>Lead auditor <span class="hint">(owns this audit)</span></label><select id="m_lead">${auditorOptions(a.leadAuditorId)}${(!leadKnown&&a.leadAuditor)?`<option value="__keep" selected>${esc(a.leadAuditor)} (unlinked)</option>`:""}</select></div>
       <div><label>Status</label><select id="m_status">${[...AUDIT_STATUS,...(a.status&&!AUDIT_STATUS.includes(a.status)?[a.status]:[])].map(s=>`<option${(a.status||"In progress")===s?" selected":""}>${esc(s)}</option>`).join("")}</select></div>
     </div>`,
-    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveAudit('${id||""}')">Save</button>`);
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveAudit('${id||""}')">${id?"Save":"Create audit"}</button>`);
 }
 function saveAudit(id){
+  if(isStaff()){ alert("Only the Head of Audit can create or edit audits."); return; }
   const name=val("m_name"); if(!name){alert("Name required");return;}
   const leadId=val("m_lead");
   const lead=_directoryCache.find(u=>u.id===leadId);
@@ -3870,31 +4009,59 @@ function saveAudit(id){
   const leadAuditorId=leadId==="__keep"?(prev?prev.leadAuditorId||"":""):leadId;
   const leadAuditor=leadId==="__keep"?(prev?prev.leadAuditor||"":""):(lead?lead.name:"");
   const data={name,type:val("m_type"),area:val("m_area"),period:val("m_period"),leadAuditorId,leadAuditor,status:val("m_status")};
-  if(id){ Object.assign(audit(id),data); logAudit("workspace.audit_updated","Updated audit "+name,{ auditId:id, name }); }
-  else{ const nid=uid(); DB.audits.push({id:nid,...data,createdAt:new Date().toISOString(),reports:[]}); logAudit("workspace.audit_created","Created audit "+name,{ auditId:nid, name }); }
-  save(); closeModal(); render();
+  const assignedNew = leadAuditorId && (!id || (prev && prev.leadAuditorId!==leadAuditorId));
+  let nid=id;
+  saveWithFeedback(event,function(){
+    if(id){ Object.assign(audit(id),data); logAudit("workspace.audit_updated","Updated audit "+name,{ auditId:id, name }); }
+    else{ nid=uid(); DB.audits.push({id:nid,...data,createdAt:new Date().toISOString(),reports:[]}); logAudit("workspace.audit_created","Created audit "+name,{ auditId:nid, name }); }
+    if(assignedNew) notifyAuditAssigned(leadAuditorId,name,nid);
+  }, id?"Audit updated.":"Audit created.");
+  // Open the new audit's page.
+  setTimeout(function(){ if(!id) go("audit",{audit:nid}); }, 30);
+}
+function notifyAuditAssigned(userId,auditName,auditId){
+  if(!userId) return;
+  notify(userId,"assigned","You've been assigned as lead auditor for “"+auditName+"”","audits");
+  const u=(_directoryCache||[]).find(x=>x.id===userId);
+  if(u&&u.email) emailNotify([u.email],"AuditLens — you've been assigned an audit",`You have been assigned as the lead auditor for "${auditName}" in AuditLens. Sign in to view it, add reports and raise observations.`);
 }
 
+function nextReportRef(){
+  const year=(new Date()).getFullYear(); let max=0;
+  DB.audits.forEach(a=>a.reports.forEach(r=>{ const m=String(r.refNo||"").match(/(\d{1,4})\s*$/); if(m){ const n=+m[1]; if(n>max) max=n; } }));
+  let ref, n=max; const existing=new Set(); DB.audits.forEach(a=>a.reports.forEach(r=>existing.add((r.refNo||"").trim())));
+  do { n++; ref="IA/"+year+"/"+String(n).padStart(3,"0"); } while(existing.has(ref) && n<9999);
+  return ref;
+}
+function quarterOptions(sel){
+  const y=(new Date()).getFullYear(); const opts=[];
+  for(let yr=y+1; yr>=y-2; yr--){ for(let q=4;q>=1;q--) opts.push("Q"+q+" "+yr); }
+  if(sel && !opts.includes(sel)) opts.unshift(sel);
+  return `<option value="">— select —</option>`+opts.map(o=>`<option value="${esc(o)}"${sel===o?" selected":""}>${esc(o)}</option>`).join("");
+}
 function modalReport(aid,rid){
-  const a=audit(aid); const r=rid?report(a,rid):{title:"",refNo:"",period:a.period||"",scope:"",status:"Draft",execSummaryNarrative:""};
+  const a=audit(aid); const r=rid?report(a,rid):{title:"",refNo:nextReportRef(),period:a.period||curQuarter(),scope:"",status:"Draft",execSummaryNarrative:""};
   openModal(rid?"Edit report":"New report",`
     <label>Report title *</label><input id="m_title" value="${esc(r.title)}" placeholder="e.g. Loan Origination Controls Review">
     <div class="f3">
-      <div><label>Reference no.</label><input id="m_ref" value="${esc(r.refNo)}" placeholder="e.g. IA/2026/014"></div>
-      <div><label>Period covered</label><input id="m_rperiod" value="${esc(r.period)}"></div>
+      <div><label>Reference no. <span class="hint">(auto)</span></label><input id="m_ref" value="${esc(r.refNo)}" placeholder="IA/2026/014"></div>
+      <div><label>Period covered</label><select id="m_rperiod">${quarterOptions(r.period)}</select></div>
       <div><label>Status</label><select id="m_rstatus">${["Draft","In Review","Final"].map(s=>`<option${r.status===s?" selected":""}>${s}</option>`).join("")}</select></div>
     </div>
     <label>Report type</label><select id="m_kind">${["Audit report","Process review report"].map(k=>`<option${(r.kind||"Audit report")===k?" selected":""}>${k}</option>`).join("")}</select>
     <div class="hint" style="margin-top:4px">A “Process review report” adds a dedicated <b>Proposed SOP Updates</b> section to the Word export.</div>
     <label>Scope</label><textarea id="m_scope" placeholder="What this report covers...">${esc(r.scope)}</textarea>`,
-    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveReport('${aid}','${rid||""}')">Save</button>`);
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveReport('${aid}','${rid||""}')">${rid?"Save":"Create report"}</button>`);
 }
 function saveReport(aid,rid){
   const a=audit(aid); const title=val("m_title"); if(!title){alert("Title required");return;}
   const data={title,refNo:val("m_ref"),period:val("m_rperiod"),status:val("m_rstatus"),kind:val("m_kind"),scope:val("m_scope")};
-  if(rid){ Object.assign(report(a,rid),data); }
-  else{ const nr=uid(); a.reports.push({id:nr,...data,execSummaryNarrative:"",createdAt:new Date().toISOString(),observations:[]}); logAudit("workspace.report_created","Created report "+title+" in "+(a.name||"audit"),{ auditId:aid, reportId:nr, title }); }
-  save(); closeModal(); render();
+  let nr=rid;
+  saveWithFeedback(event,function(){
+    if(rid){ Object.assign(report(a,rid),data); }
+    else{ nr=uid(); a.reports.push({id:nr,...data,execSummaryNarrative:"",createdAt:new Date().toISOString(),observations:[]}); logAudit("workspace.report_created","Created report "+title+" in "+(a.name||"audit"),{ auditId:aid, reportId:nr, title }); }
+  }, rid?"Report updated.":"Report created.");
+  setTimeout(function(){ go("report",{audit:aid,report:nr}); }, 30);
 }
 
 const ASSURANCE = ["High assurance","Moderate assurance","Limited assurance","No assurance"];
@@ -3952,7 +4119,8 @@ Return ONLY a JSON object with these exact keys:
 }`;
 }
 async function generateExecSummary(aid,rid){
-  await runAiJson(buildExecPrompt(aid,rid),"exErr",d=>{ doImportExec(aid,rid,d); });
+  if(isStaff()){ alert("Only the Head of Audit can generate the executive summary."); return; }
+  await runAiJson(buildExecPrompt(aid,rid),"exErr",d=>{ if(doImportExec(aid,rid,d)) modalSuccess("Executive summary generated."); });
 }
 function modalImportExec(aid,rid){ modalExecPrompt(aid,rid); }
 function doImportExec(aid,rid,raw){
@@ -4120,7 +4288,7 @@ function obsFromAi(d){
   return {id:uid(),ref:d.ref||"",title:d.title||"(untitled)",category:d.category||"",
     description:d.description||"",criteria:d.criteria||"",risk:d.risk||d.impact||"",rootCause:d.rootCause||d.root_cause||"",
     recommendation:d.recommendation||"",sopUpdate:"",criticality:crit,managementResponse:"",
-    owner:d.owner||"",timeline:TIMELINES.includes(d.timeline)?d.timeline:"",dueDate:"",isRepeat:false,repeatOf:"",status:"Open",createdAt:new Date().toISOString()};
+    owner:d.owner||"",timeline:TIMELINES.includes(d.timeline)?d.timeline:"",dueDate:"",agreedTarget:d.agreedTarget||d.agreed_target||"",isRepeat:false,repeatOf:"",status:"Open",createdAt:new Date().toISOString()};
 }
 function doImport(aid,rid,raw,errId){
   errId=errId||"impErr";
@@ -4146,16 +4314,16 @@ function openRaiseModal(){
     <label>Action owner (department head) *</label>
     <select id="rz_owner">${ownerOptions("")}</select>
     ${haveOwners?"":`<div class="hint" style="color:var(--crit);margin-top:4px">No department heads exist yet — add departments in Settings to assign an owner (you can still raise without one).</div>`}
-    <div class="f3" style="margin-top:8px">
+    <div class="f2" style="margin-top:8px">
       <div><label>Resolution timeline</label><select id="rz_tl"><option value="">— select —</option>${TIMELINES.map(t=>`<option${o.timeline===t?" selected":""}>${t}</option>`).join("")}</select></div>
       <div><label>Due date</label><input type="date" id="rz_due"></div>
-      <div><label>Agreed target <span class="hint">(optional)</span></label><input id="rz_target" placeholder="e.g. 31 Aug 2026"></div>
     </div>
-    <div class="f2" style="margin-top:6px">
-      <div><label>Repeat observation?</label><label style="display:flex;align-items:center;gap:8px;font-weight:400;margin-top:4px"><input type="checkbox" id="rz_rep" style="width:auto"> Raised in a prior audit</label></div>
-      <div><label>Repeat of <span class="hint">(prior ref / period)</span></label><input id="rz_repof" placeholder="e.g. IA/2025/014"></div>
-    </div>
-    <div style="margin-top:10px"><button class="btn sec sm" type="button" onclick="suggestRaiseRepeats()">🔁 Suggest possible repeats</button> <button class="btn sec sm ai-generate-btn" type="button" onclick="aiScanRepeats()">AI scan for repeats</button></div>
+    <label style="margin-top:8px">Agreed target <span class="hint">(auto-suggested — edit as needed)</span></label>
+    <textarea id="rz_target" style="min-height:64px" placeholder="e.g. Remediation to be completed by 31 Aug 2026.">${esc(o.agreedTarget||"")}</textarea>
+    <div style="margin-top:8px"><label style="display:flex;align-items:center;gap:8px;font-weight:400"><input type="checkbox" id="rz_rep" style="width:auto"> Repeat observation (raised in a prior audit)</label></div>
+    <label style="margin-top:6px">Repeat of <span class="hint">(search prior observations)</span></label>
+    ${raiseRepeatSearchHTML(pr.rid)}
+    <div style="margin-top:8px"><button class="btn sec sm ai-generate-btn" type="button" onclick="aiScanRepeats()">AI scan for repeats</button></div>
     <div id="rzRepSug" style="margin-top:6px;font-size:13px"></div>
     <div id="rz_err" style="margin-top:10px"></div>
     <div class="hint" style="margin-top:10px">${head?"As Head of Audit, this observation is raised and the action owner is notified immediately.":"This observation will be sent to the Head of Audit for approval before the action owner is notified."}</div>`,
@@ -4164,6 +4332,13 @@ function openRaiseModal(){
 function cancelRaise(){ _pendingRaise=null; closeModal(); }
 function suggestRaiseRepeats(){ const pr=_pendingRaise; if(!pr)return; const el=document.getElementById("rzRepSug"); if(el) el.innerHTML=repeatSuggestHTML(pr.obs.title,pr.rid,pr.obs.id); }
 function priorObsForRepeat(rid){ const out=[]; DB.audits.forEach(a=>a.reports.forEach(r=>{ if(r.id===rid) return; r.observations.forEach(o=>out.push({ref:o.ref||o.id,title:o.title,audit:a.name,report:r.title,status:o.status||"Open"})); })); return out; }
+function raiseRepeatSearchHTML(rid){
+  const priors=priorObsForRepeat(rid);
+  return `<div class="ra-link-search"><input class="ra-link-input" id="rz_repof" placeholder="Search prior observations…" autocomplete="off" oninput="raiseRepeatFilter(this)" onfocus="raiseRepeatFilter(this)">
+    <div class="ra-link-menu">${priors.length?priors.map(p=>{ const label=(p.ref?p.ref+" — ":"")+p.title; return `<div class="ra-link-opt" data-name="${esc((p.ref+" "+p.title+" "+p.audit+" "+p.report).toLowerCase())}" data-label="${esc(label)}" onmousedown="event.preventDefault()" onclick="raisePickRepeat(this)">${esc(label)}<div class="hint">${esc(p.audit)} · ${esc(p.report)} · ${esc(p.status)}</div></div>`; }).join(""):`<div class="ra-link-opt" style="color:#94a3b8">No prior observations in other reports.</div>`}</div></div>`;
+}
+function raiseRepeatFilter(input){ const q=input.value.toLowerCase().trim(); const menu=input.parentNode.querySelector(".ra-link-menu"); if(!menu)return; menu.querySelectorAll(".ra-link-opt").forEach(o=>{ const dn=o.getAttribute("data-name"); o.style.display=(!q||(dn&&dn.indexOf(q)>=0))?"":"none"; }); }
+function raisePickRepeat(el){ const label=el.getAttribute("data-label")||""; const inp=document.getElementById("rz_repof"); if(inp) inp.value=label; const cb=document.getElementById("rz_rep"); if(cb) cb.checked=true; }
 async function aiScanRepeats(){
   const pr=_pendingRaise; if(!pr)return;
   const el=document.getElementById("rzRepSug");
@@ -4264,6 +4439,7 @@ async function aiGenerate(prompt,mode){
 function showAiErr(id,msg){
   const el=document.getElementById(id);
   if(el) el.innerHTML=msg?'<div class="ai-err">'+esc(msg)+"</div>":"";
+  else if(msg) alert(msg);
 }
 async function runAiJson(prompt,errId,onData){
   if(_aiBusy)return;
@@ -4640,6 +4816,7 @@ function initAuditBot(){
     loadDirectory().then(()=>{ render(); });
     render();
     startPolling();
+    setTimeout(maybeStartOnboarding, 600);
   }).catch(()=>{ render(); });
 }
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initAuditBot);
