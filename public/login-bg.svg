@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="base" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#eef8f2"/>
+      <stop offset="0.5" stop-color="#f7fbf9"/>
+      <stop offset="1" stop-color="#e6f4ec"/>
+    </linearGradient>
+    <linearGradient id="wave" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#79c9a4"/>
+      <stop offset="1" stop-color="#a8e0c4"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#bfe8d4" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#bfe8d4" stop-opacity="0"/>
+    </radialGradient>
+    <g id="net">
+      <g fill="none" stroke="#8fd3b3" stroke-width="1.1" opacity="0.5">
+        <path d="M0 60 L120 0 L250 90 L360 30 L470 120"/>
+        <path d="M120 0 L250 90 L200 210 L360 30"/>
+        <path d="M250 90 L470 120 L440 240"/>
+      </g>
+      <g fill="#5cbf93">
+        <circle cx="0" cy="60" r="6"/><circle cx="250" cy="90" r="9"/><circle cx="470" cy="120" r="6"/>
+        <circle cx="200" cy="210" r="5"/><circle cx="440" cy="240" r="7"/>
+      </g>
+      <g fill="#bfe3d0"><circle cx="120" cy="0" r="7"/><circle cx="360" cy="30" r="6"/></g>
+    </g>
+    <g id="dots" fill="#9ad9ba">
+      <circle cx="0" cy="0" r="4"/><circle cx="26" cy="0" r="4"/><circle cx="52" cy="0" r="4"/><circle cx="78" cy="0" r="4"/><circle cx="104" cy="0" r="4"/>
+      <circle cx="0" cy="26" r="4"/><circle cx="26" cy="26" r="4"/><circle cx="52" cy="26" r="4"/><circle cx="78" cy="26" r="4"/><circle cx="104" cy="26" r="4"/>
+      <circle cx="0" cy="52" r="4"/><circle cx="26" cy="52" r="4"/><circle cx="52" cy="52" r="4"/><circle cx="78" cy="52" r="4"/><circle cx="104" cy="52" r="4"/>
+    </g>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#base)"/>
+  <ellipse cx="820" cy="360" rx="620" ry="420" fill="url(#glow)"/>
+
+  <use href="#net" transform="translate(60 70)"/>
+  <use href="#net" transform="translate(1050 260) scale(0.95)"/>
+
+  <use href="#dots" transform="translate(1200 80)" opacity="0.75"/>
+  <use href="#dots" transform="translate(60 820)" opacity="0.7"/>
+
+  <!-- faint audit icons -->
+  <g opacity="0.32" fill="none" stroke="#7bcaa4" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M150 250 l70 -26 l70 26 v70 c0 55 -40 92 -70 105 c-30 -13 -70 -50 -70 -105 z"/>
+    <path d="M185 315 l22 22 l40 -46"/>
+  </g>
+  <g opacity="0.3" fill="none" stroke="#7bcaa4" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="1380" cy="255" r="70"/>
+    <path d="M1355 285 v-22 M1380 285 v-40 M1405 285 v-14"/>
+  </g>
+  <g opacity="0.3" fill="none" stroke="#7bcaa4" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="1330" y="470" width="86" height="108" rx="8"/>
+    <path d="M1360 462 h26 v18 h-26 z M1348 500 l8 8 l14 -16 M1348 528 l8 8 l14 -16 M1382 502 h22 M1382 530 h22"/>
+  </g>
+
+  <!-- layered waves -->
+  <path d="M0 720 C 300 640 520 800 820 720 C 1120 640 1360 780 1600 700 L1600 900 L0 900 Z" fill="url(#wave)" opacity="0.35"/>
+  <path d="M0 780 C 320 710 560 850 880 770 C 1180 700 1380 820 1600 760 L1600 900 L0 900 Z" fill="url(#wave)" opacity="0.55"/>
+  <g fill="none" stroke="#ffffff" stroke-width="1.4" opacity="0.5">
+    <path d="M0 800 C 320 735 560 865 880 790 C 1180 720 1380 835 1600 780"/>
+    <path d="M0 830 C 320 770 560 890 880 820 C 1180 755 1380 860 1600 810"/>
+  </g>
+</svg>

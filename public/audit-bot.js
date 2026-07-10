@@ -243,7 +243,8 @@ function go(v,opts={}){
   if(opts.report!==undefined) curReport=opts.report;
   if(opts.obs!==undefined) curObs=opts.obs;
   else if(v!=="observation" && v!=="sopupdate") curObs=null;
-  document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("active",b.dataset.view===v && v!=="report" && v!=="observation" && v!=="sopupdate" && v!=="audit"));
+  if(opts.unit!==undefined) curRaUnit=opts.unit;
+  document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("active",b.dataset.view===v && v!=="report" && v!=="observation" && v!=="sopupdate" && v!=="audit" && v!=="raunit"));
   render();
 }
 function backBtn(fn){ return `<button class="btn-back" onclick="${fn}" title="Back"><span aria-hidden="true">←</span> Back</button>`; }
@@ -325,7 +326,8 @@ function render(){
   A.innerHTML=""; setTopSearch(""); setTopBack("");
   if(window.AMS_USER && window.AMS_USER.role==="action_owner" && !["myobs","observation"].includes(view)){ view="myobs"; }
   if(view==="dashboard"){ T.textContent=pageTitleFor("dashboard"); A.innerHTML=`<button class="btn sec sm" onclick="exportDashboard()">⤓ Export dashboard</button><button class="btn sec sm" onclick="modalCaeReport()">⤓ Quarterly BAC report</button>`; C.innerHTML=viewDashboard(); }
-  else if(view==="auditra"){ T.textContent=pageTitleFor("auditra"); A.innerHTML=`${btnDownload("modalRADownload()","Download")}<button class="btn sm dark ai-generate-btn" onclick="modalRAPrompt()">Generate audit universe</button><button class="btn sm" onclick="modalRA()">+ Add unit</button>`; C.innerHTML=viewAuditRA(); }
+  else if(view==="auditra"){ T.textContent=pageTitleFor("auditra"); A.innerHTML=auditUniverse().length?`${iconBtn("modalRADownload()","⤓","Download")}<button class="btn sm" onclick="modalNewAuditPlan()">+ New audit plan</button>`:`<button class="btn sm dark ai-generate-btn" onclick="modalRAPrompt()">Generate audit universe</button>`; C.innerHTML=viewAuditRA(); }
+  else if(view==="raunit"){ renderRaUnit(C,T,A); }
   else if(view==="fraud"){ T.textContent=pageTitleFor("fraud"); A.innerHTML=`${btnDownload("modalFraudDownload()","Download")}<button class="btn sm dark ai-generate-btn" onclick="modalFraudPrompt()">Generate fraud risks</button><button class="btn sm" onclick="modalFraud()">+ Add fraud risk</button>`; C.innerHTML=viewFraud(); }
   else if(view==="external"){ T.textContent=pageTitleFor("external"); A.innerHTML=`<button class="btn sec sm" onclick="exportExternal()">⤓ Status report (Word)</button><button class="btn sm dark" onclick="modalExtImport()">⤒ Import findings</button><button class="btn sm" onclick="modalExt()">+ Add finding</button>`; C.innerHTML=viewExternal(); }
   else if(view==="iasa"){ T.textContent=pageTitleFor("iasa"); A.innerHTML=`<button class="btn sec sm" onclick="exportIASA()">⤓ Self-assessment (Word)</button><button class="btn sm dark ai-generate-btn" onclick="modalIASAPrompt()">Generate assessment</button>`; C.innerHTML=viewIASA(); }
@@ -489,7 +491,7 @@ function viewDashboard(){
         <td>${esc(o._a.name)}<div class="hint">${esc(o._a.area||"")}</div></td>
         <td>${esc(o.owner||"—")}</td>
         <td>${statusPill(o.status)}</td>
-        <td>${nc?`<span class="pill note-count">${nc} note${nc!==1?"s":""}</span>`:`<span class="hint">— add</span>`}</td>
+        <td onclick="event.stopPropagation()"><button class="btn ghost sm watch-note-btn" onclick="modalAddNote('${o._a.id}','${o._r.id}','${o.id}')" title="Add / view notes">${nc?`<span class="pill note-count">${nc} note${nc!==1?"s":""}</span>`:`+ Add note`}</button></td>
       </tr>`+(isOpen?`<tr class="watch-detail-row"><td colspan="7">${watchDetailHTML(o)}</td></tr>`:""); }).join("")+`</tbody></table>`+(watchlist.length>15?`<div class="hint" style="margin-top:8px">Showing 15 of ${watchlist.length}.</div>`:"")
       :`<div class="empty">No open observations due within 2 weeks.</div>`}
   </div>
@@ -534,9 +536,8 @@ function watchDetailHTML(o){
   return `<div class="watch-detail anim-fade-in">
     <div class="watch-detail-meta">${meta.map(([k,v])=>`<div class="watch-meta-item"><span class="watch-meta-label">${k}</span><span class="watch-meta-value">${v}</span></div>`).join("")}</div>
     <div class="obs-detail-sections">${sections||`<div class="hint">No further detail captured for this observation.</div>`}</div>
-    ${notesHTML(o)}
     <div class="row" style="margin-top:12px;gap:8px">
-      <button class="btn sm" onclick="modalAddNote('${a.id}','${r.id}','${o.id}')">+ Add note</button>
+      <button class="btn sm" onclick="modalAddNote('${a.id}','${r.id}','${o.id}')">${(o.notes||[]).length?"Notes ("+(o.notes||[]).length+")":"+ Add note"}</button>
       <button class="btn sec sm" onclick="go('observation',{audit:'${a.id}',report:'${r.id}',obs:'${o.id}'})">Open full observation →</button>
     </div>
   </div>`;
@@ -827,6 +828,34 @@ function exportInsights(){
 }
 
 /* ============================ AUDIT RISK ASSESSMENT / PLAN ============================ */
+let curRaUnit=null;
+function planYearsList(){
+  const set=new Set();
+  (DB.planYears||[]).forEach(y=>set.add(String(y)));
+  auditUniverse().forEach(e=>raYearsIn(e.plannedPeriod).forEach(y=>set.add(String(y))));
+  if(DB.planYear) set.add(String(DB.planYear));
+  const arr=[...set].filter(Boolean);
+  if(!arr.length) arr.push(String(planYear()));
+  return arr.sort((a,b)=>+a-+b);
+}
+function raPlanYearOptions(sel){ return planYearsList().map(y=>`<option value="${esc(y)}"${String(sel)===y?" selected":""}>${esc(y)}</option>`).join(""); }
+function planYearHasData(y){ return auditUniverse().some(e=>raYearsIn(e.plannedPeriod).includes(+y)) || (DB.planYears||[]).map(String).includes(String(y)); }
+function modalNewAuditPlan(){
+  const cur=(new Date()).getFullYear();
+  openModal("New annual audit plan",`
+    <label>Plan year *</label>
+    <input type="number" id="np_year" min="2000" max="2100" value="${cur}" placeholder="e.g. ${cur}">
+    <div class="hint" style="margin-top:6px">Sets the active plan year. Units due in this year appear in the plan — schedule each into quarters.</div>
+    <div id="np_err" style="margin-top:8px"></div>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="createAuditPlan()">Create plan</button>`);
+}
+function createAuditPlan(){
+  const y=val("np_year"); const errEl=document.getElementById("np_err");
+  if(!/^20\d{2}$/.test(y)){ if(errEl) errEl.innerHTML=`<div class="hint" style="color:var(--crit)">Enter a valid year, e.g. ${(new Date()).getFullYear()}.</div>`; return; }
+  if(planYearHasData(y)){ if(!confirm(`A plan already exists for ${y}. Switch to it anyway?`)) return; }
+  DB.planYears=DB.planYears||[]; if(!DB.planYears.map(String).includes(y)) DB.planYears.push(y);
+  DB.planYear=y; logAudit("plan.year_created","Opened annual plan for "+y,{year:y}); save(); closeModal(); render();
+}
 function viewAuditRA(){
   const U=auditUniverse();
   if(!U.length){
@@ -843,7 +872,7 @@ function viewAuditRA(){
   const pctPlan=totalOcc?Math.round(doneOcc/totalOcc*100):0;
   let h=`<div class="ra-toolbar">
     <div class="filter-group"><span class="filter-label">Plan year</span>
-      <select class="field-select field-select-sm" onchange="DB.planYear=this.value;save();render();">${planYearOptions(planYear())}</select></div>
+      <select class="field-select field-select-sm" onchange="DB.planYear=this.value;save();render();">${raPlanYearOptions(planYear())}</select></div>
   </div>
   <div class="dash-kpis" style="grid-template-columns:repeat(5,1fr)">
     ${kpi("warn","High / Critical",counts.High+counts.Critical,"units by risk rating")}
@@ -852,7 +881,7 @@ function viewAuditRA(){
     ${kpi("base","In "+py+" plan",planned.length,"selected for the year")}
     ${kpi("good","Plan delivered",pctPlan+"%",doneOcc+" of "+totalOcc+" reviews done")}
   </div>
-  <div class="card"><div class="seclabel">Risk-ranked audit universe</div>
+  <div class="card"><div class="row" style="align-items:center;gap:10px;margin-bottom:2px"><div class="seclabel" style="margin:0">Risk-ranked audit universe</div><div class="spacer"></div><button class="btn sm" onclick="modalRA()">+ Add unit</button></div>
     <table class="ra-universe-table" style="margin-top:6px"><thead><tr><th>Auditable unit</th><th>Category</th><th>Risk score</th><th>Rating</th><th>Last audited</th><th>Frequency</th><th>Due</th><th></th></tr></thead><tbody>
     ${en.map(e=>`<tr>
       <td><b>${esc(e.name)}</b>${e.owner?`<div class="hint">${esc(e.owner)}</div>`:""}</td>
@@ -868,16 +897,15 @@ function viewAuditRA(){
     <div class="hint" style="margin-top:8px">Risk score = weighted average of factors (1–5). Frequency: Critical/High = annual · Medium = 2 yrs · Low = 3 yrs. “Due” = last audited + cycle ≤ plan year (or never audited).</div>
   </div>
   <div class="card"><div class="row" style="align-items:center;gap:10px"><div class="seclabel" style="margin:0">Annual Audit Plan — ${esc(planYear())}</div><div class="spacer"></div><span class="hint">${planned.length} engagement(s) · ${doneOcc}/${totalOcc} quarter-reviews done (${pctPlan}%)</span><button class="btn sm dark ai-generate-btn" onclick="modalAnnualPlanPrompt()">${planned.some(e=>(e.plannedPeriod||"").trim()||(e.rationale||"").trim())?"Regenerate":"Generate"} plan (AI)</button></div>
-    ${planned.length?`<div class="hint" style="margin:2px 0 8px">Click a row for full details, linked audits and to update its status.</div><table class="ra-plan-table" style="margin-top:6px"><thead><tr><th class="ra-plan-num-col">#</th><th>Auditable unit</th><th class="ra-rating-col">Rating</th><th class="ra-timing-col">Timing</th><th>Status</th><th class="ra-link-col">Linked audit</th><th>Rationale</th></tr></thead><tbody>
-      ${planned.map((e,i)=>{ const isOpen=!!raPlanOpen[e.id]; return `<tr class="ra-plan-row${isOpen?" open":""}" onclick="raPlanToggle('${e.id}',event)" title="Click for details">
+    ${planned.length?`<div class="hint" style="margin:2px 0 8px">Click a row to open the full engagement — details, linked audits and status.</div><table class="ra-plan-table" style="margin-top:6px"><thead><tr><th class="ra-plan-num-col">#</th><th>Auditable unit</th><th class="ra-rating-col">Rating</th><th class="ra-timing-col">Timing</th><th>Status</th><th class="ra-link-col">Linked audit</th></tr></thead><tbody>
+      ${planned.map((e,i)=>`<tr class="ra-plan-row" onclick="raPlanOpenUnit('${e.id}',event)" title="Open engagement">
         <td class="ra-plan-num-col">${i+1}</td>
-        <td><span class="watch-caret" aria-hidden="true">${isOpen?"▾":"▸"}</span> <b>${esc(e.name)}</b><div class="hint">${esc(e.freq)}${e.carryOverFrom?` · <span class="ra-carry">carried over from ${esc(String(e.carryOverFrom))}</span>`:""}</div></td>
+        <td><b>${esc(e.name)}</b><div class="hint">${esc(e.freq)}${e.carryOverFrom?` · <span class="ra-carry">carried over from ${esc(String(e.carryOverFrom))}</span>`:""}</div></td>
         <td class="ra-rating-col"><span class="pill" style="background:${hx2rgba(RA_HEX[e.band],.16)};color:${RA_HEX[e.band]}">${e.band}</span></td>
         <td class="ra-timing-col">${e.plannedPeriod?esc(e.plannedPeriod):`<span class="hint">—</span>`}</td>
         <td>${engStatusSummary(e)}</td>
         <td class="ra-link-col">${auditLinksCell(e)}</td>
-        <td class="hint">${esc(e.rationale||(e.due?"Due per "+e.freq.toLowerCase()+" cycle":e.band+" risk"))}</td>
-      </tr>`+(isOpen?`<tr class="ra-plan-detail-row"><td colspan="7">${raPlanDetailHTML(e)}</td></tr>`:""); }).join("")}
+      </tr>`).join("")}
     </tbody></table>`:`<div class="hint" style="margin:8px 0">No units in plan for this year.</div>`}
   </div>`;
   return h;
@@ -914,17 +942,35 @@ function engStatusText(e){ const occ=unitOcc(e); if(occ.length>1){ const d=occ.f
 function engStatusLabel(e){ if(engIsComplete(e))return "Completed"; if(pendingCompletion(e.id))return "Pending approval"; return e.engStatus||"Not started"; }
 function engStatusSummary(e){
   if(pendingCompletion(e.id)) return `<span class="pill ra-pending-pill">⏳ Pending approval</span>`;
-  const occ=unitOcc(e); const total=occ.length; const done=occ.filter(o=>o.done).length;
+  const total=unitOccTotal(e); const done=unitOccDone(e);
   const complete=engIsComplete(e);
-  const label=complete?"completed":(e.engStatus==="In progress"||done>0)?"in progress":e.engStatus==="Deferred"?"deferred":"not started";
-  if(total>1) return `<span class="ra-status-text${complete?" done":""}">${done}/${total} quarters · ${label}</span>`;
-  return `<span class="ra-status-text${complete?" done":""}">${label.charAt(0).toUpperCase()+label.slice(1)}</span>`;
+  return `<span class="pill ra-quarter-pill${complete?" done":""}">${done}/${total} quarter${total!==1?"s":""}</span>`;
 }
 let raPlanOpen={};
-function raPlanToggle(id,ev){
+function raPlanOpenUnit(id,ev){
   if(ev&&(ev.target.closest("button")||ev.target.closest("a")||ev.target.closest("select")||ev.target.closest("input")||ev.target.closest(".ra-linkbox")||ev.target.closest(".tag"))) return;
-  raPlanOpen[id]=!raPlanOpen[id];
-  render();
+  go("raunit",{unit:id});
+}
+function renderRaUnit(C,T,A){
+  const e=auditUniverse().find(x=>x.id===curRaUnit);
+  if(!e){ go("auditra"); return; }
+  const score=raComposite(e.factors); const band=e.ratingOverride||raBand(score);
+  T.textContent=pageTitleFor("auditra");
+  setTopBack(backBtn("go('auditra')"));
+  A.innerHTML=`<button class="btn sec sm" onclick="modalRA('${e.id}')">Edit unit &amp; timing</button>`;
+  C.innerHTML=`<div class="obs-detail-page anim-fade-in">
+    <header class="obs-detail-hero">
+      <div class="obs-detail-badges">
+        <span class="pill" style="background:${hx2rgba(RA_HEX[band],.16)};color:${RA_HEX[band]}">${band}</span>
+        ${engStatusSummary(e)}
+        ${e.plannedPeriod?`<span class="tag">${esc(e.plannedPeriod)}</span>`:""}
+        ${e.carryOverFrom?`<span class="pill ra-pending-pill">carried over from ${esc(String(e.carryOverFrom))}</span>`:""}
+      </div>
+      <h2 class="obs-detail-title">${esc(e.name)}</h2>
+      <p class="hint" style="margin:8px 0 0">${esc(e.category||"Auditable unit")} · Annual Audit Plan ${esc(planYear())}</p>
+    </header>
+    <div class="ra-unit-body">${raPlanDetailHTML(e)}</div>
+  </div>`;
 }
 function raPlanDetailHTML(e){
   const score=raComposite(e.factors); const band=e.ratingOverride||raBand(score);
@@ -1004,10 +1050,10 @@ function updateApprovalsBadge(){
 function unreadNotifCount(){ return myNotifications().filter(n=>!n.read).length; }
 function renderNotifBell(){
   const el=document.getElementById("notifBell"); if(!el) return;
-  if(!window.AMS_USER){ el.innerHTML=""; return; }
+  if(!window.AMS_USER || view==="auditra" || view==="raunit"){ el.innerHTML=""; return; }
   const open=el.querySelector(".notif-panel") && el.querySelector(".notif-panel").style.display==="block";
   const n=unreadNotifCount();
-  el.innerHTML=`<button class="notif-bell-btn" type="button" onclick="toggleNotifPanel(event)" title="Notifications" aria-label="Notifications">🔔${n>0?`<span class="notif-badge">${n>99?"99+":n}</span>`:""}</button>
+  el.innerHTML=`<button class="notif-bell-btn${n>0?" has-unread":""}" type="button" onclick="toggleNotifPanel(event)" title="Notifications" aria-label="Notifications"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>${n>0?`<span class="notif-badge">${n>99?"99+":n}</span>`:""}</button>
     <div class="notif-panel" id="notifPanel" style="display:${open?"block":"none"}">${notifPanelHTML()}</div>`;
 }
 function notifPanelHTML(){
