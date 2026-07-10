@@ -12,6 +12,9 @@ function cfg() {
     clientSecret: process.env.AZURE_AD_CLIENT_SECRET?.trim(),
     host: process.env.SHAREPOINT_SITE?.trim() || "credicorpng.sharepoint.com",
     sitePath: process.env.SHAREPOINT_SITE_PATH?.trim() || "/sites/auditlens",
+    // Optional pins — skip the site/drive lookups when provided.
+    siteId: process.env.SHAREPOINT_SITE_ID?.trim(),
+    driveId: process.env.SHAREPOINT_DRIVE_ID?.trim(),
   };
 }
 
@@ -52,8 +55,9 @@ async function getToken(): Promise<string> {
 let siteIdCache: string | null = null;
 
 async function getSiteId(token: string): Promise<string> {
-  if (siteIdCache) return siteIdCache;
   const c = cfg();
+  if (c.siteId) return c.siteId;
+  if (siteIdCache) return siteIdCache;
   const res = await fetch(`${GRAPH}/sites/${c.host}:${c.sitePath}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -64,6 +68,14 @@ async function getSiteId(token: string): Promise<string> {
   const json = (await res.json()) as { id: string };
   siteIdCache = json.id;
   return json.id;
+}
+
+// The Graph path segment for the target document library — a pinned drive if
+// configured, else the site's default drive.
+async function driveBase(token: string): Promise<string> {
+  const c = cfg();
+  if (c.driveId) return `/drives/${c.driveId}`;
+  return `/sites/${await getSiteId(token)}/drive`;
 }
 
 function safeName(name: string): string {
@@ -84,10 +96,10 @@ export async function uploadToSharePoint(opts: {
   data: ArrayBuffer;
 }): Promise<UploadedFile> {
   const token = await getToken();
-  const siteId = await getSiteId(token);
+  const base = await driveBase(token);
   const path = `AuditLens/${safeName(opts.obsId)}/${Date.now()}-${safeName(opts.fileName)}`;
   const res = await fetch(
-    `${GRAPH}/sites/${siteId}/drive/root:/${encodeURI(path)}:/content`,
+    `${GRAPH}${base}/root:/${encodeURI(path)}:/content`,
     {
       method: "PUT",
       headers: {
@@ -111,13 +123,13 @@ export async function downloadFromSharePoint(itemId: string): Promise<{
   name: string;
 }> {
   const token = await getToken();
-  const siteId = await getSiteId(token);
-  const metaRes = await fetch(`${GRAPH}/sites/${siteId}/drive/items/${itemId}`, {
+  const base = await driveBase(token);
+  const metaRes = await fetch(`${GRAPH}${base}/items/${itemId}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!metaRes.ok) throw new Error(`Graph item metadata ${metaRes.status}`);
   const meta = (await metaRes.json()) as { name: string; file?: { mimeType?: string } };
-  const contentRes = await fetch(`${GRAPH}/sites/${siteId}/drive/items/${itemId}/content`, {
+  const contentRes = await fetch(`${GRAPH}${base}/items/${itemId}/content`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!contentRes.ok) throw new Error(`Graph item content ${contentRes.status}`);
