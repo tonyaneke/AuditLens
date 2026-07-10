@@ -244,7 +244,8 @@ function go(v,opts={}){
   if(opts.obs!==undefined) curObs=opts.obs;
   else if(v!=="observation" && v!=="sopupdate") curObs=null;
   if(opts.unit!==undefined) curRaUnit=opts.unit;
-  document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("active",b.dataset.view===v && v!=="report" && v!=="observation" && v!=="sopupdate" && v!=="audit" && v!=="raunit"));
+  if(opts.fraud!==undefined) curFraud=opts.fraud;
+  document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("active",b.dataset.view===v && v!=="report" && v!=="observation" && v!=="sopupdate" && v!=="audit" && v!=="raunit" && v!=="fraudrisk"));
   render();
 }
 function backBtn(fn){ return `<button class="btn-back" onclick="${fn}" title="Back"><span aria-hidden="true">←</span> Back</button>`; }
@@ -328,6 +329,7 @@ function render(){
   if(view==="dashboard"){ T.textContent=pageTitleFor("dashboard"); A.innerHTML=`<button class="btn sec sm" onclick="exportDashboard()">⤓ Export dashboard</button><button class="btn sec sm" onclick="modalCaeReport()">⤓ Quarterly BAC report</button>`; C.innerHTML=viewDashboard(); }
   else if(view==="auditra"){ T.textContent=pageTitleFor("auditra"); A.innerHTML=auditUniverse().length?`${iconBtn("modalRADownload()","⤓","Download")}<button class="btn sm" onclick="modalNewAuditPlan()">+ New audit plan</button>`:`<button class="btn sm dark ai-generate-btn" onclick="modalRAPrompt()">Generate audit universe</button>`; C.innerHTML=viewAuditRA(); }
   else if(view==="raunit"){ renderRaUnit(C,T,A); }
+  else if(view==="fraudrisk"){ renderFraudRisk(C,T,A); }
   else if(view==="fraud"){ T.textContent=pageTitleFor("fraud"); A.innerHTML=`${btnDownload("modalFraudDownload()","Download")}<button class="btn sm dark ai-generate-btn" onclick="modalFraudPrompt()">Generate fraud risks</button><button class="btn sm" onclick="modalFraud()">+ Add fraud risk</button>`; C.innerHTML=viewFraud(); }
   else if(view==="external"){ T.textContent=pageTitleFor("external"); A.innerHTML=`<button class="btn sec sm" onclick="exportExternal()">⤓ Status report (Word)</button><button class="btn sm dark" onclick="modalExtImport()">⤒ Import findings</button><button class="btn sm" onclick="modalExt()">+ Add finding</button>`; C.innerHTML=viewExternal(); }
   else if(view==="iasa"){ T.textContent=pageTitleFor("iasa"); A.innerHTML=`<button class="btn sec sm" onclick="exportIASA()">⤓ Self-assessment (Word)</button><button class="btn sm dark ai-generate-btn" onclick="modalIASAPrompt()">Generate assessment</button>`; C.innerHTML=viewIASA(); }
@@ -842,19 +844,33 @@ function raPlanYearOptions(sel){ return planYearsList().map(y=>`<option value="$
 function planYearHasData(y){ return auditUniverse().some(e=>raYearsIn(e.plannedPeriod).includes(+y)) || (DB.planYears||[]).map(String).includes(String(y)); }
 function modalNewAuditPlan(){
   const cur=(new Date()).getFullYear();
+  const U=auditUniverse().slice().sort((a,b)=>raComposite(b.factors)-raComposite(a.factors));
   openModal("New annual audit plan",`
     <label>Plan year *</label>
     <input type="number" id="np_year" min="2000" max="2100" value="${cur}" placeholder="e.g. ${cur}">
-    <div class="hint" style="margin-top:6px">Sets the active plan year. Units due in this year appear in the plan — schedule each into quarters.</div>
-    <div id="np_err" style="margin-top:8px"></div>`,
+    <div id="np_err" style="margin-top:8px"></div>
+    <div class="seclabel" style="margin:16px 0 6px">Which units go into this plan?</div>
+    <label class="filter-check" style="display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:8px"><input type="checkbox" id="np_all" checked onchange="npToggleAll(this)" style="width:auto"> Include all ${U.length} unit(s)</label>
+    <div class="np-unit-list">
+      ${U.map(e=>{ const band=e.ratingOverride||raBand(raComposite(e.factors)); return `<label class="filter-check np-unit-row"><input type="checkbox" class="np_unit" value="${e.id}" checked onchange="npSyncAll()" style="width:auto"><span class="np-unit-name">${esc(e.name)}</span><span class="pill" style="background:${hx2rgba(RA_HEX[band],.16)};color:${RA_HEX[band]}">${band}</span>${e.plannedPeriod?`<span class="hint">${esc(e.plannedPeriod)}</span>`:""}</label>`; }).join("")}
+    </div>
+    <div class="hint" style="margin-top:8px">Checked units are scheduled into the plan year (their timing rolls to that year — edit a unit to set quarters). Unchecked units are excluded from this year's plan.</div>`,
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="createAuditPlan()">Create plan</button>`);
 }
+function npToggleAll(cb){ document.querySelectorAll(".np_unit").forEach(x=>{ x.checked=cb.checked; }); }
+function npSyncAll(){ const all=document.getElementById("np_all"); if(!all)return; const boxes=Array.from(document.querySelectorAll(".np_unit")); all.checked=boxes.length>0 && boxes.every(x=>x.checked); }
 function createAuditPlan(){
   const y=val("np_year"); const errEl=document.getElementById("np_err");
   if(!/^20\d{2}$/.test(y)){ if(errEl) errEl.innerHTML=`<div class="hint" style="color:var(--crit)">Enter a valid year, e.g. ${(new Date()).getFullYear()}.</div>`; return; }
-  if(planYearHasData(y)){ if(!confirm(`A plan already exists for ${y}. Switch to it anyway?`)) return; }
+  if(planYearHasData(y)){ if(!confirm(`A plan already exists for ${y}. Switch to it and re-apply the selected units?`)) return; }
+  const checked=new Set(Array.from(document.querySelectorAll(".np_unit:checked")).map(x=>x.value));
+  if(!checked.size){ if(errEl) errEl.innerHTML=`<div class="hint" style="color:var(--crit)">Select at least one unit for the plan.</div>`; return; }
+  auditUniverse().forEach(e=>{
+    if(checked.has(e.id)){ e.includeInPlan=true; if((e.plannedPeriod||"").trim()) e.plannedPeriod=e.plannedPeriod.replace(/20\d{2}/g,y); }
+    else { e.includeInPlan=false; }
+  });
   DB.planYears=DB.planYears||[]; if(!DB.planYears.map(String).includes(y)) DB.planYears.push(y);
-  DB.planYear=y; logAudit("plan.year_created","Opened annual plan for "+y,{year:y}); save(); closeModal(); render();
+  DB.planYear=y; logAudit("plan.year_created","Opened annual plan for "+y+" ("+checked.size+" unit(s))",{year:y}); save(); closeModal(); render();
 }
 function viewAuditRA(){
   const U=auditUniverse();
@@ -1053,7 +1069,7 @@ function renderNotifBell(){
   if(!window.AMS_USER || view==="auditra" || view==="raunit"){ el.innerHTML=""; return; }
   const open=el.querySelector(".notif-panel") && el.querySelector(".notif-panel").style.display==="block";
   const n=unreadNotifCount();
-  el.innerHTML=`<button class="notif-bell-btn${n>0?" has-unread":""}" type="button" onclick="toggleNotifPanel(event)" title="Notifications" aria-label="Notifications"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>${n>0?`<span class="notif-badge">${n>99?"99+":n}</span>`:""}</button>
+  el.innerHTML=`<button class="notif-bell-btn${n>0?" has-unread":""}" type="button" onclick="toggleNotifPanel(event)" title="Notifications" aria-label="Notifications"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M12 2a2 2 0 0 0-2 2v.35A6 6 0 0 0 6 10v3l-1.3 2.6A1 1 0 0 0 5.6 17h12.8a1 1 0 0 0 .9-1.45L18 13v-3a6 6 0 0 0-4-5.65V4a2 2 0 0 0-2-2Z"/><path d="M9.9 18a2.1 2.1 0 0 0 4.2 0Z"/></svg>${n>0?`<span class="notif-badge">${n>99?"99+":n}</span>`:""}</button>
     <div class="notif-panel" id="notifPanel" style="display:${open?"block":"none"}">${notifPanelHTML()}</div>`;
 }
 function notifPanelHTML(){
@@ -1305,7 +1321,7 @@ function viewFraud(){
   </div>
   <div class="card"><div class="seclabel">Fraud risk register</div>
     <table style="margin-top:6px"><thead><tr><th>Scheme</th><th>Category</th><th>Process</th><th>L×I</th><th>Inherent</th><th>Controls</th><th>Residual</th><th>Owner</th><th>Status</th><th></th></tr></thead><tbody>
-    ${en.map(f=>`<tr>
+    ${en.map(f=>`<tr class="tracker-row" onclick="go('fraudrisk',{fraud:'${f.id}'})" title="Open fraud risk">
       <td><b>${esc(f.scheme)}</b>${f.year?`<div class="hint">${esc(f.year)}</div>`:""}</td>
       <td>${esc(f.category)}</td><td>${esc(f.process||"—")}</td>
       <td style="text-align:center">${f.likelihood}×${f.impact}=${f.score}</td>
@@ -1313,7 +1329,7 @@ function viewFraud(){
       <td>${esc(f.controlStrength||"—")}</td>
       <td><span class="pill" style="background:${hx2rgba(BAND_HEX[f.res],.16)};color:${BAND_HEX[f.res]}">${f.res}</span></td>
       <td>${esc(f.owner||"—")}</td><td>${esc(f.status||"Identified")}</td>
-      <td class="ra-actions-cell">${iconBtn(`modalFraud('${f.id}')`,"✎","Edit")}${delBtn(`delFraud('${f.id}')`)}</td>
+      <td class="ra-actions-cell" onclick="event.stopPropagation()">${iconBtn(`modalFraud('${f.id}')`,"✎","Edit")}${delBtn(`delFraud('${f.id}')`)}</td>
     </tr>`).join("")}
     </tbody></table>
   </div>`;
@@ -1389,6 +1405,49 @@ function saveFraud(id){
   save(); closeModal(); render();
 }
 function delFraud(id){ if(!confirm("Delete this fraud risk?"))return; DB.fraudRisks=fraudList().filter(x=>x.id!==id); save(); render(); }
+let curFraud=null;
+function renderFraudRisk(C,T,A){
+  const f=fraudList().find(x=>x.id===curFraud);
+  if(!f){ go("fraud"); return; }
+  migrateFraudActions();
+  const score=f.likelihood*f.impact; const inh=fraudBand(score); const res=f.residualOverride||residualBand(inh,f.controlStrength);
+  const acts=fraudActions(f); const implN=acts.filter(a=>a.status==="Implemented").length;
+  T.textContent=pageTitleFor("fraud");
+  setTopBack(backBtn("go('fraud')"));
+  A.innerHTML=`<button class="btn sec sm" onclick="modalFraud('${f.id}')">Edit</button><button class="btn ghost sm danger" onclick="delFraud('${f.id}')">Delete</button>`;
+  const meta=[
+    ["Category",esc(f.category||"—")],
+    ["Process / area",esc(f.process||"—")],
+    ["Year",esc(f.year||"—")],
+    ["Likelihood × Impact",f.likelihood+" × "+f.impact+" = "+score],
+    ["Inherent risk",`<span class="pill" style="background:${hx2rgba(BAND_HEX[inh],.16)};color:${BAND_HEX[inh]}">${inh}</span>`],
+    ["Control strength",esc(f.controlStrength||"—")],
+    ["Residual risk",`<span class="pill" style="background:${hx2rgba(BAND_HEX[res],.16)};color:${BAND_HEX[res]}">${res}</span>`],
+    ["Owner",esc(f.owner||"—")]
+  ];
+  C.innerHTML=`<div class="obs-detail-page anim-fade-in">
+    <header class="obs-detail-hero">
+      <div class="obs-detail-badges">
+        <span class="pill" style="background:${hx2rgba(BAND_HEX[res],.16)};color:${BAND_HEX[res]}">Residual ${res}</span>
+        ${f.category?`<span class="tag">${esc(f.category)}</span>`:""}
+        <span class="tag">${esc(f.status||"Identified")}</span>
+      </div>
+      <h2 class="obs-detail-title">${esc(f.scheme||"Fraud risk")}</h2>
+      ${f.process?`<p class="hint" style="margin:8px 0 0">${esc(f.process)}</p>`:""}
+    </header>
+    <div class="obs-detail-meta">${meta.map(([k,v])=>`<div class="obs-meta-item"><span class="obs-meta-label">${k}</span><span class="obs-meta-value">${v}</span></div>`).join("")}</div>
+    <div class="obs-detail-sections">
+      ${detailSection("Description",f.description)}
+      ${detailSection("Existing controls",f.existingControls)}
+      ${detailSection("Prevention / response action",f.preventionAction)}
+    </div>
+    <div class="obs-notes">
+      <div class="obs-notes-label">Prevention actions${acts.length?` — ${implN}/${acts.length} implemented`:""}</div>
+      ${acts.length?acts.map(a=>`<div class="obs-note"><div class="obs-note-text"><b>${esc(a.text||"")}</b></div><div class="obs-note-meta">${a.type?esc(a.type):""}${a.type&&a.status?" · ":""}${a.status?esc(a.status):""}${a.owner?" · "+esc(a.owner):""}${a.targetDate?" · target "+esc(a.targetDate):""}</div>${a.update?`<div class="hint" style="margin-top:4px">${esc(a.update)}</div>`:""}</div>`).join(""):`<div class="hint">No prevention actions captured yet.</div>`}
+      <div class="row" style="margin-top:12px"><button class="btn sm" onclick="modalFraudAction('${f.id}')">+ Add action</button></div>
+    </div>
+  </div>`;
+}
 function modalFraudAction(rid,aid){
   const f=fraudList().find(x=>x.id===rid); if(!f)return; f.actions=f.actions||[];
   const a=aid?f.actions.find(x=>x.id===aid):{text:"",type:"Preventive",owner:f.owner||"",targetDate:"",status:"Planned"};
@@ -3127,9 +3186,16 @@ function obsGridCard(a,r,o){
     ${o.isRepeat?`<span class="pill repeat-pill">↻ REPEAT</span>`:""}
   </div>`;
 }
+function richText(v){
+  if(v==null||v==="") return "";
+  const s=String(v).trim();
+  const parts=s.split(/\r?\n+/).map(x=>x.replace(/^\s*(?:[-•*·▪]|\d+[.)])\s+/,"").trim()).filter(Boolean);
+  if(parts.length>1) return `<ul class="detail-bullets">${parts.map(l=>`<li>${esc(l)}</li>`).join("")}</ul>`;
+  return esc(s);
+}
 function detailSection(t,v){
   if(!v) return "";
-  return `<section class="obs-detail-section"><h4 class="obs-detail-label">${t}</h4><div class="obs-detail-content">${esc(v)}</div></section>`;
+  return `<section class="obs-detail-section"><h4 class="obs-detail-label">${t}</h4><div class="obs-detail-content">${richText(v)}</div></section>`;
 }
 /* ---- Observation remediation: evidence, updates, verification chain ---- */
 function obsUpdates(o){ o.updates=o.updates||[]; return o.updates; }
@@ -3236,7 +3302,7 @@ function obsRemediationHTML(o,a,r){
     <div class="obs-notes-label">Remediation &amp; verification</div>
     ${verifyStepperHTML(o)}
     ${o.ownerSop?`<div class="hint" style="margin:8px 0 4px">Owner re-uploaded SOP: <a href="/api/files/${esc(o.ownerSop.itemId)}" target="_blank" rel="noopener">${esc(o.ownerSop.name)}</a></div>`:""}
-    <div style="margin-top:8px" class="obs-notes-label">Updates &amp; evidence</div>
+    <div class="obs-notes-label obs-updates-label">Updates &amp; evidence</div>
     ${updates.length?updates.map(u=>`<div class="obs-note"><div class="obs-note-text">${esc(u.text||"")}</div>${(u.evidence||[]).map(e=>`<div class="hint">📎 <a href="/api/files/${esc(e.itemId)}" target="_blank" rel="noopener">${esc(e.name)}</a></div>`).join("")}<div class="obs-note-meta">${esc(u.byName||"")}${u.role?" ("+esc(roleLabel(u.role))+")":""}${u.at?" · "+esc(fmtDateTime(u.at)):""}</div></div>`).join(""):`<div class="hint">No updates yet.</div>`}
     ${canPost&&!closed?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">
       <textarea id="upd_text" placeholder="Add a comment / progress update…" style="min-height:70px"></textarea>
