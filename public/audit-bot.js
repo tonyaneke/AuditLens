@@ -69,6 +69,9 @@ function raInPlan(e,band,due){ return e.includeInPlan!=null? e.includeInPlan : (
 // ---- Annual plan: completion approvals + year rollover ----
 function isHeadUser(){ return !!(window.AMS_USER && window.AMS_USER.role==="head_of_audit"); }
 function isActionOwner(){ return !!(window.AMS_USER && window.AMS_USER.role==="action_owner"); }
+function isPrimaryOwner(o){ return !!(window.AMS_USER && o && o.ownerUserId && o.ownerUserId===window.AMS_USER.id); }
+function isSecondaryOwner(o){ return !!(window.AMS_USER && o && o.secondaryOwnerUserId && o.secondaryOwnerUserId===window.AMS_USER.id); }
+function ownerEmailFor(userId){ if(!userId) return ""; const u=(_directoryCache||[]).find(x=>x.id===userId); if(u&&u.email) return u.email; const d=departments().find(x=>x.headUserId===userId); return (d&&d.headEmail)||""; }
 function isAuditorUser(){ const r=window.AMS_USER&&window.AMS_USER.role; return r==="head_of_audit"||r==="audit_staff"||!r; }
 function approvals(){ DB.approvals=DB.approvals||[]; return DB.approvals; }
 function pendingCompletion(unitId){ return approvals().find(x=>x.kind==="engagement_completion" && x.unitId===unitId && x.status==="pending"); }
@@ -80,7 +83,11 @@ function notify(userId,kind,text,link){ if(!userId)return; notifications().push(
 function headUsers(){ return (_directoryCache||[]).filter(u=>u.role==="head_of_audit"); }
 function emailNotify(to,subject,text){ const list=(Array.isArray(to)?to:[to]).filter(Boolean); if(!list.length)return; try{ fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:list,subject:subject||"AuditLens notification",text:text||""})}).catch(()=>{}); }catch(e){} }
 function notifyHeadsApproval(title){ const heads=headUsers(); heads.forEach(h=>notify(h.id,"approval_needed","Approval needed: "+title,"approvals")); emailNotify(heads.map(h=>h.email),"AuditLens — approval needed",`The observation "${title}" was raised and needs your approval in AuditLens.`); }
-function notifyOwnerAssigned(o){ if(!o||!o.ownerUserId)return; notify(o.ownerUserId,"assigned","New action assigned to you: "+o.title,"myobs"); const dept=(o.departmentId&&deptById(o.departmentId))||departments().find(d=>d.headUserId===o.ownerUserId); if(dept&&dept.headEmail) emailNotify([dept.headEmail],"AuditLens — an observation was raised against your department",`An audit observation "${o.title}" has been raised against your department. Sign in to AuditLens to view the details, respond and close observation.`); }
+function notifyOwnerAssigned(o){
+  if(!o) return;
+  if(o.ownerUserId){ notify(o.ownerUserId,"assigned","New action assigned to you: "+o.title,"myobs"); const e=ownerEmailFor(o.ownerUserId); if(e) emailNotify([e],"AuditLens — an observation was raised against your department",`An audit observation "${o.title}" has been raised against your department. As the primary action owner, sign in to AuditLens to view the details, respond and close the observation.`); }
+  if(o.secondaryOwnerUserId&&o.secondaryOwnerUserId!==o.ownerUserId){ notify(o.secondaryOwnerUserId,"assigned","You have oversight on: "+o.title,"myobs"); const e2=ownerEmailFor(o.secondaryOwnerUserId); if(e2) emailNotify([e2],"AuditLens — observation raised (oversight)",`An audit observation "${o.title}" has been raised against a department you oversee. You have oversight of the remediation — sign in to AuditLens to follow progress and add comments.`); }
+}
 function obsIsApproved(o){ return o.obsApproval!=="pending" && o.obsApproval!=="rejected"; }
 function obsApprovalBadge(o){ if(o.obsApproval==="pending") return `<span class="pill sop-pending-pill">⏳ Pending Head approval</span>`; if(o.obsApproval==="rejected") return `<span class="pill c-Critical">Rejected</span>`; return ""; }
 function pendingObsRaise(){ return approvals().filter(x=>x.kind==="observation_raise" && x.status==="pending"); }
@@ -247,6 +254,14 @@ function toast(msg,type){
   setTimeout(close, type==="error"?6000:4200);
 }
 function updFilePicked(inp){ const el=document.getElementById("upd_fileName"); if(el) el.textContent=(inp&&inp.files&&inp.files[0])?inp.files[0].name:"No file chosen"; }
+/* ---- Custom confirm dialog (replaces window.confirm) ---- */
+function uiConfirm(message,onConfirm,opts){
+  opts=opts||{};
+  openModal(opts.title||"Please confirm",`<div style="font-size:14px;color:var(--ink);line-height:1.55">${esc(message)}</div>`,
+    `<button class="btn sec" onclick="closeModal()">${esc(opts.cancelLabel||"Cancel")}</button><button class="btn ${opts.danger?"danger":""}" id="uiConfirmBtn">${esc(opts.confirmLabel||"Confirm")}</button>`);
+  const b=document.getElementById("uiConfirmBtn");
+  if(b) b.onclick=()=>{ closeModal(); try{ onConfirm&&onConfirm(); }catch(e){} };
+}
 function audit(id){ return DB.audits.find(a=>a.id===id); }
 function report(a,id){ return a? a.reports.find(r=>r.id===id):null; }
 function allObs(){ let o=[]; DB.audits.forEach(a=>a.reports.forEach(r=>r.observations.forEach(x=>o.push({...x,_a:a,_r:r})))); return o; }
@@ -404,6 +419,27 @@ function render(){
   }
   updateApprovalsBadge();
   renderNotifBell();
+  checkHeadClosureAlerts();
+}
+/* ---- Head of Audit: global alert when observations are verified and awaiting closure sign-off ---- */
+let _headAlertSeen=new Set();
+function obsLocate(oid){ const x=allObs().find(o=>o.id===oid); return x?{a:x._a,r:x._r}:null; }
+function pendingHeadClosures(){ return allObs().filter(o=>o.reportVerifiedAt && !o.headVerifiedAt && (o.status||"Open")!=="Closed"); }
+function checkHeadClosureAlerts(){
+  if(!isHeadUser()) return;
+  const ovEl=document.getElementById("overlay"); if(ovEl && ovEl.classList.contains("show")) return; // don't interrupt an open modal
+  const pend=pendingHeadClosures();
+  const fresh=pend.filter(o=>!_headAlertSeen.has(o.id));
+  if(!fresh.length) return;
+  fresh.forEach(o=>_headAlertSeen.add(o.id));
+  const list=pend.slice(0,6);
+  openModal("Ready for your closure sign-off",`
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="hint">${pend.length} observation${pend.length!==1?"s have":" has"} been verified by Internal Audit and ${pend.length!==1?"are":"is"} waiting for you to review and close.</div>
+      ${list.map(o=>{ const loc=obsLocate(o.id); return `<div class="obs-block" style="padding:10px 12px"><div class="row" style="align-items:flex-start;gap:8px"><b style="flex:1">${esc(o.title)}</b><span class="pill c-${ck(o.criticality)}">${esc(o.criticality)}</span></div>${loc?`<div style="margin-top:8px"><button class="btn sm" onclick="closeModal();go('observation',{audit:'${loc.a.id}',report:'${loc.r.id}',obs:'${o.id}'})">Review &amp; close →</button></div>`:""}</div>`; }).join("")}
+      ${pend.length>list.length?`<div class="hint">+ ${pend.length-list.length} more in the Remediation Tracker (Ready to close).</div>`:""}
+    </div>`,
+    `<button class="btn" onclick="closeModal()">Got it</button>`);
 }
 
 /* ============================ DASHBOARD ============================ */
@@ -889,15 +925,18 @@ function npSyncAll(){ const all=document.getElementById("np_all"); if(!all)retur
 function createAuditPlan(){
   const y=val("np_year"); const errEl=document.getElementById("np_err");
   if(!/^20\d{2}$/.test(y)){ if(errEl) errEl.innerHTML=`<div class="hint" style="color:var(--crit)">Enter a valid year, e.g. ${(new Date()).getFullYear()}.</div>`; return; }
-  if(planYearHasData(y)){ if(!confirm(`A plan already exists for ${y}. Switch to it and re-apply the selected units?`)) return; }
   const checked=new Set(Array.from(document.querySelectorAll(".np_unit:checked")).map(x=>x.value));
   if(!checked.size){ if(errEl) errEl.innerHTML=`<div class="hint" style="color:var(--crit)">Select at least one unit for the plan.</div>`; return; }
-  auditUniverse().forEach(e=>{
-    if(checked.has(e.id)){ e.includeInPlan=true; if((e.plannedPeriod||"").trim()) e.plannedPeriod=e.plannedPeriod.replace(/20\d{2}/g,y); }
-    else { e.includeInPlan=false; }
-  });
-  DB.planYears=DB.planYears||[]; if(!DB.planYears.map(String).includes(y)) DB.planYears.push(y);
-  DB.planYear=y; logAudit("plan.year_created","Opened annual plan for "+y+" ("+checked.size+" unit(s))",{year:y}); save(); closeModal(); render();
+  const apply=()=>{
+    auditUniverse().forEach(e=>{
+      if(checked.has(e.id)){ e.includeInPlan=true; if((e.plannedPeriod||"").trim()) e.plannedPeriod=e.plannedPeriod.replace(/20\d{2}/g,y); }
+      else { e.includeInPlan=false; }
+    });
+    DB.planYears=DB.planYears||[]; if(!DB.planYears.map(String).includes(y)) DB.planYears.push(y);
+    DB.planYear=y; logAudit("plan.year_created","Opened annual plan for "+y+" ("+checked.size+" unit(s))",{year:y}); save(); closeModal(); render();
+  };
+  if(planYearHasData(y)) uiConfirm(`A plan already exists for ${y}. Switch to it and re-apply the selected units?`,apply,{confirmLabel:"Switch & apply"});
+  else apply();
 }
 function viewAuditRA(){
   const U=auditUniverse();
@@ -1194,7 +1233,7 @@ function saveRA(id){
   if(id){ Object.assign(U.find(x=>x.id===id),data); } else { U.push({id:uid(),...data,createdAt:new Date().toISOString()}); }
   save(); closeModal(); render();
 }
-function delRA(id){ if(!requireHead())return; if(!confirm("Delete this auditable unit?"))return; DB.auditUniverse=auditUniverse().filter(x=>x.id!==id); save(); render(); }
+function delRA(id){ if(!requireHead())return; uiConfirm("Delete this auditable unit?",()=>{ DB.auditUniverse=auditUniverse().filter(x=>x.id!==id); save(); render(); },{danger:true,confirmLabel:"Delete"}); }
 function modalRAPrompt(){
   if(!requireHead())return;
   openModal("Generate audit universe",`
@@ -1435,7 +1474,7 @@ function saveFraud(id){
   rollupFraud(obj);
   save(); closeModal(); render();
 }
-function delFraud(id){ if(!requireHead())return; if(!confirm("Delete this fraud risk?"))return; DB.fraudRisks=fraudList().filter(x=>x.id!==id); save(); render(); }
+function delFraud(id){ if(!requireHead())return; uiConfirm("Delete this fraud risk?",()=>{ DB.fraudRisks=fraudList().filter(x=>x.id!==id); save(); render(); },{danger:true,confirmLabel:"Delete"}); }
 let curFraud=null;
 function renderFraudRisk(C,T,A){
   const f=fraudList().find(x=>x.id===curFraud);
@@ -1867,7 +1906,7 @@ function modalProcMeta(id){
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveProcMeta('${id}')">Save</button>`);
 }
 function saveProcMeta(id){ const p=procList().find(x=>x.id===id); if(!p)return; p.unit=val("pm_unit"); p.sopTitle=val("pm_sop"); p.period=val("pm_period"); p.overallRating=val("pm_rating"); p.summary=val("pm_sum"); p.keyRecommendations=val("pm_recs").split("\n").map(s=>s.trim()).filter(Boolean); save(); closeModal(); render(); }
-function delProc(id){ if(!confirm("Delete this process review?"))return; DB.processReviews=procList().filter(x=>x.id!==id); curProc=null; save(); closeModal(); render(); }
+function delProc(id){ uiConfirm("Delete this process review?",()=>{ DB.processReviews=procList().filter(x=>x.id!==id); curProc=null; save(); closeModal(); render(); },{danger:true,confirmLabel:"Delete"}); }
 function modalProcFinding(pid,fid){
   const p=procList().find(x=>x.id===pid); if(!p)return; p.findings=p.findings||[];
   const x=fid?p.findings.find(y=>y.id===fid):{category:"Control gap",title:"",detail:"",recommendation:"",severity:"Medium"};
@@ -2001,7 +2040,7 @@ function modalProcStep(pid,sid){
     `<button class="btn sec" onclick="closeModal()">Cancel</button>${sid?`<button class="btn sec" onclick="moveProcStep('${pid}','${sid}',-1)">↑</button><button class="btn sec" onclick="moveProcStep('${pid}','${sid}',1)">↓</button>`:""}<button class="btn" onclick="saveProcStep('${pid}','${sid||""}')">Save</button>`);
 }
 function saveProcStep(pid,sid){ const p=procList().find(x=>x.id===pid); if(!p)return; p.proposedSteps=p.proposedSteps||[]; const action=val("ps_action"); if(!action){toast("Action required");return;} const data={actor:val("ps_actor"),type:val("ps_type"),action,note:val("ps_note")}; if(sid){ Object.assign(p.proposedSteps.find(y=>y.id===sid),data); } else { p.proposedSteps.push({id:uid(),...data}); } save(); closeModal(); render(); }
-function delProcStep(pid,sid){ if(!confirm("Delete this step?"))return; const p=procList().find(x=>x.id===pid); if(!p)return; p.proposedSteps=(p.proposedSteps||[]).filter(y=>y.id!==sid); save(); render(); }
+function delProcStep(pid,sid){ uiConfirm("Delete this step?",()=>{ const p=procList().find(x=>x.id===pid); if(!p)return; p.proposedSteps=(p.proposedSteps||[]).filter(y=>y.id!==sid); save(); render(); },{danger:true,confirmLabel:"Delete"}); }
 function moveProcStep(pid,sid,dir){ const p=procList().find(x=>x.id===pid); if(!p)return; const a=p.proposedSteps||[]; const i=a.findIndex(y=>y.id===sid); const j=i+dir; if(i<0||j<0||j>=a.length)return; const t=a[i]; a[i]=a[j]; a[j]=t; save(); render(); modalProcStep(pid,sid); }
 
 /* ============================ IA SELF-ASSESSMENT (IIA GLOBAL STANDARDS) ============================ */
@@ -2907,7 +2946,7 @@ function saveTest(aid,tid){
   else{ a.plan.tests.push({id:uid(),...data}); }
   save(); closeModal(); render();
 }
-function delTest(aid,tid){ if(!confirm("Delete this test?"))return; const a=audit(aid); a.plan.tests=a.plan.tests.filter(x=>x.id!==tid); save(); render(); }
+function delTest(aid,tid){ uiConfirm("Delete this test?",()=>{ const a=audit(aid); a.plan.tests=a.plan.tests.filter(x=>x.id!==tid); save(); render(); },{danger:true,confirmLabel:"Delete"}); }
 
 /* ---- Raise an exception (observation) from a test result ---- */
 function modalRaiseException(aid,tid){
@@ -3293,48 +3332,184 @@ async function addObsUpdate(aid,rid,oid){
   save(); render();
 }
 function obsHasEvidence(o){ return obsUpdates(o).some(u=>(u.evidence||[]).length) || !!o.ownerSop; }
-function ownerMarkRectified(aid,rid,oid){
-  if(!isActionOwner()&&!isHeadUser()){ toast("Only the action owner can mark rectified.","error"); return; }
-  const o=findObs(aid,rid,oid); if(!o||o.ownerRectifiedAt) return;
+/* ---- Ready for Closure (primary owner) — response + optional evidence + AI concreteness gate ---- */
+function modalReadyForClosure(aid,rid,oid){
+  const o=findObs(aid,rid,oid); if(!o) return;
+  if(!isPrimaryOwner(o)&&!isHeadUser()){ toast("Only the primary action owner can mark this Ready for Closure.","error"); return; }
+  openModal("Mark Ready for Closure",`
+    <div class="note" style="margin-bottom:8px"><b>${esc(o.title)}</b></div>
+    <div class="obs-notes-label" style="border:none;padding:0;margin:0 0 4px">Recommendation to address</div>
+    <div class="obs-detail-content" style="margin-bottom:12px">${richText(o.recommendation||"—")}</div>
+    <label>Your closure response — what your department actually did to address this *</label>
+    <textarea id="rfc_text" style="min-height:120px" placeholder="Be specific: what was implemented or changed, when, and how it addresses the recommendation…">${esc(o.ownerResponse||"")}</textarea>
+    <div class="row" style="margin-top:8px;gap:8px;align-items:center;flex-wrap:wrap">
+      <label class="btn sec sm" style="display:inline-block;margin:0">📎 Attach evidence<input type="file" id="rfc_file" style="display:none" onchange="rfcFilePicked(this)"></label>
+      <span class="hint" id="rfc_fileName">No file chosen (optional)</span>
+    </div>
+    <div id="rfc_ai" style="margin-top:12px"></div>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn ai-generate-btn" id="rfc_submit" onclick="submitReadyForClosure('${aid}','${rid}','${oid}')">AI check &amp; submit</button>`);
+}
+function rfcFilePicked(inp){ const el=document.getElementById("rfc_fileName"); if(el) el.textContent=(inp&&inp.files&&inp.files[0])?inp.files[0].name:"No file chosen (optional)"; }
+function rfcUseSuggestion(){ const t=document.getElementById("rfc_text"); if(t&&window._rfcSuggestion){ t.value=window._rfcSuggestion; t.focus(); } }
+async function runClosureCheck(o,text){
+  const prompt=`You are an internal audit quality reviewer. An action owner has written a closure response claiming they have addressed an audit observation. Judge whether the response is CONCRETE and CREDIBLY ADDRESSES THE RECOMMENDATION — not vague filler like "done", "noted", "resolved", "will comply" without specifics. A concrete response states specifically what was implemented or changed, ideally when, and how it maps to the recommendation.
+
+Observation title: ${o.title}
+Recommendation to address: ${o.recommendation||"(none stated)"}
+Owner's closure response: """${text}"""
+
+Return ONLY a JSON object: {"concrete": true or false, "feedback": "one or two sentences of specific feedback", "questions": ["a short probing question the owner should answer","..."], "suggestion": "an improved, concrete rewrite the owner can adapt to what they actually did — only when not concrete, else empty string"}`;
+  const raw=await aiGenerate(prompt,"json");
+  const d=parseAiJson(raw);
+  return { concrete: d.concrete===true||String(d.concrete).toLowerCase()==="true", feedback:d.feedback||"", questions:Array.isArray(d.questions)?d.questions:[], suggestion:d.suggestion||"" };
+}
+async function submitReadyForClosure(aid,rid,oid){
+  const o=findObs(aid,rid,oid); if(!o) return;
+  const text=val("rfc_text");
+  const aiBox=document.getElementById("rfc_ai");
+  if(!text){ if(aiBox) aiBox.innerHTML=`<div class="ai-err">Please describe what your department did before submitting.</div>`; return; }
+  const btn=document.getElementById("rfc_submit"); const done=btnBusy(btn,"AI checking…");
+  let verdict=null;
+  try{ verdict=await runClosureCheck(o,text); }catch(e){ verdict=null; }
+  done();
+  if(!verdict){ if(aiBox) aiBox.innerHTML=`<div class="ai-err">The AI reviewer is unavailable right now. Please try again in a moment.</div>`; return; }
+  if(!verdict.concrete){
+    window._rfcSuggestion=verdict.suggestion||"";
+    if(aiBox) aiBox.innerHTML=`<div class="note" style="border-left:3px solid var(--crit)">
+      <div style="font-weight:700;color:var(--crit);margin-bottom:4px">⚠ Not concrete enough to submit yet</div>
+      <div class="hint">${esc(verdict.feedback||"Add specifics: exactly what was changed, when, and how it addresses the recommendation.")}</div>
+      ${verdict.questions.length?`<ul style="margin:8px 0 0;padding-left:18px;font-size:13px">${verdict.questions.map(q=>`<li>${esc(q)}</li>`).join("")}</ul>`:""}
+      ${verdict.suggestion?`<div class="hint" style="margin-top:10px"><b>Suggested wording — edit it to reflect what you actually did:</b></div><div class="note" style="margin-top:4px;background:var(--card)">${esc(verdict.suggestion)}</div><div style="margin-top:6px"><button class="btn sec sm" type="button" onclick="rfcUseSuggestion()">Use this wording</button></div>`:""}
+    </div>`;
+    return;
+  }
+  if(aiBox) aiBox.innerHTML=`<div class="hint" style="color:var(--low)">✓ The AI reviewer confirmed this response is concrete. Submitting…</div>`;
+  await finalizeReadyForClosure(aid,rid,oid,text);
+}
+async function finalizeReadyForClosure(aid,rid,oid,text){
+  const o=findObs(aid,rid,oid); if(!o) return;
   const u=window.AMS_USER||{};
-  // At least a comment is required so there's a record of what was done; evidence upload is optional.
-  const responded=obsUpdates(o).some(x=>x.by===u.id) || obsHasEvidence(o);
-  if(!responded){ toast("Add a comment in “Your response” describing what your department did (attaching evidence is optional) before marking this Ready for Closure.","error"); return; }
+  const fileEl=document.getElementById("rfc_file");
+  let ev=null;
+  if(fileEl&&fileEl.files&&fileEl.files.length){ ev=await uploadEvidenceFile(oid,fileEl); if(!ev) return; }
+  o.ownerResponse=text;
   o.ownerRectifiedBy=u.id||""; o.ownerRectifiedByName=u.name||""; o.ownerRectifiedAt=new Date().toISOString();
+  if(o.closureRejection && o.closureRejection.target==="owner") o.closureRejection=null;
   if(o.status==="Open") o.status="In Progress";
-  const a=audit(aid); const ids=[]; if(a&&a.leadAuditorId) ids.push(a.leadAuditorId); headUsers().forEach(h=>ids.push(h.id));
-  ids.forEach(id=>notify(id,"rectified",o.title+" marked rectified by the owner","observation"));
-  const emails=headUsers().map(h=>h.email); const lead=(_directoryCache||[]).find(x=>x.id===(a&&a.leadAuditorId)); if(lead&&lead.email) emails.push(lead.email);
-  emailNotify(emails,"AuditLens — remediation rectified",`The action owner marked "${o.title}" as rectified. Please verify.`);
-  logAudit("obs.rectified","Owner marked rectified: "+o.title,{observationId:oid});
-  save(); render(); modalSuccess("Marked Ready for Closure. Internal Audit has been notified to verify.");
+  obsUpdates(o).push({id:uid(),by:u.id||"",byName:u.name||"",role:u.role||"",at:new Date().toISOString(),text:"Marked Ready for Closure — "+text,evidence:ev?[ev]:[]});
+  const a=audit(aid);
+  // Route back to the auditor who raised it, plus the lead auditor and the Head.
+  const ids=[]; if(o.raisedBy) ids.push(o.raisedBy); if(a&&a.leadAuditorId) ids.push(a.leadAuditorId); headUsers().forEach(h=>ids.push(h.id));
+  uniq(ids).forEach(id=>notify(id,"rectified",o.title+" is Ready for Closure — please verify","observation"));
+  const emails=[]; const raiser=(_directoryCache||[]).find(x=>x.id===o.raisedBy); if(raiser&&raiser.email) emails.push(raiser.email);
+  const lead=(_directoryCache||[]).find(x=>x.id===(a&&a.leadAuditorId)); if(lead&&lead.email) emails.push(lead.email);
+  headUsers().forEach(h=>emails.push(h.email));
+  emailNotify(uniq(emails),"AuditLens — observation Ready for Closure",`The action owner marked "${o.title}" as Ready for Closure. Sign in to AuditLens to review the response and verify.`);
+  logAudit("obs.ready_for_closure","Owner marked Ready for Closure: "+o.title,{observationId:oid});
+  save(); closeModal(); render(); modalSuccess("Marked Ready for Closure and sent back to the auditor who raised it for verification.");
 }
-function auditorVerify(aid,rid,oid){
+/* ---- Auditor verification → Close Observation modal (prepares closure, sends to Head) ---- */
+function modalCloseObservation(aid,rid,oid){
   const a=audit(aid); if(!canVerifyReport(a)){ toast("Only the lead auditor of this audit or the Head of Audit can verify.","error"); return; }
-  const o=findObs(aid,rid,oid); if(!o||!o.ownerRectifiedAt||o.reportVerifiedAt) return;
-  const u=window.AMS_USER||{};
-  o.reportVerifiedBy=u.id||""; o.reportVerifiedByName=u.name||""; o.reportVerifiedAt=new Date().toISOString();
-  headUsers().forEach(h=>notify(h.id,"verify",o.title+" verified — ready for Head sign-off","observation"));
-  emailNotify(headUsers().map(h=>h.email),"AuditLens — ready for closure",`"${o.title}" was verified by the auditor and is ready for your closure sign-off.`);
-  logAudit("obs.report_verified","Auditor verified: "+o.title,{observationId:oid});
-  save(); render(); modalSuccess("Remediation verified. Sent to the Head of Audit for closure sign-off.");
+  const o=findObs(aid,rid,oid); if(!o) return;
+  openModal("Close Observation",`
+    <div class="note" style="margin-bottom:10px"><b>${esc(o.title)}</b></div>
+    ${o.ownerResponse?`<div class="obs-field"><div class="ttl">Action owner's closure response</div><div class="txt">${richText(o.ownerResponse)}</div></div>`:""}
+    <div class="f2">
+      <div><label>Closure date</label><input type="date" id="co_date" value="${esc(o.closedDateISO||isoNow())}"></div>
+      <div><label>Verified by</label><input id="co_by" value="${esc((window.AMS_USER&&window.AMS_USER.name)||"")}"></div>
+    </div>
+    <label>Closure evidence file <span class="hint">(optional upload)</span></label>
+    <div class="row" style="gap:8px;align-items:center"><label class="btn sec sm" style="display:inline-block;margin:0">📎 Choose file<input type="file" id="co_file" style="display:none" onchange="coFilePicked(this)"></label><span class="hint" id="co_fileName">${o.closureFile?esc(o.closureFile.name):"No file chosen"}</span></div>
+    <label>Closure note <button class="btn sec sm ai-generate-btn" type="button" style="margin-left:6px" onclick="enhanceClosureNote('${aid}','${rid}','${oid}','co_note')">✦ Enhance with AI</button></label>
+    <textarea id="co_note" style="min-height:90px">${esc(o.closureNote||"")}</textarea>
+    <div id="co_err" style="margin-top:8px"></div>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="submitCloseObservation('${aid}','${rid}','${oid}')">Verify &amp; send for closure</button>`);
 }
+function coFilePicked(inp){ const el=document.getElementById("co_fileName"); if(el) el.textContent=(inp.files&&inp.files[0])?inp.files[0].name:"No file chosen"; }
+function hcFilePicked(inp){ const el=document.getElementById("hc_fileName"); if(el) el.textContent=(inp.files&&inp.files[0])?inp.files[0].name:"No file chosen"; }
+async function enhanceClosureNote(aid,rid,oid,targetId){
+  const o=findObs(aid,rid,oid); if(!o) return;
+  const ta=document.getElementById(targetId); if(!ta) return;
+  const cur=(ta.value||"").trim();
+  const prompt=`You are an internal audit manager writing the closure note for an audit observation being signed off. Expand the draft into a clear, professional 2–4 sentence closure note stating what remediation was verified, the evidence relied upon, and confirmation the recommendation is addressed. Keep it factual and concise; do not invent specifics not implied by the inputs.
+
+Observation: ${o.title}
+Recommendation: ${o.recommendation||"(none)"}
+Owner's closure response: ${o.ownerResponse||"(none)"}
+Draft closure note: ${cur||"(empty — draft one from the above)"}
+
+Return plain text only (the closure note).`;
+  const done=btnBusy(event&&event.currentTarget,"Enhancing…");
+  try{ const text=await aiGenerate(prompt,"text"); if(text) ta.value=text.trim(); }
+  catch(e){ toast("Could not enhance the note right now.","error"); }
+  finally{ done(); }
+}
+async function submitCloseObservation(aid,rid,oid){
+  const a=audit(aid); if(!canVerifyReport(a)){ toast("Only the lead auditor of this audit or the Head of Audit can verify.","error"); return; }
+  const o=findObs(aid,rid,oid); if(!o||!o.ownerRectifiedAt) return;
+  const btn=event&&event.currentTarget; const done=btnBusy(btn,"Verifying…");
+  const fileEl=document.getElementById("co_file");
+  if(fileEl&&fileEl.files&&fileEl.files.length){ const ev=await uploadEvidenceFile(oid,fileEl); if(ev) o.closureFile=ev; else { done(); return; } }
+  const u=window.AMS_USER||{};
+  o.reportVerifiedBy=u.id||""; o.reportVerifiedByName=val("co_by")||u.name||""; o.reportVerifiedAt=new Date().toISOString();
+  o.closureNote=val("co_note"); const cd=val("co_date"); if(cd) o.closedDateISO=cd;
+  if(o.closureRejection && o.closureRejection.target==="auditor") o.closureRejection=null;
+  headUsers().forEach(h=>notify(h.id,"verify",o.title+" verified — ready for Head closure","observation"));
+  emailNotify(headUsers().map(h=>h.email),"AuditLens — ready for closure sign-off",`"${o.title}" was verified by Internal Audit and is ready for your closure sign-off.`);
+  logAudit("obs.report_verified","Auditor verified & sent to Head: "+o.title,{observationId:oid});
+  done(); save(); closeModal(); render(); modalSuccess("Verified and sent to Internal Audit for closure sign-off.");
+}
+/* ---- Head: reject to auditor / escalate to owner ---- */
+function modalClosureReject(aid,rid,oid,target){
+  if(!isHeadUser()){ toast("Only the Head of Audit can do this.","error"); return; }
+  const o=findObs(aid,rid,oid); if(!o) return;
+  const toAuditor=target==="auditor";
+  openModal(toAuditor?"Reject to auditor":"Escalate to action owner",`
+    <div class="note" style="margin-bottom:10px"><b>${esc(o.title)}</b></div>
+    <div class="hint" style="margin-bottom:8px">${toAuditor?"This returns the observation to Internal Audit (the auditor) to revisit verification. They'll see your note and can respond, then resend it for your sign-off.":"This sends the observation back to the action owner's department for further work. They'll see your note and must respond and mark it Ready for Closure again."}</div>
+    <label>Reason / note *</label><textarea id="rej_note" style="min-height:90px" placeholder="Explain what needs to change before this can be closed…"></textarea>
+    <div id="rej_err" style="margin-top:8px"></div>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="submitClosureReject('${aid}','${rid}','${oid}','${target}')">${toAuditor?"Reject to auditor":"Escalate to owner"}</button>`);
+}
+function submitClosureReject(aid,rid,oid,target){
+  if(!isHeadUser()){ toast("Only the Head of Audit can do this.","error"); return; }
+  const o=findObs(aid,rid,oid); if(!o) return;
+  const note=val("rej_note"); if(!note){ const e=document.getElementById("rej_err"); if(e) e.innerHTML=`<div class="ai-err">Please add a note explaining what needs to change.</div>`; return; }
+  const u=window.AMS_USER||{}; const toAuditor=target==="auditor";
+  o.closureRejection={target,note,by:u.id||"",byName:u.name||"",at:new Date().toISOString()};
+  o.reportVerifiedAt=""; o.reportVerifiedBy=""; o.reportVerifiedByName="";
+  if(!toAuditor){ o.ownerRectifiedAt=""; o.ownerRectifiedBy=""; o.ownerRectifiedByName=""; if(o.status==="Closed") o.status="In Progress"; }
+  obsUpdates(o).push({id:uid(),by:u.id||"",byName:u.name||"",role:u.role||"",at:new Date().toISOString(),text:(toAuditor?"Rejected to auditor: ":"Escalated to action owner: ")+note,evidence:[]});
+  const a=audit(aid);
+  if(toAuditor){
+    const ids=[]; if(o.raisedBy) ids.push(o.raisedBy); if(a&&a.leadAuditorId) ids.push(a.leadAuditorId);
+    uniq(ids).forEach(id=>notify(id,"rejected","Closure returned by Head: "+o.title,"observation"));
+    const emails=[]; const raiser=(_directoryCache||[]).find(x=>x.id===o.raisedBy); if(raiser&&raiser.email) emails.push(raiser.email); const lead=(_directoryCache||[]).find(x=>x.id===(a&&a.leadAuditorId)); if(lead&&lead.email) emails.push(lead.email);
+    emailNotify(uniq(emails),"AuditLens — closure returned by the Head of Audit",`The Head of Audit returned "${o.title}" for further work before closure. Note: ${note}`);
+  } else {
+    if(o.ownerUserId) notify(o.ownerUserId,"escalated","Sent back for more work: "+o.title,"myobs");
+    const e=ownerEmailFor(o.ownerUserId); if(e) emailNotify([e],"AuditLens — observation returned to your department",`The Head of Audit sent "${o.title}" back to your department for further work. Note: ${note} Sign in to respond and mark it Ready for Closure again.`);
+  }
+  logAudit("obs.closure_"+(toAuditor?"rejected":"escalated"),(toAuditor?"Rejected to auditor: ":"Escalated to owner: ")+o.title,{observationId:oid});
+  save(); closeModal(); render(); modalSuccess(toAuditor?"Returned to the auditor with your note.":"Escalated to the action owner with your note.");
+}
+/* ---- Head final sign-off ---- */
 function modalHeadClose(aid,rid,oid){
   const o=findObs(aid,rid,oid); if(!o) return;
-  openModal("Verify &amp; close observation",`
+  openModal("Close observation — Head sign-off",`
     <div class="note" style="margin-bottom:10px"><b>${esc(o.title)}</b></div>
+    ${o.ownerResponse?`<div class="obs-field"><div class="ttl">Owner's response</div><div class="txt">${richText(o.ownerResponse)}</div></div>`:""}
     <div class="f2">
       <div><label>Closed date</label><input type="date" id="hc_date" value="${esc(o.closedDateISO||isoNow())}"></div>
       <div><label>Verified by</label><input id="hc_by" value="${esc((window.AMS_USER&&window.AMS_USER.name)||o.verifiedBy||"")}"></div>
     </div>
-    <label>Closure evidence / WP ref <span class="hint">(text)</span></label><input id="hc_ev" value="${esc(o.closureEvidence||"")}">
     <label>Closure evidence file <span class="hint">(optional upload)</span></label>
     <div class="row" style="gap:8px;align-items:center"><label class="btn sec sm" style="display:inline-block;margin:0">📎 Choose file<input type="file" id="hc_file" style="display:none" onchange="hcFilePicked(this)"></label><span class="hint" id="hc_fileName">${o.closureFile?esc(o.closureFile.name):"No file chosen"}</span></div>
-    <label>Closure note</label><textarea id="hc_note">${esc(o.closureNote||"")}</textarea>
+    <label>Closure note <button class="btn sec sm ai-generate-btn" type="button" style="margin-left:6px" onclick="enhanceClosureNote('${aid}','${rid}','${oid}','hc_note')">✦ Enhance with AI</button></label><textarea id="hc_note">${esc(o.closureNote||"")}</textarea>
     <div id="hc_err" style="margin-top:8px"></div>`,
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="headVerifyClose('${aid}','${rid}','${oid}')">Verify &amp; close</button>`);
 }
-function hcFilePicked(inp){ const el=document.getElementById("hc_fileName"); if(el) el.textContent=(inp.files&&inp.files[0])?inp.files[0].name:"No file chosen"; }
 async function headVerifyClose(aid,rid,oid){
   if(!isHeadUser()){ toast("Only the Head of Audit can close.","error"); return; }
   const o=findObs(aid,rid,oid); if(!o) return;
@@ -3343,13 +3518,14 @@ async function headVerifyClose(aid,rid,oid){
   if(fileEl&&fileEl.files&&fileEl.files.length){ const ev=await uploadEvidenceFile(oid,fileEl); if(ev) o.closureFile=ev; else { done(); return; } }
   const u=window.AMS_USER||{};
   o.headVerifiedBy=u.id||""; o.headVerifiedByName=u.name||""; o.headVerifiedAt=new Date().toISOString();
-  o.verifiedBy=val("hc_by")||u.name||""; o.closureEvidence=val("hc_ev"); o.closureNote=val("hc_note");
-  o.closedDateISO=val("hc_date")||isoNow(); o.closureDate=o.closedDateISO;
-  o.status="Closed";
+  o.verifiedBy=val("hc_by")||u.name||""; o.closureNote=val("hc_note");
+  o.closedDateISO=val("hc_date")||o.closedDateISO||isoNow(); o.closureDate=o.closedDateISO;
+  o.status="Closed"; o.closureRejection=null;
   if(o.ownerUserId) notify(o.ownerUserId,"closed",o.title+" has been closed","myobs");
+  if(o.secondaryOwnerUserId) notify(o.secondaryOwnerUserId,"closed",o.title+" has been closed","myobs");
   if(o.raisedBy) notify(o.raisedBy,"closed",o.title+" has been closed","audits");
-  const dept=deptById(o.departmentId); const closeEmails=[]; if(dept&&dept.headEmail) closeEmails.push(dept.headEmail); const raiser=(_directoryCache||[]).find(x=>x.id===o.raisedBy); if(raiser&&raiser.email) closeEmails.push(raiser.email);
-  emailNotify(closeEmails,"AuditLens — observation closed",`The observation "${o.title}" has been verified and closed by the Head of Audit.`);
+  const emails=[]; const pe=ownerEmailFor(o.ownerUserId); if(pe) emails.push(pe); const se=ownerEmailFor(o.secondaryOwnerUserId); if(se) emails.push(se); const raiser=(_directoryCache||[]).find(x=>x.id===o.raisedBy); if(raiser&&raiser.email) emails.push(raiser.email);
+  emailNotify(uniq(emails),"AuditLens — observation closed",`The observation "${o.title}" has been verified and closed by the Head of Audit.`);
   logAudit("obs.closed","Head verified & closed: "+o.title,{observationId:oid});
   done(); save(); closeModal(); render(); modalSuccess("Observation verified and closed.");
 }
@@ -3363,32 +3539,44 @@ function verifyStepperHTML(o){
   return `<div class="verify-steps">${steps.map(s=>`<div class="verify-step${s.done?" done":""}"><span class="verify-dot">${s.done?"✓":""}</span><div><div class="verify-step-label">${esc(s.label)}</div>${s.done&&(s.who||s.at)?`<div class="hint">${esc(s.who||"")}${s.who&&s.at?" · ":""}${s.at?esc(fmtDate(isoToDate(s.at))||""):""}</div>`:""}</div></div>`).join("")}</div>`;
 }
 function obsRemediationHTML(o,a,r){
-  const owner=isActionOwner(); const canVerify=canVerifyReport(a); const head=isHeadUser();
+  const primary=isPrimaryOwner(o); const secondary=isSecondaryOwner(o);
+  const canVerify=canVerifyReport(a); const head=isHeadUser();
   const isRaiser=!!(window.AMS_USER && o.raisedBy && o.raisedBy===window.AMS_USER.id);
   const closed=o.status==="Closed";
+  const rej=o.closureRejection; // {target:'auditor'|'owner', note, byName, at}
   const updates=obsUpdates(o).slice().sort((x,y)=>String(y.at||"").localeCompare(String(x.at||"")));
   let actions="";
   if(!closed){
-    if(owner && !o.ownerRectifiedAt) actions+=`<button class="btn sm" onclick="ownerMarkRectified('${a.id}','${r.id}','${o.id}')">✓ Ready for Closure</button>`;
-    if(canVerify && o.ownerRectifiedAt && !o.reportVerifiedAt) actions+=`<button class="btn sm" onclick="auditorVerify('${a.id}','${r.id}','${o.id}')">Verify remediation</button>`;
-    if(head && o.reportVerifiedAt) actions+=`<button class="btn sm" onclick="modalHeadClose('${a.id}','${r.id}','${o.id}')">Verify &amp; close</button>`;
-    if((canVerify||head) && o.ownerUserId) actions+=`<button class="btn sec sm" onclick="requestOwnerUpdate('${a.id}','${r.id}','${o.id}')">${o.updateRequestedAt?"🔔 Update requested":"Request feedback from owner"}</button>`;
+    if(primary && !o.ownerRectifiedAt) actions+=`<button class="btn sm" onclick="modalReadyForClosure('${a.id}','${r.id}','${o.id}')">✓ Ready for Closure</button>`;
+    if(canVerify && o.ownerRectifiedAt && !o.reportVerifiedAt) actions+=`<button class="btn sm" onclick="modalCloseObservation('${a.id}','${r.id}','${o.id}')">${(rej&&rej.target==="auditor")?"Resend for closure verification":"Verify remediation"}</button>`;
+    if(head && o.reportVerifiedAt && !o.headVerifiedAt){
+      actions+=`<button class="btn sm" onclick="modalHeadClose('${a.id}','${r.id}','${o.id}')">Verify &amp; close</button>`;
+      actions+=`<button class="btn sec sm" onclick="modalClosureReject('${a.id}','${r.id}','${o.id}','auditor')">Reject to auditor</button>`;
+      actions+=`<button class="btn sec sm" onclick="modalClosureReject('${a.id}','${r.id}','${o.id}','owner')">Escalate to owner</button>`;
+    }
+    if((canVerify||head) && o.ownerUserId && !o.ownerRectifiedAt) actions+=`<button class="btn sec sm" onclick="requestOwnerUpdate('${a.id}','${r.id}','${o.id}')">${o.updateRequestedAt?"🔔 Update requested":"Request feedback from owner"}</button>`;
   }
-  // Owner, the auditor who raised it, the lead auditor and the Head can all take part in the conversation.
-  const canPost=(owner||canVerify||isRaiser)&&!closed;
+  // Primary owner, secondary owner (oversight), the auditor who raised it, the lead auditor and the Head can all take part in the conversation.
+  const canPost=(primary||secondary||canVerify||isRaiser)&&!closed;
   const nextHint = closed ? "" :
-    owner && !o.ownerRectifiedAt ? "Add your comments below, attach any supporting evidence, then mark this Ready for Closure for Internal Audit to verify." :
-    canVerify && o.ownerRectifiedAt && !o.reportVerifiedAt ? "The action owner has marked this Ready for Closure — review their evidence and verify the remediation." :
-    head && o.reportVerifiedAt ? "Verified by the auditor — ready for your closure sign-off." :
-    owner ? "Your department has marked this Ready for Closure. Internal Audit will verify — add a comment here if anything changes." :
+    primary && !o.ownerRectifiedAt ? (rej&&rej.target==="owner" ? "This was sent back to your department for more work — address the feedback below, then mark it Ready for Closure again." : "Add your comments below, attach any supporting evidence, then mark this Ready for Closure for Internal Audit to verify.") :
+    secondary && !o.reportVerifiedAt ? "You have oversight of this observation — follow progress and add comments; the primary owner responds and closes." :
+    canVerify && o.ownerRectifiedAt && !o.reportVerifiedAt ? (rej&&rej.target==="auditor" ? "The Head of Audit returned this to Internal Audit — address the note below, then resend for closure verification." : "The action owner has marked this Ready for Closure — review their response and evidence, then verify to prepare closure.") :
+    head && o.reportVerifiedAt && !o.headVerifiedAt ? "Verified by the auditor and sent to you — review the closure and evidence, then close, reject to the auditor, or escalate to the owner." :
+    primary ? "Your department has marked this Ready for Closure. Internal Audit will verify — add a comment here if anything changes." :
     !o.ownerRectifiedAt ? "Awaiting the action owner's response." :
     !o.reportVerifiedAt ? "Awaiting auditor verification." : "Awaiting Head of Audit closure.";
-  const composerTitle=owner?"Your response":"Add a comment";
-  const composerPh=owner?"Describe what your department has done to address this observation…":"Add a comment or progress update for the action owner…";
+  const composerTitle=primary?"Your response":secondary?"Oversight comment":"Add a comment";
+  const composerPh=primary?"Describe what your department has done to address this observation…":secondary?"Add an oversight comment…":"Add a comment or progress update for the action owner…";
+  const pkg=[];
+  if(o.ownerResponse) pkg.push(`<div class="obs-field"><div class="ttl">Action owner's closure response</div><div class="txt">${richText(o.ownerResponse)}${o.ownerRectifiedByName?`<div class="hint" style="margin-top:4px">${esc(o.ownerRectifiedByName)}${o.ownerRectifiedAt?" · "+esc(fmtDateTime(o.ownerRectifiedAt)):""}</div>`:""}</div></div>`);
+  if(o.reportVerifiedAt) pkg.push(`<div class="obs-field"><div class="ttl">Auditor verification &amp; closure note</div><div class="txt">${o.closureNote?richText(o.closureNote):"<span class='hint'>No note.</span>"}<div class="hint" style="margin-top:4px">Verified by ${esc(o.reportVerifiedByName||"—")}${o.reportVerifiedAt?" · "+esc(fmtDateTime(o.reportVerifiedAt)):""}${o.closedDateISO?" · Closure date "+esc(fmtDate(isoToDate(o.closedDateISO))):""}</div></div></div>`);
   return `<div class="obs-notes">
     <div class="obs-notes-label">Remediation &amp; verification</div>
     ${verifyStepperHTML(o)}
-    ${o.closureFile?`<div class="hint" style="margin:8px 0 4px">Closure evidence: <a href="/api/files/${esc(o.closureFile.itemId)}" target="_blank" rel="noopener">${esc(o.closureFile.name)}</a></div>`:""}
+    ${rej&&!closed?`<div class="note" style="border-left:3px solid var(--crit)"><b>${rej.target==="auditor"?"Returned by the Head of Audit to Internal Audit":"Escalated by the Head of Audit to the action owner"}</b>${rej.note?`<div style="margin-top:4px">${esc(rej.note)}</div>`:""}<div class="hint" style="margin-top:4px">${esc(rej.byName||"Head of Audit")}${rej.at?" · "+esc(fmtDateTime(rej.at)):""}</div></div>`:""}
+    ${pkg.join("")}
+    ${o.closureFile?`<div class="hint" style="margin:8px 0 4px">Auditor closure evidence: <a href="/api/files/${esc(o.closureFile.itemId)}" target="_blank" rel="noopener">${esc(o.closureFile.name)}</a></div>`:""}
     <div class="obs-notes-label obs-updates-label">Conversation &amp; evidence</div>
     ${updates.length?updates.map(u=>`<div class="obs-note"><div class="obs-note-text">${esc(u.text||"")}</div>${(u.evidence||[]).map(e=>`<div class="hint">📎 <a href="/api/files/${esc(e.itemId)}" target="_blank" rel="noopener">${esc(e.name)}</a></div>`).join("")}<div class="obs-note-meta">${esc(u.byName||"")}${u.role?" ("+esc(roleLabel(u.role))+")":""}${u.at?" · "+esc(fmtDateTime(u.at)):""}</div></div>`).join(""):`<div class="hint">No comments or evidence yet.</div>`}
     ${canPost?`<div class="obs-composer" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">
@@ -3766,11 +3954,12 @@ async function saveDepartment(id){
   toast(emailSent?`Department added. A welcome email was sent to ${headEmail}.`:`Department added.${userId?" (Welcome email could not be sent — check SendGrid config.)":""}`,"success");
 }
 function delDepartment(id){
-  if(!confirm("Remove this department? The head's login account is kept (delete it from User access management if needed)."))return;
-  DB.departments=departments().filter(d=>d.id!==id); save(); render();
+  uiConfirm("Remove this department? The head's login account is kept (delete it from User access management if needed).",()=>{
+    DB.departments=departments().filter(d=>d.id!==id); save(); render();
+  },{danger:true,confirmLabel:"Remove"});
 }
 /* ---- Action Owner portal ---- */
-function myObsList(){ const me=window.AMS_USER||{}; return allObs().filter(o=>o.ownerUserId&&o.ownerUserId===me.id&&obsIsApproved(o)); }
+function myObsList(){ const me=window.AMS_USER||{}; return allObs().filter(o=>((o.ownerUserId&&o.ownerUserId===me.id)||(o.secondaryOwnerUserId&&o.secondaryOwnerUserId===me.id))&&obsIsApproved(o)); }
 function viewMyObs(){
   const me=window.AMS_USER||{};
   const mine=myObsList();
@@ -3836,9 +4025,9 @@ function auditorOptions(selectedId){
   const list=_directoryCache.filter(u=>u.role==="audit_staff"||u.role==="head_of_audit");
   return `<option value="">— unassigned —</option>`+list.map(u=>`<option value="${u.id}"${selectedId===u.id?" selected":""}>${esc(u.name)}${u.role==="head_of_audit"?" (Head of Audit)":""}</option>`).join("");
 }
-function ownerOptions(selectedId){
+function ownerOptions(selectedId,placeholder){
   const D=departments().filter(d=>d.headUserId);
-  return `<option value="">— select action owner —</option>`+D.map(d=>`<option value="${esc(d.headUserId)}"${selectedId===d.headUserId?" selected":""}>${esc(d.headName)} · ${esc(d.name)}</option>`).join("");
+  return `<option value="">${esc(placeholder||"— select action owner —")}</option>`+D.map(d=>`<option value="${esc(d.headUserId)}"${selectedId===d.headUserId?" selected":""}>${esc(d.headName)} · ${esc(d.name)}</option>`).join("");
 }
 async function refreshUsersTable(){
   try{
@@ -3931,19 +4120,21 @@ async function saveUser(id){
   await refreshUsersTable();
   if(view==="settings") render();
 }
-async function deleteUser(id){
-  if(!confirm("Delete this user?")) return;
-  const res=await fetch(`/api/users/${id}`,{ method:"DELETE" });
-  if(!res.ok){ toast("Could not delete user.","error"); return; }
-  await refreshUsersTable();
-  if(view==="settings") render();
+function deleteUser(id){
+  uiConfirm("Delete this user?",async()=>{
+    const res=await fetch(`/api/users/${id}`,{ method:"DELETE" });
+    if(!res.ok){ toast("Could not delete user.","error"); return; }
+    await refreshUsersTable();
+    if(view==="settings") render();
+  },{danger:true,confirmLabel:"Delete"});
 }
 function resetAllData(){
-  if(!confirm("Delete ALL content — audits, reports, observations, audit universe, fraud risks/plan and process reviews? Your org name and report author are kept. This cannot be undone."))return;
-  DB={org:DB.org,signOffName:DB.signOffName,signOffTitle:DB.signOffTitle,planYear:DB.planYear,logo:DB.logo,audits:[],auditUniverse:[],fraudRisks:[],fraudPlanNarrative:"",fraudUpdate:{period:"",commentary:""},processReviews:[],extFindings:[],extCommentary:""};
-  curAudit=null; curReport=null; curProc=null;
-  logAudit("data.reset_all","Reset all workspace data");
-  save(); go("dashboard");
+  uiConfirm("Delete ALL content — audits, reports, observations, audit universe, fraud risks/plan and process reviews? Your org name and report author are kept. This cannot be undone.",()=>{
+    DB={org:DB.org,signOffName:DB.signOffName,signOffTitle:DB.signOffTitle,planYear:DB.planYear,logo:DB.logo,audits:[],auditUniverse:[],fraudRisks:[],fraudPlanNarrative:"",fraudUpdate:{period:"",commentary:""},processReviews:[],extFindings:[],extCommentary:""};
+    curAudit=null; curReport=null; curProc=null;
+    logAudit("data.reset_all","Reset all workspace data");
+    save(); go("dashboard");
+  },{danger:true,title:"Reset all data",confirmLabel:"Delete everything"});
 }
 
 /* ============================ MODALS ============================ */
@@ -4283,10 +4474,11 @@ function saveObs(aid,rid,oid){
   if(statusPendingMsg) toast("Saved. The status change was submitted to the Head of Audit for approval.","success");
 }
 function delObs(aid,rid,oid){
-  if(!confirm("Delete this observation?"))return;
-  const r=report(audit(aid),rid); r.observations=r.observations.filter(x=>x.id!==oid); save();
-  if(view==="observation") go("report",{audit:aid,report:rid});
-  else render();
+  uiConfirm("Delete this observation? This cannot be undone.",()=>{
+    const r=report(audit(aid),rid); r.observations=r.observations.filter(x=>x.id!==oid); save();
+    if(view==="observation") go("report",{audit:aid,report:rid});
+    else render();
+  },{danger:true,confirmLabel:"Delete"});
 }
 
 /* ---- Repeat auto-suggest (fuzzy title match across other reports) ---- */
@@ -4370,22 +4562,33 @@ function openRaiseModal(){ if(!_pendingRaise) return; raiseReviewStep(); }
 function raiseReviewStep(){
   const pr=_pendingRaise; if(!pr) return;
   const o=pr.obs;
-  const rows=[
-    ["Category / control theme",o.category],
-    ["Detailed description (condition)",o.description],
-    ["Criteria / expectation",o.criteria],
-    ["Impact / risk",o.risk],
-    ["Possible root cause",o.rootCause],
-    ["Recommendation",o.recommendation],
-    ["Proposed SOP update",o.sopUpdate],
-    ["Management response",o.managementResponse]
-  ].filter(x=>x[1]&&String(x[1]).trim());
-  openModal("Review observation",`
-    <div class="note" style="margin-bottom:12px"><b>${esc(o.ref?o.ref+" — ":"")}${esc(o.title)}</b> · <span class="pill c-${ck(o.criticality)}">${o.criticality}</span></div>
-    ${rows.length?rows.map(([t,v])=>`<section class="obs-detail-section"><h4 class="obs-detail-label">${esc(t)}</h4><div class="obs-detail-content">${richText(v)}</div></section>`).join(""):`<div class="hint">No further detail was captured for this observation.</div>`}
-    <div class="hint" style="margin-top:14px">Review the observation above, then continue to assign the action owner and set the closure timeline.</div>`,
-    `<button class="btn sec" onclick="cancelRaise()">Cancel</button><button class="btn" onclick="raiseAssignStep()">Continue to assign owner →</button>`);
+  openModal("Review &amp; edit observation",`
+    <div class="hint" style="margin-bottom:12px">Review what the AI generated and edit anything before assigning an owner.</div>
+    <div class="f3">
+      <div><label>Ref</label><input id="rv_ref" value="${esc(o.ref||"")}" placeholder="e.g. 1.1"></div>
+      <div><label>Criticality *</label><select id="rv_crit">${CRITS.map(c=>`<option${(o.criticality||"Moderate")===c?" selected":""}>${c}</option>`).join("")}</select></div>
+      <div><label>Category / theme</label><input id="rv_cat" value="${esc(o.category||"")}"></div>
+    </div>
+    <label>Title *</label><input id="rv_title" value="${esc(o.title||"")}">
+    <label>Detailed description (condition)</label><textarea id="rv_desc" style="min-height:80px">${esc(o.description||"")}</textarea>
+    <label>Criteria / expectation</label><textarea id="rv_criteria">${esc(o.criteria||"")}</textarea>
+    <label>Impact / risk</label><textarea id="rv_risk">${esc(o.risk||"")}</textarea>
+    <label>Possible root cause</label><textarea id="rv_root">${esc(o.rootCause||"")}</textarea>
+    <label>Recommendation</label><textarea id="rv_rec">${esc(o.recommendation||"")}</textarea>
+    <label>Proposed SOP update</label><textarea id="rv_sop">${esc(o.sopUpdate||"")}</textarea>
+    <label>Management response</label><textarea id="rv_mgmt">${esc(o.managementResponse||"")}</textarea>
+    <div id="rv_err" style="margin-top:8px"></div>`,
+    `<button class="btn sec" onclick="cancelRaise()">Cancel</button><button class="btn" onclick="raiseReviewNext()">Next: assign owner →</button>`);
   const m=document.getElementById("modal"); if(m) m.classList.add("wide");
+}
+function raiseReviewNext(){
+  const pr=_pendingRaise; if(!pr) return;
+  const o=pr.obs;
+  const title=val("rv_title"); if(!title){ const e=document.getElementById("rv_err"); if(e) e.innerHTML=`<div class="ai-err">A title is required.</div>`; return; }
+  o.ref=val("rv_ref"); o.criticality=val("rv_crit")||"Moderate"; o.category=val("rv_cat");
+  o.title=title; o.description=val("rv_desc"); o.criteria=val("rv_criteria"); o.risk=val("rv_risk");
+  o.rootCause=val("rv_root"); o.recommendation=val("rv_rec"); o.sopUpdate=val("rv_sop"); o.managementResponse=val("rv_mgmt");
+  raiseAssignStep();
 }
 // Step 2 — assign the action owner, closure action and closure date.
 function raiseAssignStep(){
@@ -4394,9 +4597,12 @@ function raiseAssignStep(){
   const haveOwners=departments().filter(d=>d.headUserId).length>0;
   openModal("Raise observation — assign owner",`
     <div class="note" style="margin-bottom:10px"><b>${esc(o.ref?o.ref+" — ":"")}${esc(o.title)}</b> · <span class="pill c-${ck(o.criticality)}">${o.criticality}</span></div>
-    <label>Action owner (department head) *</label>
-    <select id="rz_owner">${ownerOptions(o.ownerUserId||"")}</select>
+    <label>Primary action owner (responds &amp; closes) *</label>
+    <select id="rz_owner">${ownerOptions(o.ownerUserId||"","— select primary owner —")}</select>
     ${haveOwners?"":`<div class="hint" style="color:var(--crit);margin-top:4px">No department heads exist yet — add departments in Settings to assign an owner (you can still raise without one).</div>`}
+    <label style="margin-top:8px">Secondary action owner <span class="hint">(oversight only — optional)</span></label>
+    <select id="rz_owner2">${ownerOptions(o.secondaryOwnerUserId||"","— none —")}</select>
+    <div class="hint" style="margin-top:4px">The secondary owner is notified and can follow the remediation and comment, but only the primary owner responds and marks it Ready for Closure.</div>
     <div class="f2" style="margin-top:8px">
       <div><label>Resolution timeline</label><select id="rz_tl"><option value="">— select —</option>${TIMELINES.map(t=>`<option${o.timeline===t?" selected":""}>${t}</option>`).join("")}</select></div>
       <div><label>Closure date</label><input type="date" id="rz_due" value="${esc(o.dueDate||"")}"></div>
@@ -4449,6 +4655,10 @@ function raiseObs(){
   o.ownerUserId=ownerId||"";
   o.owner=dept?dept.headName:(o.owner||"");
   o.departmentId=dept?dept.id:"";
+  const owner2Id=val("rz_owner2");
+  o.secondaryOwnerUserId=(owner2Id&&owner2Id!==ownerId)?owner2Id:"";
+  const dept2=departments().find(d=>d.headUserId===o.secondaryOwnerUserId);
+  o.secondaryOwner=dept2?dept2.headName:"";
   o.raisedBy=(window.AMS_USER&&window.AMS_USER.id)||"";
   o.raisedByName=(window.AMS_USER&&window.AMS_USER.name)||"";
   o.raisedAt=new Date().toISOString();
