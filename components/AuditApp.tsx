@@ -69,7 +69,7 @@ export default function AuditApp() {
             </div>
           </div>
 
-          <Script src="/audit-bot.js?v=20260703e" strategy="afterInteractive" />
+          <Script src="/audit-bot.js?v=20260713a" strategy="afterInteractive" />
         </>
       )}
     </AuthGate>
