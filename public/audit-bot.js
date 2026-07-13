@@ -653,7 +653,9 @@ function viewTracker(){
     return `<div class="card"><div class="empty"><div class="big">◷</div>No observations yet. Once you raise observations, every open remediation action shows up here — grouped by expected close, with overdue flags.</div></div>`;
   }
   const isOverdue=o=>isOverdueObs(o,o._r);
+  const readyToClose=o=>!!o.ownerRectifiedAt && (o.status||"Open")!=="Closed";
   const openAll=obs.filter(o=>o.status!=="Closed");
+  const readyCount=openAll.filter(readyToClose).length;
   const watch=openAll.filter(o=>{ const d=daysToClose(o,o._r); return d!=null && d>=0 && d<=14; }).length;
   const overdue=openAll.filter(isOverdue).length;
   const repeats=openAll.filter(o=>o.isRepeat).length;
@@ -663,12 +665,13 @@ function viewTracker(){
   if(trackerFilter.status==="All") items=items.filter(o=>o.status!=="Closed");
   else items=items.filter(o=>(o.status||"Open")===trackerFilter.status);
   if(trackerFilter.crit!=="All") items=items.filter(o=>o.criticality===trackerFilter.crit);
-  if(trackerFilter.tl!=="All") items=items.filter(o=>trackerBucketOf(o)===trackerFilter.tl);
+  if(trackerFilter.tl!=="All"){ if(trackerFilter.tl==="Ready to Close") items=items.filter(readyToClose); else items=items.filter(o=>trackerBucketOf(o)===trackerFilter.tl); }
 
-  const CLOSE_GROUPS=[...CLOSE_BUCKETS,"No date"];
-  const groupLabel=g=>g==="No date"?"No expected close date":g;
+  const CLOSE_GROUPS=["Ready to Close",...CLOSE_BUCKETS,"No date"];
+  const groupLabel=g=>g==="No date"?"No expected close date":g==="Ready to Close"?"Ready to close — awaiting verification":g;
   let h=`
-  <div class="dash-kpis" style="grid-template-columns:repeat(5,1fr)">
+  <div class="dash-kpis" style="grid-template-columns:repeat(6,1fr)">
+    ${kpi("good","Ready to close",readyCount,"awaiting verification")}
     ${kpi("base","Open actions",openAll.length,"across all audits")}
     ${kpi("warn","Watchlist",watch,"due within 2 weeks")}
     ${kpi("warn","Overdue",overdue,"past expected close")}
@@ -685,10 +688,10 @@ function viewTracker(){
   </div></div>`;
 
   const crank=o=>CRITS.indexOf(o.criticality);
-  const bcol={"Overdue":"#b00020","≤ 2 weeks":"#e8590c","2–4 weeks":"#c98a00","1–3 months":"#2c5f8a","> 3 months":"#2e7d32","No date":"#64748b"};
+  const bcol={"Ready to Close":"#1f8a5b","Overdue":"#b00020","≤ 2 weeks":"#e8590c","2–4 weeks":"#c98a00","1–3 months":"#2c5f8a","> 3 months":"#2e7d32","No date":"#64748b"};
   let any=false;
   CLOSE_GROUPS.forEach(g=>{
-    let rows=items.filter(o=>trackerBucketOf(o)===g);
+    let rows = g==="Ready to Close" ? items.filter(readyToClose) : items.filter(o=>!readyToClose(o) && trackerBucketOf(o)===g);
     if(!rows.length) return;
     any=true;
     rows.sort((a,b)=>{ const da=daysToClose(a,a._r), db=daysToClose(b,b._r); if(da==null&&db==null) return crank(a)-crank(b); if(da==null) return 1; if(db==null) return -1; return (da-db)||(crank(a)-crank(b)); });
@@ -2368,7 +2371,6 @@ function modalExtDetail(id){
       ${field("Detail",f.detail)}
       ${field("Risk / impact",f.risk)}
       ${field("Recommendation",f.recommendation)}
-      ${field("Management response",f.managementResponse)}
       ${f.isRepeat&&f.repeatOf?`<div class="hint" style="margin-top:8px">Repeat of: ${esc(f.repeatOf)}</div>`:""}
       ${st==="Closed"?`<div class="hint" style="margin-top:8px">Closed${f.closedDateISO?" "+fmtDate(isoToDate(f.closedDateISO)):""}${f.verifiedBy?" · Verified by "+esc(f.verifiedBy):""}${f.closureEvidence?" · Evidence: "+esc(f.closureEvidence):""}</div>`:""}
     </div>`,
@@ -2447,7 +2449,6 @@ function modalExt(id){
     <label>Detail</label><textarea id="x_detail">${esc(f.detail)}</textarea>
     <label>Risk / impact</label><textarea id="x_risk">${esc(f.risk)}</textarea>
     <label>Recommendation</label><textarea id="x_rec">${esc(f.recommendation)}</textarea>
-    <label>Management response / action plan</label><textarea id="x_mgmt">${esc(f.managementResponse)}</textarea>
     <div class="f3">
       <div><label>Owner</label><input id="x_owner" value="${esc(f.owner)}"></div>
       <div><label>Target date</label><input id="x_target" value="${esc(f.targetDate)}" placeholder="e.g. 30 Sep 2026"></div>
@@ -2468,7 +2469,7 @@ function modalExt(id){
 function saveExt(id){
   const F=extList(); const title=val("x_title"); if(!title){toast("Finding title required");return;}
   const status=val("x_status"); const cdate=val("x_cdate");
-  const data={source:val("x_src"),sourceRef:val("x_sref"),year:val("x_year"),ref:val("x_ref"),theme:val("x_theme"),severity:val("x_sev"),title,detail:val("x_detail"),risk:val("x_risk"),recommendation:val("x_rec"),managementResponse:val("x_mgmt"),owner:val("x_owner"),targetDate:val("x_target"),status,isRepeat:!!document.getElementById("x_rep").checked,repeatOf:val("x_repof"),verifiedBy:val("x_vby"),closureEvidence:val("x_cev")};
+  const data={source:val("x_src"),sourceRef:val("x_sref"),year:val("x_year"),ref:val("x_ref"),theme:val("x_theme"),severity:val("x_sev"),title,detail:val("x_detail"),risk:val("x_risk"),recommendation:val("x_rec"),owner:val("x_owner"),targetDate:val("x_target"),status,isRepeat:!!document.getElementById("x_rep").checked,repeatOf:val("x_repof"),verifiedBy:val("x_vby"),closureEvidence:val("x_cev")};
   let o; if(id){ o=F.find(x=>x.id===id); Object.assign(o,data); } else { o={id:uid(),...data,createdAt:new Date().toISOString()}; F.push(o); }
   o.closedDateISO = status==="Closed" ? (cdate||o.closedDateISO||isoNow()) : "";
   save(); closeModal(); render();
@@ -2476,17 +2477,24 @@ function saveExt(id){
 function delExt(id){ DB.extFindings=extList().filter(x=>x.id!==id); save(); closeModal(); render(); }
 function modalExtImport(){
   openModal("Import external findings",`
-    <div class="f2"><div><label>Source</label><select id="xi_src">${EXT_SOURCES.map(s=>`<option>${s}</option>`).join("")}</select></div>
-    <div><label>Source report / ref</label><input id="xi_sref" placeholder="e.g. 2024 Statutory Mgmt Letter"></div></div>
-    <label>Report text</label><textarea id="xi_text" style="min-height:90px" placeholder="Paste the external/regulatory audit findings text…"></textarea>
-    <div id="xi_err" style="margin-top:10px"></div>
-    <div class="row" style="margin-top:10px"><button class="btn dark ai-generate-btn sm" onclick="generateExtFindings()">Generate findings</button></div>
-    <hr style="margin:14px 0;border:none;border-top:1px solid var(--line)">
-    <div class="row"><button class="btn sec sm" onclick="downloadExtTemplate()">⤓ CSV template</button>
-      <label class="btn sec sm" style="display:inline-block;margin:0">⤒ Load CSV<input type="file" accept=".csv,text/csv" style="display:none" onchange="loadCsvInto(event,'xi_csv')"></label></div>
-    <textarea id="xi_csv" style="min-height:90px;font-family:Consolas,monospace;font-size:12px;margin-top:8px" placeholder="Source,SourceRef,Year,Ref,Title,…"></textarea>
-    <div id="xi_cerr" style="color:var(--crit);font-size:12.5px;margin-top:4px"></div>`,
-    `<button class="btn sec" onclick="closeModal()">Close</button><button class="btn" onclick="doImportExtCSV()">Import CSV</button>`);
+    <p class="hint" style="margin:0 0 14px">Upload a CSV of external / regulatory findings — each row is imported and analysed into a finding in the register. Use the template to get the columns right.</p>
+    <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">
+      <label class="btn dark sm" style="display:inline-block;margin:0">⤒ Import CSV file<input type="file" accept=".csv,text/csv" style="display:none" onchange="importExtCsvFile(event)"></label>
+      <button class="btn sec sm" onclick="downloadExtTemplate()">⤓ Download CSV template</button>
+      <span class="hint" id="xi_fileName">No file chosen</span>
+    </div>
+    <textarea id="xi_csv" style="display:none"></textarea>
+    <div id="xi_cerr" style="color:var(--crit);font-size:12.5px;margin-top:12px"></div>`,
+    `<button class="btn sec" onclick="closeModal()">Close</button>`);
+}
+function importExtCsvFile(e){
+  const f=e.target.files&&e.target.files[0]; if(!f) return;
+  const nm=document.getElementById("xi_fileName"); if(nm) nm.textContent=f.name;
+  const err=document.getElementById("xi_cerr"); if(err) err.textContent="";
+  const rd=new FileReader();
+  rd.onload=()=>{ const el=document.getElementById("xi_csv"); if(el) el.value=rd.result; doImportExtCSV(); };
+  rd.onerror=()=>{ if(err) err.textContent="Could not read that file."; };
+  rd.readAsText(f);
 }
 function buildExtPrompt(src,sref,text){
   return `Act as an internal audit specialist for ${DB.org}. Extract every finding from the external/regulatory audit report text below into structured data. Classify each finding's theme from this list: ${EXT_THEMES.join(" | ")}. Return ONLY a JSON array (no commentary):
@@ -2540,7 +2548,7 @@ function doImportExtCSV(){
     F.push(extNormalize(x,g("source"),g("sourceRef"))); n++;
   }
   if(!n){ err.textContent="No findings found in the CSV."; return; }
-  save(); closeModal(); render();
+  save(); closeModal(); render(); toast(n+" external finding(s) imported.","success");
 }
 function modalExtCommentary(){
   openModal("External findings — insight commentary",`
@@ -2675,11 +2683,22 @@ function auditMatches(a,q){
 function auditListHTML(){
   const q=(auditFilter.q||"").toLowerCase().trim();
   const list=DB.audits.filter(a=>auditMatches(a,q));
-  if(!list.length) return `<div class="card"><div class="empty">No audits match the current filter.</div></div>`;
+  // When searching, surface matching reports directly so you can jump straight into them.
+  let repHtml="";
+  if(q){
+    const reps=[];
+    DB.audits.forEach(a=>a.reports.forEach(r=>{
+      const hay=((r.title||"")+" "+(r.refNo||"")+" "+(r.period||"")+" "+(a.name||"")+" "+(a.area||"")).toLowerCase();
+      if(hay.includes(q)) reps.push({a,r});
+    }));
+    if(reps.length) repHtml=`<div class="audit-quarter-group"><div class="audit-quarter-head"><span class="seclabel" style="margin:0">Matching reports</span><span class="hint">${reps.length} report${reps.length!==1?"s":""}</span></div><div class="entity-card-grid">${reps.map(x=>reportCard(x.a,x.r)).join("")}</div></div>`;
+  }
+  if(!list.length) return repHtml || `<div class="card"><div class="empty">No audits or reports match the current filter.</div></div>`;
   const sorted=list.slice().sort((a,b)=>periodKey(b.period)-periodKey(a.period)||a.name.localeCompare(b.name));
   const groups=[]; const idx={};
   sorted.forEach(a=>{ const k=a.period||"No period set"; if(idx[k]==null){ idx[k]=groups.length; groups.push({k,items:[]}); } groups[idx[k]].items.push(a); });
-  return groups.map(g=>`<div class="audit-quarter-group"><div class="audit-quarter-head"><span class="seclabel" style="margin:0">${esc(g.k)}</span><span class="hint">${g.items.length} audit${g.items.length!==1?"s":""}</span></div><div class="entity-card-grid">${g.items.map(auditCard).join("")}</div></div>`).join("");
+  const auditsHtml=(q?`<div class="audit-quarter-group"><div class="audit-quarter-head"><span class="seclabel" style="margin:0">Matching audits</span><span class="hint">${list.length} audit${list.length!==1?"s":""}</span></div></div>`:"")+groups.map(g=>`<div class="audit-quarter-group"><div class="audit-quarter-head"><span class="seclabel" style="margin:0">${esc(g.k)}</span><span class="hint">${g.items.length} audit${g.items.length!==1?"s":""}</span></div><div class="entity-card-grid">${g.items.map(auditCard).join("")}</div></div>`).join("");
+  return repHtml + auditsHtml;
 }
 function refreshAuditList(){
   const el=document.getElementById("auditList"); if(el) el.innerHTML=auditListHTML();
@@ -3280,7 +3299,7 @@ function ownerMarkRectified(aid,rid,oid){
   const u=window.AMS_USER||{};
   // At least a comment is required so there's a record of what was done; evidence upload is optional.
   const responded=obsUpdates(o).some(x=>x.by===u.id) || obsHasEvidence(o);
-  if(!responded){ toast("Add a comment in “Your response” describing what your department did (attaching evidence is optional) before marking this rectified.","error"); return; }
+  if(!responded){ toast("Add a comment in “Your response” describing what your department did (attaching evidence is optional) before marking this Ready for Closure.","error"); return; }
   o.ownerRectifiedBy=u.id||""; o.ownerRectifiedByName=u.name||""; o.ownerRectifiedAt=new Date().toISOString();
   if(o.status==="Open") o.status="In Progress";
   const a=audit(aid); const ids=[]; if(a&&a.leadAuditorId) ids.push(a.leadAuditorId); headUsers().forEach(h=>ids.push(h.id));
@@ -3288,7 +3307,7 @@ function ownerMarkRectified(aid,rid,oid){
   const emails=headUsers().map(h=>h.email); const lead=(_directoryCache||[]).find(x=>x.id===(a&&a.leadAuditorId)); if(lead&&lead.email) emails.push(lead.email);
   emailNotify(emails,"AuditLens — remediation rectified",`The action owner marked "${o.title}" as rectified. Please verify.`);
   logAudit("obs.rectified","Owner marked rectified: "+o.title,{observationId:oid});
-  save(); render(); modalSuccess("Marked as rectified. Internal Audit has been notified to verify.");
+  save(); render(); modalSuccess("Marked Ready for Closure. Internal Audit has been notified to verify.");
 }
 function auditorVerify(aid,rid,oid){
   const a=audit(aid); if(!canVerifyReport(a)){ toast("Only the lead auditor of this audit or the Head of Audit can verify.","error"); return; }
@@ -3337,7 +3356,7 @@ async function headVerifyClose(aid,rid,oid){
 function verifyStepperHTML(o){
   const steps=[
     {label:"Raised",done:!!o.raisedAt,who:o.raisedByName,at:o.raisedAt},
-    {label:"Owner rectified",done:!!o.ownerRectifiedAt,who:o.ownerRectifiedByName,at:o.ownerRectifiedAt},
+    {label:"Ready for closure",done:!!o.ownerRectifiedAt,who:o.ownerRectifiedByName,at:o.ownerRectifiedAt},
     {label:"Auditor verified",done:!!o.reportVerifiedAt,who:o.reportVerifiedByName,at:o.reportVerifiedAt},
     {label:"Head verified & closed",done:!!o.headVerifiedAt,who:o.headVerifiedByName,at:o.closedDateISO}
   ];
@@ -3350,7 +3369,7 @@ function obsRemediationHTML(o,a,r){
   const updates=obsUpdates(o).slice().sort((x,y)=>String(y.at||"").localeCompare(String(x.at||"")));
   let actions="";
   if(!closed){
-    if(owner && !o.ownerRectifiedAt) actions+=`<button class="btn sm" onclick="ownerMarkRectified('${a.id}','${r.id}','${o.id}')">✓ Mark rectified</button>`;
+    if(owner && !o.ownerRectifiedAt) actions+=`<button class="btn sm" onclick="ownerMarkRectified('${a.id}','${r.id}','${o.id}')">✓ Ready for Closure</button>`;
     if(canVerify && o.ownerRectifiedAt && !o.reportVerifiedAt) actions+=`<button class="btn sm" onclick="auditorVerify('${a.id}','${r.id}','${o.id}')">Verify remediation</button>`;
     if(head && o.reportVerifiedAt) actions+=`<button class="btn sm" onclick="modalHeadClose('${a.id}','${r.id}','${o.id}')">Verify &amp; close</button>`;
     if((canVerify||head) && o.ownerUserId) actions+=`<button class="btn sec sm" onclick="requestOwnerUpdate('${a.id}','${r.id}','${o.id}')">${o.updateRequestedAt?"🔔 Update requested":"Request feedback from owner"}</button>`;
@@ -3358,10 +3377,10 @@ function obsRemediationHTML(o,a,r){
   // Owner, the auditor who raised it, the lead auditor and the Head can all take part in the conversation.
   const canPost=(owner||canVerify||isRaiser)&&!closed;
   const nextHint = closed ? "" :
-    owner && !o.ownerRectifiedAt ? "Add your comments below, attach any supporting evidence, then mark the observation rectified for Internal Audit to verify." :
-    canVerify && o.ownerRectifiedAt && !o.reportVerifiedAt ? "The action owner has marked this rectified — review their evidence and verify the remediation." :
+    owner && !o.ownerRectifiedAt ? "Add your comments below, attach any supporting evidence, then mark this Ready for Closure for Internal Audit to verify." :
+    canVerify && o.ownerRectifiedAt && !o.reportVerifiedAt ? "The action owner has marked this Ready for Closure — review their evidence and verify the remediation." :
     head && o.reportVerifiedAt ? "Verified by the auditor — ready for your closure sign-off." :
-    owner ? "Your department has marked this rectified. Internal Audit will verify — add a comment here if anything changes." :
+    owner ? "Your department has marked this Ready for Closure. Internal Audit will verify — add a comment here if anything changes." :
     !o.ownerRectifiedAt ? "Awaiting the action owner's response." :
     !o.reportVerifiedAt ? "Awaiting auditor verification." : "Awaiting Head of Audit closure.";
   const composerTitle=owner?"Your response":"Add a comment";
@@ -3693,7 +3712,7 @@ function viewSettings(){
 function departmentsTableHTML(){
   const D=departments();
   if(!D.length) return `<div class="empty">No departments yet. Add one to create its head as an action owner.</div>`;
-  return `<table><thead><tr><th>Department</th><th>Head</th><th>Email</th><th>Login</th><th></th></tr></thead><tbody>
+  return `<table><thead><tr><th>Department</th><th>Name</th><th>Email</th><th>Login</th><th></th></tr></thead><tbody>
     ${D.map(d=>`<tr>
       <td><b>${esc(d.name)}</b></td>
       <td>${esc(d.headName||"—")}</td>
@@ -3709,8 +3728,8 @@ function modalDepartment(id){
   openModal(id?"Edit department":"Add department",`
     <label>Department name *</label><input id="dp_name" value="${esc(d?d.name:"")}" placeholder="e.g. Credit Operations">
     <div class="f2">
-      <div><label>Head of department (name) *</label><input id="dp_head" value="${esc(d?d.headName:"")}" placeholder="e.g. Jane Doe"></div>
-      <div><label>Head email *</label><input id="dp_email" type="email" value="${esc(d?d.headEmail:"")}" ${d&&d.headUserId?"disabled title='Linked to a login account — email cannot be changed here'":""}></div>
+      <div><label>Name *</label><input id="dp_head" value="${esc(d?d.headName:"")}" placeholder="e.g. Jane Doe"></div>
+      <div><label>Email *</label><input id="dp_email" type="email" value="${esc(d?d.headEmail:"")}" ${d&&d.headUserId?"disabled title='Linked to a login account — email cannot be changed here'":""}></div>
     </div>
     ${id?"":`<p class="hint" style="margin:10px 0 0">On save, an <b>Action Owner</b> login is created for this head and a welcome email (temporary password) is sent.</p>`}
     <div id="dp_err" style="margin-top:10px"></div>`,
@@ -3757,12 +3776,7 @@ function viewMyObs(){
   const mine=myObsList();
   const open=mine.filter(o=>o.status!=="Closed");
   const closed=mine.filter(o=>o.status==="Closed");
-  let h=`<div class="dash-welcome anim-fade-in"><div class="dash-welcome-text"><h1>Welcome, ${esc((me.name||"there").split(/\s+/)[0])}</h1><p class="dash-welcome-role">${esc(me.department||"Action Owner")}</p></div></div>
-  <div class="dash-kpis" style="grid-template-columns:repeat(3,1fr)">
-    ${kpi("accent","Assigned to me",mine.length,"remediation actions")}
-    ${kpi("warn","Open",open.length,"awaiting your action")}
-    ${kpi("good","Closed",closed.length,"resolved")}
-  </div>`;
+  let h=`<div class="dash-welcome anim-fade-in"><div class="dash-welcome-text"><h1>Welcome, ${esc((me.name||"there").split(/\s+/)[0])}</h1><p class="dash-welcome-role">${esc(me.department||"Action Owner")}</p></div></div>`;
   if(!mine.length){ h+=`<div class="card"><div class="empty"><div class="big">✦</div>No observations have been assigned to you yet.<br><br>When Internal Audit raises and approves an observation against your department, it will appear here for you to respond, add updates and evidence.</div></div>`; return h; }
   const rows=[...open,...closed];
   h+=`<div class="card"><div class="seclabel">Observations raised against my department</div>
@@ -3997,7 +4011,7 @@ function tourSteps(){
   if(isActionOwner()) return [
     {title:"Your dashboard",body:"The <b>Dashboard</b> highlights what needs your attention — overdue and due-soon actions assigned to your department."},
     {title:"My Observations",body:"<b>My Observations</b> lists every finding raised against your department. Open one to see the full details."},
-    {title:"Respond & upload evidence",body:"Open an observation and use <b>Your response</b> to add a comment, optionally attach evidence, then <b>Mark rectified</b> for Internal Audit to verify."},
+    {title:"Respond & upload evidence",body:"Open an observation and use <b>Your response</b> to add a comment, optionally attach evidence, then mark it <b>Ready for Closure</b> for Internal Audit to verify."},
   ];
   if(isStaff()) return [
     {title:"Your audits",body:"In <b>Audits & Reports</b>, the “Assigned to me” filter shows the audits you lead. Open one to add reports."},
@@ -4387,8 +4401,6 @@ function raiseAssignStep(){
       <div><label>Resolution timeline</label><select id="rz_tl"><option value="">— select —</option>${TIMELINES.map(t=>`<option${o.timeline===t?" selected":""}>${t}</option>`).join("")}</select></div>
       <div><label>Closure date</label><input type="date" id="rz_due" value="${esc(o.dueDate||"")}"></div>
     </div>
-    <label style="margin-top:8px">Closure action <span class="hint">(auto-suggested — edit as needed)</span></label>
-    <textarea id="rz_target" style="min-height:64px" placeholder="e.g. Remediation to be completed by 31 Aug 2026.">${esc(o.agreedTarget||"")}</textarea>
     <div style="margin-top:8px"><label style="display:flex;align-items:center;gap:8px;font-weight:400"><input type="checkbox" id="rz_rep" style="width:auto"${o.isRepeat?" checked":""}> Repeat observation (raised in a prior audit)</label></div>
     <label style="margin-top:6px">Repeat of <span class="hint">(search prior observations)</span></label>
     ${raiseRepeatSearchHTML(pr.rid)}
@@ -4432,7 +4444,6 @@ function raiseObs(){
   const dept=departments().find(d=>d.headUserId===ownerId);
   o.timeline=val("rz_tl");
   const dueEl=document.getElementById("rz_due"); o.dueDate=(dueEl&&dueEl.value)||"";
-  o.agreedTarget=val("rz_target");
   o.isRepeat=!!(document.getElementById("rz_rep")&&document.getElementById("rz_rep").checked);
   o.repeatOf=val("rz_repof");
   o.ownerUserId=ownerId||"";
