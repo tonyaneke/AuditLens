@@ -428,7 +428,6 @@ function render(){
   updateApprovalsBadge();
   renderNotifBell();
   checkHeadClosureAlerts();
-  maybeAutoSendExco();
 }
 /* ---- Global alert: items awaiting the current user's verification (auditor) or closure (Head) ---- */
 let _pendingAlertSeen=new Set();
@@ -3438,14 +3437,15 @@ function obsGridCard(a,r,o){
     ${o.isRepeat?`<span class="pill repeat-pill">↻ REPEAT</span>`:""}
   </div>`;
 }
+function stripMd(s){ return String(s==null?"":s).replace(/\*/g,""); } // remove all asterisks / markdown bullets
 function linkify(s){
-  return esc(s).replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)])/g,u=>`<a href="${u}" target="_blank" rel="noopener" class="rt-link">${u}</a>`);
+  return esc(stripMd(s)).replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)])/g,u=>`<a href="${u}" target="_blank" rel="noopener" class="rt-link">${u}</a>`);
 }
 function richText(v){
   if(v==null||v==="") return "";
-  const s=String(v).trim();
-  const parts=s.split(/\r?\n+/).map(x=>x.replace(/^\s*(?:[-•*·▪]|\d+[.)])\s+/,"").trim()).filter(Boolean);
-  if(parts.length>1) return `<ul class="detail-bullets">${parts.map(l=>`<li>${linkify(l)}</li>`).join("")}</ul>`;
+  const s=stripMd(String(v).trim());
+  const parts=s.split(/\r?\n+/).map(x=>x.replace(/^\s*(?:[-•·▪]|\d+[.)])\s+/,"").trim()).filter(Boolean);
+  if(parts.length>1) return `<ol class="rt-list">${parts.map(l=>`<li>${linkify(l)}</li>`).join("")}</ol>`;
   return linkify(s);
 }
 function detailSection(t,v){
@@ -4078,7 +4078,7 @@ function viewSettings(){
     <div id="usersTableWrap" style="margin-top:12px">${usersTableHTML()}</div>
   </div>
   <div class="card"><h3 style="margin:0 0 4px">MD &amp; EXCO brief recipients</h3>
-    <div class="hint" style="margin-bottom:10px">These recipients receive the <b>Executive Assurance Brief</b> — sent automatically every 2 months, or manually from the MD &amp; EXCO Brief page. Separate multiple addresses with a semicolon or comma.</div>
+    <div class="hint" style="margin-bottom:10px">These recipients receive the <b>Executive Assurance Brief</b> — sent automatically on the 1st and 3rd week of each month from September 2026, or manually anytime from the MD &amp; EXCO Brief page. Separate multiple addresses with a semicolon or comma.</div>
     <label>MD &amp; EXCO (To)</label><input id="set_exco_to" value="${esc(excoMeta().recipients||"")}" placeholder="md@credicorp.ng; director1@credicorp.ng; director2@credicorp.ng">
     <label>Cc (optional)</label><input id="set_exco_cc" value="${esc(excoMeta().cc||"")}" placeholder="companysecretary@credicorp.ng">
     <div class="row" style="margin-top:12px;gap:8px;align-items:center"><button class="btn" onclick="saveExcoRecipients()">Save recipients</button><button class="btn sec" onclick="go('exco')">Open MD &amp; EXCO Brief →</button></div>
@@ -5315,7 +5315,13 @@ function excoHero(d,e){
     ${e.headline?`<div class="msg">${richText(e.headline)}</div>`:""}
   </div>`;
 }
-function excoNextDue(e){ const last=e.lastSentAt?new Date(e.lastSentAt):null; if(!last||isNaN(last)) return null; const d=new Date(last); d.setDate(d.getDate()+60); return d; }
+function excoNextDue(){
+  // Auto-sends on the 1st and the 3rd week (15th) of each month, starting September 2026.
+  const now=new Date(); const start=new Date(2026,8,1);
+  const cands=[];
+  for(let i=0;i<4;i++){ cands.push(new Date(now.getFullYear(),now.getMonth()+i,1), new Date(now.getFullYear(),now.getMonth()+i,15)); }
+  return cands.filter(d=>d>=now && d>=start).sort((a,b)=>a-b)[0]||null;
+}
 function viewExco(){
   const d=excoData(); const e=excoMeta();
   if(!d.total && !fraudList().length && !extList().length){
@@ -5323,7 +5329,7 @@ function viewExco(){
   }
   let h=excoHero(d,e);
   const link=e.token?briefLink(e.token):"";
-  const nd=excoNextDue(e);
+  const nd=excoNextDue();
   h+=`<div class="row" style="margin:-4px 0 10px;gap:8px;flex-wrap:wrap">
     <button class="btn sm" onclick="modalExcoBrief()">✎ Edit key message</button>
     <button class="btn sm dark" onclick="modalExcoSend()">✉ Send to MD &amp; EXCO</button>
@@ -5332,7 +5338,7 @@ function viewExco(){
     <div class="spacer"></div>
     <button class="btn ghost sm" onclick="go('dashboard')">Full dashboard →</button>
   </div>`;
-  h+=`<div class="hint" style="margin:0 0 16px">${e.lastSentAt?`Last sent ${esc(fmtDateTime(e.lastSentAt))} to ${parseEmails(e.recipients).length} recipient(s).`:"Not sent yet."}${nd?` · Auto-sent bi-monthly — next due ${esc(fmtDate(nd))}.`:" · Sends automatically every 2 months once recipients are set."}${link?` · <a href="${esc(link)}" target="_blank" rel="noopener" class="rt-link">Public link</a>`:""}</div>`;
+  h+=`<div class="hint" style="margin:0 0 16px">${e.lastSentAt?`Last sent ${esc(fmtDateTime(e.lastSentAt))} to ${parseEmails(e.recipients).length} recipient(s).`:"Not sent yet — for July, send it manually with “Send to MD & EXCO”."} · Auto-sends on the 1st and 3rd week of each month from September 2026${nd?` (next ${esc(fmtDate(nd))})`:""}.${link?` · <a href="${esc(link)}" target="_blank" rel="noopener" class="rt-link">Public link</a>`:""}</div>`;
   h+=excoSections(d,e);
   return h;
 }
@@ -5523,18 +5529,6 @@ async function sendExcoBrief(fromAuto){
   if(done) done();
   if(!fromAuto){ closeModal(); render(); modalSuccess(sent?("Brief sent to "+to.length+" recipient(s).\n\nPublic link: "+link):("Brief published (public link: "+link+") but the email could not be delivered — check the email configuration / SendGrid sender authentication.")); }
   return sent;
-}
-let _excoAutoTried=false;
-function maybeAutoSendExco(){
-  if(_excoAutoTried || !isHeadUser()) return;
-  const e=excoMeta();
-  if(!parseEmails(e.recipients).length) return; // no recipients configured
-  const last=e.lastSentAt?new Date(e.lastSentAt):null;
-  if(!last || isNaN(last)) return; // never sent — the first send is manual; auto cadence starts after that
-  const dueMs=60*24*60*60*1000; // ~2 months
-  if((Date.now()-last.getTime())<dueMs) return; // not due yet
-  _excoAutoTried=true; // best-effort, once per session
-  sendExcoBrief(true);
 }
 function modalCaeReport(){
   DB.caeReport=DB.caeReport||{period:"",commentary:""}; const u=DB.caeReport;
