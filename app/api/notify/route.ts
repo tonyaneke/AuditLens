@@ -11,7 +11,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { to?: unknown; subject?: unknown; text?: unknown };
+  let body: { to?: unknown; subject?: unknown; text?: unknown; ctaUrl?: unknown; ctaLabel?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -23,8 +23,10 @@ export async function POST(request: Request) {
     : [];
   const subject = typeof body.subject === "string" ? body.subject : "AuditLens notification";
   const text = typeof body.text === "string" ? body.text : "";
+  const ctaUrl = typeof body.ctaUrl === "string" ? body.ctaUrl : undefined;
+  const ctaLabel = typeof body.ctaLabel === "string" ? body.ctaLabel : undefined;
 
-  const result = await sendNotificationEmail({ to, subject, text });
+  const result = await sendNotificationEmail({ to, subject, text, ctaUrl, ctaLabel });
   return NextResponse.json({
     sent: result.sent,
     error: result.sent ? undefined : result.error,

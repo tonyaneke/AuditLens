@@ -92,7 +92,7 @@ function notifyOwnerAssigned(o){
   if(o.ownerUserId){
     notify(o.ownerUserId,"assigned","New action assigned to you: "+o.title,"myobs");
     const e=ownerEmailFor(o.ownerUserId);
-    if(e) emailNotify([e],"AuditLens — an observation was raised against your department",`An audit observation "${o.title}" has been raised against your department and assigned to you as the primary action owner. Sign in to AuditLens to view the details, respond and close the observation.`);
+    if(e) emailNotify([e],"AuditLens — An Observation was raised against your department",`An audit observation "${o.title}" has been raised against your department and assigned to you as the primary action owner. Sign in to AuditLens to view the details, respond and close the observation.`);
   }
   if(o.secondaryOwnerUserId&&o.secondaryOwnerUserId!==o.ownerUserId){
     notify(o.secondaryOwnerUserId,"assigned","You have oversight on: "+o.title,"myobs");
@@ -237,7 +237,7 @@ function canAccessView(v){
   if(!u) return ["dashboard","audits","tracker","audit","report","observation","newobs","insights","guide"].includes(v);
   if(u.role==="action_owner"){ return v==="myobs"||v==="observation"||v==="extfinding"||v==="dashboard"; }
   if(u.role==="head_of_audit"){
-    if(["dashboard","audits","tracker","auditra","fraud","process","external","iasa","approvals","settings","auditlog","audit","report","observation","extfinding","newobs","insights","guide"].includes(v)) return true;
+    if(["dashboard","audits","tracker","auditra","fraud","process","external","iasa","approvals","exco","settings","auditlog","audit","report","observation","extfinding","newobs","insights","guide"].includes(v)) return true;
     return false;
   }
   if(["dashboard","audits","tracker","audit","report","observation","extfinding","newobs","insights","guide"].includes(v)) return true;
@@ -304,7 +304,7 @@ const ICON_TRASH=`<svg viewBox="0 0 24 24" width="14" height="14" fill="none" st
 function iconBtn(fn,icon,title,danger){ return `<button type="button" class="btn-icon-action${danger?" danger":""}" title="${esc(title)}" onclick="${fn}">${icon}</button>`; }
 function delBtn(fn,title){ return iconBtn(fn,ICON_TRASH,title||"Delete",true); }
 function pageTitleFor(v){
-  const map={dashboard:"Dashboard",audits:"Audits & Reports",tracker:"Remediation Tracker",auditra:"Audit Risk Assessment",fraud:"Fraud Risk",process:"Process Review",external:"External Findings",iasa:"IA Self-Assessment",approvals:"Approvals",myobs:"My Observations",guide:"How to use AuditLens",settings:"Settings",auditlog:"Audit log"};
+  const map={dashboard:"Dashboard",audits:"Audits & Reports",tracker:"Remediation Tracker",auditra:"Audit Risk Assessment",fraud:"Fraud Risk",process:"Process Review",external:"External Findings",iasa:"IA Self-Assessment",approvals:"Approvals",exco:"MD & EXCO — Executive Assurance Brief",myobs:"My Observations",guide:"How to use AuditLens",settings:"Settings",auditlog:"Audit log"};
   return map[v]||"AuditLens";
 }
 function planYearOptions(selected){
@@ -410,6 +410,12 @@ function render(){
     T.textContent=pageTitleFor("approvals");
     C.innerHTML=viewApprovals();
   }
+  else if(view==="exco"){
+    if(!canAccessView("exco")){ go("dashboard"); return; }
+    T.textContent=pageTitleFor("exco");
+    A.innerHTML=`<button class="btn sec sm" onclick="exportExco()">⤓ Executive brief (Word)</button><button class="btn sm dark" onclick="modalExcoSend()">✉ Send to MD &amp; EXCO</button>`;
+    C.innerHTML=viewExco();
+  }
   else if(view==="myobs"){
     if(!canAccessView("myobs")){ go("dashboard"); return; }
     T.textContent=pageTitleFor("myobs");
@@ -422,6 +428,7 @@ function render(){
   updateApprovalsBadge();
   renderNotifBell();
   checkHeadClosureAlerts();
+  maybeAutoSendExco();
 }
 /* ---- Global alert: items awaiting the current user's verification (auditor) or closure (Head) ---- */
 let _pendingAlertSeen=new Set();
@@ -4069,8 +4076,15 @@ function viewSettings(){
   </div>
   <div class="card"><div class="row"><h3 style="margin:0">User access management</h3><div class="spacer"></div><button class="btn sm" onclick="modalUser()">+ Add user</button></div>
     <div id="usersTableWrap" style="margin-top:12px">${usersTableHTML()}</div>
+  </div>
+  <div class="card"><h3 style="margin:0 0 4px">MD &amp; EXCO brief recipients</h3>
+    <div class="hint" style="margin-bottom:10px">These recipients receive the <b>Executive Assurance Brief</b> — sent automatically every 2 months, or manually from the MD &amp; EXCO Brief page. Separate multiple addresses with a semicolon or comma.</div>
+    <label>MD &amp; EXCO (To)</label><input id="set_exco_to" value="${esc(excoMeta().recipients||"")}" placeholder="md@credicorp.ng; director1@credicorp.ng; director2@credicorp.ng">
+    <label>Cc (optional)</label><input id="set_exco_cc" value="${esc(excoMeta().cc||"")}" placeholder="companysecretary@credicorp.ng">
+    <div class="row" style="margin-top:12px;gap:8px;align-items:center"><button class="btn" onclick="saveExcoRecipients()">Save recipients</button><button class="btn sec" onclick="go('exco')">Open MD &amp; EXCO Brief →</button></div>
   </div>`:""}`;
 }
+function saveExcoRecipients(){ const e=excoMeta(); e.recipients=val("set_exco_to"); e.cc=val("set_exco_cc"); save(); toast("MD & EXCO recipients saved.","success"); }
 function departmentsTableHTML(){
   const D=departments();
   if(!D.length) return `<div class="empty">No departments yet. Add one to create its head as an action owner.</div>`;
@@ -5249,6 +5263,278 @@ function exportDashboard(){
     <table><tr><th>Criticality</th><th>Observation</th><th>Audit / Area</th><th>Action owner</th><th>Timeline</th><th>Status</th></tr>
     ${crit.length?crit.map(o=>`<tr><td><span class="pill ${ck(o.criticality)}">${o.criticality}</span></td><td>${esc(o.title)}</td><td>${esc(o._a.name)}</td><td>${esc(o.owner||"—")}</td><td>${esc(o.timeline||"—")}</td><td>${esc(o.status||"Open")}</td></tr>`).join(""):`<tr><td colspan="6">None</td></tr>`}</table>`;
   wordDoc("CAE Dashboard "+stamp(),inner);
+}
+/* ============================ MD & EXCO EXECUTIVE ASSURANCE BRIEF ============================ */
+function excoMeta(){ const e=DB.exco=DB.exco||{}; e.period=e.period||""; e.headline=e.headline||""; e.commentary=e.commentary||""; e.recipients=e.recipients||""; e.cc=e.cc||""; e.subject=e.subject||""; e.sends=e.sends||[]; return e; }
+function parseEmails(s){ return uniq(String(s||"").split(/[;,\s]+/).map(x=>x.trim()).filter(x=>x.includes("@"))); }
+function stripTags(h){ return String(h||"").replace(/<[^>]+>/g,"").replace(/&amp;/g,"&"); }
+function excoData(){
+  const obs=allObs();
+  const total=obs.length; const open=obs.filter(o=>o.status!=="Closed"); const closed=total-open.length;
+  const remRate=total?Math.round(closed/total*100):0;
+  const keyOpen=open.filter(o=>o.criticality==="Critical"||o.criticality==="High");
+  const overdue=open.filter(o=>isOverdueObs(o,o._r));
+  const keyOverdue=keyOpen.filter(o=>isOverdueObs(o,o._r));
+  const repeats=obs.filter(o=>o.isRepeat); const repeatOpen=repeats.filter(o=>o.status!=="Closed");
+  const watch=open.filter(o=>{ const d=daysToClose(o,o._r); return d!=null&&d>=0&&d<=14; });
+  const themeCount={}; open.forEach(o=>rcThemes(o.rootCause).forEach(t=>{ if(t==="Other / unclassified")return; themeCount[t]=(themeCount[t]||0)+1; }));
+  const themes=Object.entries(themeCount).sort((a,b)=>b[1]-a[1]);
+  const fr=fraudList().map(f=>{ const inh=fraudBand((f.likelihood||0)*(f.impact||0)); const res=f.residualOverride||residualBand(inh,f.controlStrength); const acts=f.actions||[]; const done=acts.length&&acts.every(a=>a.status==="Implemented"); return {...f,inh,res,mitigated:f.status==="Mitigated"||done}; });
+  const unmit=fr.filter(f=>(f.res==="High"||f.res==="Extreme")&&!f.mitigated).sort((a,b)=>BANDS.indexOf(b.res)-BANDS.indexOf(a.res));
+  const ext=extList(); const extOpen=ext.filter(f=>f.status!=="Closed"); const extOverdueN=extOpen.filter(extOverdue).length;
+  const plan=(DB.auditUniverse||[]).filter(e=>e.includeInPlan);
+  const totOcc=plan.reduce((s,e)=>s+unitOccTotal(e),0), doneOcc=plan.reduce((s,e)=>s+unitOccDone(e),0);
+  const planPct=totOcc?Math.round(doneOcc/totOcc*100):0;
+  const byC=zc(); obs.forEach(o=>byC[o.criticality]++);
+  const openByC=zc(); open.forEach(o=>openByC[o.criticality]++);
+  const overall=open.length?worstKey(openByC):"—";
+  return {obs,total,open,closed,remRate,keyOpen,overdue,keyOverdue,repeats,repeatOpen,watch,themes,fr,unmit,ext,extOpen,extOverdueN,plan,planPct,byC,openByC,overall};
+}
+function excoMatters(d){
+  const m=[];
+  if(d.keyOverdue.length) m.push(`${d.keyOverdue.length} critical/high-risk issue${d.keyOverdue.length!==1?"s are":" is"} overdue — management remediation has slipped past the agreed date and needs executive push.`);
+  if(d.unmit.length) m.push(`${d.unmit.length} fraud risk${d.unmit.length!==1?"s remain":" remains"} at High/Extreme residual without full mitigation — prioritise the control actions with the risk owners.`);
+  if(d.extOverdueN) m.push(`${d.extOverdueN} regulatory/external audit finding${d.extOverdueN!==1?"s are":" is"} past the remediation deadline — regulatory exposure requiring attention.`);
+  if(d.repeatOpen.length) m.push(`${d.repeatOpen.length} repeat finding${d.repeatOpen.length!==1?"s recur":" recurs"} from prior audits — issues are not being sustainably fixed at root cause.`);
+  if(d.watch.length) m.push(`${d.watch.length} issue${d.watch.length!==1?"s fall":" falls"} due within two weeks — owner follow-through needed to avoid new overdues.`);
+  if(d.themes.length && d.themes[0][1]>=3) m.push(`Risk is concentrating in ${d.themes[0][0]} (${d.themes[0][1]} open issues) — a systemic theme for management focus.`);
+  if(d.plan.length && d.planPct<60) m.push(`Annual audit plan delivery is at ${d.planPct}% — monitor to ensure planned assurance coverage is achieved.`);
+  if(!m.length) m.push(`No matters require escalation this period — remediation is broadly on track, with no High/Extreme fraud or regulatory exposures outstanding.`);
+  return m;
+}
+function excoHero(d,e){
+  return `<div class="exhero">
+    <div class="row" style="align-items:flex-start;gap:18px">
+      <div style="flex:1">
+        <div class="lbl">Internal Audit · Executive Assurance Brief</div>
+        <h2>${esc(DB.org)}</h2>
+        <div class="postu">As at ${e.period?esc(e.period):fmtDate(today0())}</div>
+      </div>
+      <div style="text-align:right"><div style="font-size:42px;font-weight:800;line-height:1">${d.remRate}%</div><div style="font-size:12px;color:#cfe7de">issues remediated</div></div>
+    </div>
+    ${e.headline?`<div class="msg">${richText(e.headline)}</div>`:""}
+  </div>`;
+}
+function excoNextDue(e){ const last=e.lastSentAt?new Date(e.lastSentAt):null; if(!last||isNaN(last)) return null; const d=new Date(last); d.setDate(d.getDate()+60); return d; }
+function viewExco(){
+  const d=excoData(); const e=excoMeta();
+  if(!d.total && !fraudList().length && !extList().length){
+    return `<div class="card"><div class="empty"><div class="big">◆</div>No assurance data yet. As you log observations, fraud risks and external findings, this executive brief for the MD &amp; EXCO populates automatically.</div></div>`;
+  }
+  let h=excoHero(d,e);
+  const link=e.token?briefLink(e.token):"";
+  const nd=excoNextDue(e);
+  h+=`<div class="row" style="margin:-4px 0 10px;gap:8px;flex-wrap:wrap">
+    <button class="btn sm" onclick="modalExcoBrief()">✎ Edit key message</button>
+    <button class="btn sm dark" onclick="modalExcoSend()">✉ Send to MD &amp; EXCO</button>
+    <button class="btn sec sm" onclick="exportExco()">⤓ Executive brief (Word)</button>
+    ${link?`<button class="btn sec sm" onclick="copyBriefLink()">🔗 Copy public link</button>`:""}
+    <div class="spacer"></div>
+    <button class="btn ghost sm" onclick="go('dashboard')">Full dashboard →</button>
+  </div>`;
+  h+=`<div class="hint" style="margin:0 0 16px">${e.lastSentAt?`Last sent ${esc(fmtDateTime(e.lastSentAt))} to ${parseEmails(e.recipients).length} recipient(s).`:"Not sent yet."}${nd?` · Auto-sent bi-monthly — next due ${esc(fmtDate(nd))}.`:" · Sends automatically every 2 months once recipients are set."}${link?` · <a href="${esc(link)}" target="_blank" rel="noopener" class="rt-link">Public link</a>`:""}</div>`;
+  h+=excoSections(d,e);
+  return h;
+}
+function excoSections(d,e){
+  const matters=excoMatters(d);
+  const maxT=Math.max(1,...d.themes.map(t=>t[1]));
+  const keySorted=d.keyOpen.slice().sort((a,b)=>(isOverdueObs(b,b._r)-isOverdueObs(a,a._r))||(CRITS.indexOf(a.criticality)-CRITS.indexOf(b.criticality))||(((daysToClose(a,a._r))??1e9)-((daysToClose(b,b._r))??1e9)));
+  const bySource={}; d.extOpen.forEach(f=>{ bySource[f.source||"Other"]=(bySource[f.source||"Other"]||0)+1; });
+  const extSorted=d.extOpen.slice().sort((a,b)=>(extOverdue(b)-extOverdue(a)));
+  let h="";
+  if(e.commentary) h+=`<div class="card"><div class="seclabel">Chief Audit Executive's commentary</div><div style="font-size:13.5px;line-height:1.6">${richText(e.commentary)}</div></div>`;
+  h+=`<div class="dash-kpis" style="grid-template-columns:repeat(5,1fr)">
+    ${kpi(d.keyOpen.length?"warn":"good","Critical &amp; High open",d.keyOpen.length,d.keyOverdue.length+" overdue")}
+    ${kpi("good","Remediation rate",d.remRate+"%",d.closed+" of "+d.total+" closed")}
+    ${kpi(d.overdue.length?"warn":"base","Overdue actions",d.overdue.length,"past target date")}
+    ${kpi(d.unmit.length?"warn":"good","Unmitigated fraud",d.unmit.length,"High/Extreme residual")}
+    ${kpi(d.extOpen.length?"accent":"good","Regulatory findings",d.extOpen.length,d.extOverdueN+" overdue")}
+  </div>`;
+  h+=`<div class="card"><div class="seclabel">Matters requiring EXCO attention</div>
+    <ol class="exco-matters">${matters.map(t=>`<li>${esc(t)}</li>`).join("")}</ol>
+  </div>`;
+  h+=`<div class="card"><div class="seclabel">Critical &amp; high-risk issues requiring executive attention</div>
+    ${keySorted.length?`<table><thead><tr><th>Criticality</th><th>Issue</th><th>Action owner</th><th>Target close</th><th>Status</th></tr></thead><tbody>`+
+      keySorted.slice(0,10).map(o=>{ const ec=effectiveClose(o,o._r); const od=isOverdueObs(o,o._r); return `<tr>
+        <td><span class="pill c-${ck(o.criticality)}">${o.criticality}</span>${o.isRepeat?`<div style="margin-top:3px"><span class="pill" style="background:#efe3f7;color:#6b3fa0">↻ repeat</span></div>`:""}</td>
+        <td><b>${esc(o.title)}</b><div class="hint">${esc(o._a.name)}${o._a.area?" · "+esc(o._a.area):""}</div></td>
+        <td>${esc(o.owner||"—")}</td>
+        <td>${ec?fmtDate(ec):"—"}${od?` <span class="pill c-Critical">overdue</span>`:""}</td>
+        <td>${statusPill(o.status)}</td>
+      </tr>`; }).join("")+`</tbody></table>`+(keySorted.length>10?`<div class="hint" style="margin-top:8px">Showing 10 of ${keySorted.length} open Critical &amp; High issues.</div>`:"")
+      :`<div class="empty">No open Critical or High-risk issues.</div>`}
+  </div>`;
+  h+=`<div class="card"><div class="seclabel">Emerging &amp; recurring risk themes</div>
+    ${d.themes.length? d.themes.slice(0,6).map(([t,n])=>`<div class="rcrow"><div class="nm">${esc(t)}</div><div class="track"><div class="fill" style="width:${n/maxT*100}%"></div></div><div class="vv">${n}</div></div>`).join("") : `<div class="hint">No open issues to theme yet.</div>`}
+  </div>`;
+  h+=`<div class="card"><div class="seclabel">Unmitigated fraud risks — High / Extreme residual</div>
+    ${d.unmit.length?`<table><thead><tr><th>Residual</th><th>Fraud scheme</th><th>Category</th><th>Owner</th><th>Status</th></tr></thead><tbody>`+
+      d.unmit.slice(0,10).map(f=>`<tr><td><span class="pill" style="background:${hx2rgba(BAND_HEX[f.res],.16)};color:${BAND_HEX[f.res]};font-weight:700">${f.res}</span></td><td><b>${esc(f.scheme)}</b></td><td>${esc(f.category||"—")}</td><td>${esc(f.owner||"—")}</td><td>${esc(f.status||"Identified")}</td></tr>`).join("")+`</tbody></table>`
+      :`<div class="hint">No fraud risks at High/Extreme residual outstanding.${fraudList().length?"":" (No fraud risk assessment captured yet.)"}</div>`}
+  </div>`;
+  h+=`<div class="card"><div class="seclabel">Regulatory &amp; external audit exposure</div>
+    ${d.extOpen.length?`<div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:10px">${Object.entries(bySource).sort((a,b)=>b[1]-a[1]).map(([s,n])=>`<span class="pill" style="background:#eef2f7;color:#334155">${esc(s)} · ${n}</span>`).join("")}</div>
+      <table><thead><tr><th>Source</th><th>Finding</th><th>Owner</th><th>Target</th><th>Status</th></tr></thead><tbody>`+
+      extSorted.slice(0,8).map(f=>`<tr><td>${esc(f.source||"—")}</td><td><b>${esc(f.title||f.ref||"—")}</b></td><td>${esc(f.owner||"—")}</td><td>${esc(f.targetDate||"—")}${extOverdue(f)?` <span class="pill c-Critical">overdue</span>`:""}</td><td>${esc(f.status||"Open")}</td></tr>`).join("")+`</tbody></table>`
+      :`<div class="hint">No open external/regulatory findings.${extList().length?"":" (No external findings captured yet.)"}</div>`}
+  </div>`;
+  return h;
+}
+function modalExcoBrief(){
+  const e=excoMeta();
+  openModal("Executive key message — MD & EXCO",`
+    <label>As at / period</label><input id="ex_per" value="${esc(e.period||"")}" placeholder="e.g. As at 30 June 2026 (Q2 2026)">
+    <label>Key message (executive headline)</label><textarea id="ex_head" style="min-height:120px" placeholder="One short paragraph: the overall assurance message the MD & EXCO should take away. Use separate lines for numbered points.">${esc(e.headline||"")}</textarea>
+    <label>CAE commentary (optional, longer)</label><textarea id="ex_comm" style="min-height:130px" placeholder="Optional supporting narrative — critical issues, themes, fraud, regulatory.">${esc(e.commentary||"")}</textarea>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveExcoBrief()">Save</button>`);
+}
+function saveExcoBrief(){ const e=excoMeta(); e.period=val("ex_per"); e.headline=val("ex_head"); e.commentary=val("ex_comm"); save(); closeModal(); render(); }
+function exportExco(){
+  const d=excoData(); const e=excoMeta(); const matters=excoMatters(d);
+  const keySorted=d.keyOpen.slice().sort((a,b)=>(isOverdueObs(b,b._r)-isOverdueObs(a,a._r))||(CRITS.indexOf(a.criticality)-CRITS.indexOf(b.criticality)));
+  const extSorted=d.extOpen.slice().sort((a,b)=>(extOverdue(b)-extOverdue(a)));
+  let inner=`<h1>Executive Assurance Brief — MD &amp; Executive Committee</h1>
+    <div class="meta">${esc(DB.org)} — Internal Audit${e.period?" · "+esc(e.period):""}</div>
+    <div class="note">Remediation rate: <b>${d.remRate}%</b> (${d.closed}/${d.total}) · Open Critical &amp; High: <b>${d.keyOpen.length}</b> (${d.keyOverdue.length} overdue) · Unmitigated fraud risks: <b>${d.unmit.length}</b> · Regulatory findings open: <b>${d.extOpen.length}</b> (${d.extOverdueN} overdue).</div>
+    ${e.headline?`<h2>Key Message</h2><div>${esc(e.headline).replace(/\n/g,"<br>")}</div>`:""}
+    ${e.commentary?`<h2>Chief Audit Executive's Commentary</h2><div>${esc(e.commentary).replace(/\n/g,"<br>")}</div>`:""}
+    <h2>Matters Requiring EXCO Attention</h2><ol>${matters.map(t=>`<li>${esc(t)}</li>`).join("")}</ol>
+    <h2>Critical &amp; High-Risk Issues Requiring Attention</h2>`;
+  inner+= keySorted.length?`<table><tr><th>Criticality</th><th>Issue</th><th>Audit / Area</th><th>Owner</th><th>Target close</th><th>Status</th></tr>`+
+    keySorted.map(o=>{ const ec=effectiveClose(o,o._r); const od=isOverdueObs(o,o._r); return `<tr><td>${o.criticality}${o.isRepeat?" (repeat)":""}</td><td>${esc(o.title)}</td><td>${esc(o._a.name)}${o._a.area?" · "+esc(o._a.area):""}</td><td>${esc(o.owner||"—")}</td><td>${ec?fmtDate(ec):"—"}${od?" (overdue)":""}</td><td>${esc(o.status||"Open")}</td></tr>`; }).join("")+`</table>`:`<p>No open Critical or High-risk issues.</p>`;
+  inner+=`<h2>Emerging &amp; Recurring Risk Themes</h2>`;
+  inner+= d.themes.length?`<table><tr><th>Theme</th><th>Open issues</th></tr>`+d.themes.map(([t,n])=>`<tr><td>${esc(t)}</td><td>${n}</td></tr>`).join("")+`</table>`:`<p>No open issues to theme.</p>`;
+  inner+=`<h2>Unmitigated Fraud Risks (High / Extreme Residual)</h2>`;
+  inner+= d.unmit.length?`<table><tr><th>Residual</th><th>Scheme</th><th>Category</th><th>Owner</th><th>Status</th></tr>`+
+    d.unmit.map(f=>`<tr><td>${f.res}</td><td>${esc(f.scheme)}</td><td>${esc(f.category||"—")}</td><td>${esc(f.owner||"—")}</td><td>${esc(f.status||"Identified")}</td></tr>`).join("")+`</table>`:`<p>No fraud risks at High/Extreme residual outstanding.</p>`;
+  inner+=`<h2>Regulatory &amp; External Audit Exposure</h2>`;
+  inner+= d.extOpen.length?`<table><tr><th>Source</th><th>Finding</th><th>Owner</th><th>Target</th><th>Status</th></tr>`+
+    extSorted.map(f=>`<tr><td>${esc(f.source||"—")}</td><td>${esc(f.title||f.ref||"—")}</td><td>${esc(f.owner||"—")}</td><td>${esc(f.targetDate||"—")}${extOverdue(f)?" (overdue)":""}</td><td>${esc(f.status||"Open")}</td></tr>`).join("")+`</table>`:`<p>No open external/regulatory findings.</p>`;
+  wordDoc("Executive Assurance Brief"+(e.period?" - "+String(e.period).replace(/[^\w \-]/g,""):""),inner);
+}
+/* --- Email summary + public link --- */
+function buildExcoSummaryHTML(d,e){
+  const teal="#0d5a47"; const matters=excoMatters(d);
+  const row=(l,v,c)=>`<tr><td style="padding:6px 10px;border:1px solid #dbe3ea;font-size:13px;color:#334155">${l}</td><td style="padding:6px 10px;border:1px solid #dbe3ea;font-size:14px;font-weight:700;color:${c||teal};text-align:center">${v}</td></tr>`;
+  return `<div style="font-family:Calibri,Arial,sans-serif;color:#1c2733;max-width:720px">
+    <div style="background:${teal};color:#ffffff;padding:14px 18px;border-radius:6px">
+      <div style="font-size:11px;letter-spacing:1.2px;text-transform:uppercase;color:#8fd3c4;font-weight:700">Internal Audit · Executive Assurance Brief</div>
+      <div style="font-size:19px;font-weight:800;margin-top:3px">${esc(DB.org)}</div>
+      <div style="font-size:12.5px;color:#cfe7de;margin-top:4px">As at ${e.period?esc(e.period):fmtDate(today0())} · ${d.remRate}% remediated</div>
+    </div>
+    ${e.headline?`<p style="font-size:14px;line-height:1.55;margin:14px 2px">${esc(e.headline).replace(/\n/g,"<br>")}</p>`:""}
+    <table style="border-collapse:collapse;margin:12px 0;width:100%">
+      ${row("Open Critical &amp; High issues",d.keyOpen.length+" ("+d.keyOverdue.length+" overdue)",d.keyOpen.length?"#b00020":teal)}
+      ${row("Overdue remediation actions",d.overdue.length,d.overdue.length?"#b00020":teal)}
+      ${row("Unmitigated fraud risks (High/Extreme)",d.unmit.length,d.unmit.length?"#b00020":teal)}
+      ${row("Regulatory / external findings open",d.extOpen.length+" ("+d.extOverdueN+" overdue)",d.extOpen.length?"#c9a300":teal)}
+      ${row("Remediation rate",d.remRate+"% ("+d.closed+"/"+d.total+")",teal)}
+    </table>
+    <div style="font-size:14px;font-weight:700;color:${teal};margin:10px 2px 6px">Matters requiring EXCO attention</div>
+    <ol style="margin:0 0 12px;padding-left:20px">
+      ${matters.map(t=>`<li style="margin:6px 0;font-size:13px;line-height:1.5;color:#1c2733">${esc(t)}</li>`).join("")}
+    </ol>
+  </div>`;
+}
+function buildExcoEmailText(d,e,link){
+  const matters=excoMatters(d);
+  const lines=[
+    `Internal Audit — Executive Assurance Brief for the MD & Executive Committee`,
+    `${DB.org} · As at ${e.period||fmtDate(today0())}`,
+    ``,
+  ];
+  if(e.headline) lines.push(e.headline,"");
+  lines.push(
+    `Remediation rate: ${d.remRate}% (${d.closed}/${d.total})`,
+    `Open Critical & High issues: ${d.keyOpen.length} (${d.keyOverdue.length} overdue)`,
+    `Overdue remediation actions: ${d.overdue.length}`,
+    `Unmitigated fraud risks (High/Extreme): ${d.unmit.length}`,
+    `Regulatory / external findings open: ${d.extOpen.length} (${d.extOverdueN} overdue)`,
+    ``,
+    `Matters requiring EXCO attention:`,
+    ...matters.map((t,i)=>`${i+1}. ${t}`),
+    ``,
+    `Open the full Executive Assurance Brief here: ${link}`
+  );
+  return lines.join("\n");
+}
+function buildExcoSnapshot(d,e){
+  const keySorted=d.keyOpen.slice().sort((a,b)=>(isOverdueObs(b,b._r)-isOverdueObs(a,a._r))||(CRITS.indexOf(a.criticality)-CRITS.indexOf(b.criticality)));
+  const extSorted=d.extOpen.slice().sort((a,b)=>(extOverdue(b)-extOverdue(a)));
+  return {
+    org:DB.org||"", period:e.period||fmtDate(today0()), generatedAt:new Date().toISOString(),
+    headline:e.headline||"", commentary:e.commentary||"",
+    remRate:d.remRate, closed:d.closed, total:d.total,
+    kpis:{ keyOpen:d.keyOpen.length, keyOverdue:d.keyOverdue.length, overdue:d.overdue.length, unmit:d.unmit.length, extOpen:d.extOpen.length, extOverdueN:d.extOverdueN, watch:d.watch.length },
+    matters:excoMatters(d),
+    keyIssues:keySorted.slice(0,15).map(o=>({criticality:o.criticality,title:o.title,area:(o._a.name||"")+(o._a.area?" · "+o._a.area:""),owner:o.owner||"—",targetClose:(function(){const ec=effectiveClose(o,o._r);return ec?fmtDate(ec):"—";})(),status:o.status||"Open",overdue:isOverdueObs(o,o._r),repeat:!!o.isRepeat})),
+    themes:d.themes.slice(0,8),
+    fraud:d.unmit.slice(0,12).map(f=>({res:f.res,scheme:f.scheme,category:f.category||"—",owner:f.owner||"—",status:f.status||"Identified"})),
+    ext:extSorted.slice(0,10).map(f=>({source:f.source||"—",title:f.title||f.ref||"—",owner:f.owner||"—",target:f.targetDate||"—",status:f.status||"Open",overdue:extOverdue(f)}))
+  };
+}
+function briefLink(token){ try{ return location.origin+"/brief?id="+encodeURIComponent(token); }catch(e){ return "/brief?id="+token; } }
+function publishExcoBrief(){
+  const e=excoMeta(); const d=excoData();
+  if(!e.token) e.token=uid()+uid();
+  DB.exco.snapshot=buildExcoSnapshot(d,e);
+  DB.exco.publishedAt=new Date().toISOString();
+  return briefLink(e.token);
+}
+function copyBriefLink(){
+  const link=publishExcoBrief(); // (re)publish the current snapshot so the link is always up to date
+  save();
+  try{ navigator.clipboard.writeText(link).then(()=>toast("Public link copied — the brief is now published.","success"),()=>toast(link)); }catch(err){ toast(link); }
+  render();
+}
+function modalExcoSend(){
+  const e=excoMeta(); const d=excoData();
+  openModal("Send brief to MD & EXCO",`
+    <p class="hint">The executive summary is emailed to the recipients below, with a link to the full brief. Default recipients come from <b>Settings → MD &amp; EXCO recipients</b>.</p>
+    <label>To (MD &amp; EXCO — separate with ; or , )</label><input id="ex_to" value="${esc(e.recipients||"")}" placeholder="md@credicorp.ng; director1@credicorp.ng">
+    <label>Cc (optional)</label><input id="ex_cc" value="${esc(e.cc||"")}">
+    <label>Subject</label><input id="ex_subj" value="${esc(e.subject||("Executive Assurance Brief — "+(e.period||fmtDate(today0()))))}">
+    <div class="note" style="margin-top:12px">Email preview (a link to the full brief is included):</div>
+    <div style="border:1px solid var(--line);border-radius:8px;padding:10px;max-height:280px;overflow:auto;background:#fff">${buildExcoSummaryHTML(d,e)}</div>
+    <div id="ex_send_err" style="margin-top:8px"></div>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" id="ex_send_btn" onclick="sendExcoBrief()">✉ Send now</button>`);
+}
+async function sendExcoBrief(fromAuto){
+  const e=excoMeta();
+  if(!fromAuto){ e.recipients=val("ex_to"); e.cc=val("ex_cc"); e.subject=val("ex_subj"); }
+  const to=parseEmails(e.recipients); const cc=parseEmails(e.cc);
+  if(!to.length){ if(fromAuto) return false; const el=document.getElementById("ex_send_err"); if(el) el.innerHTML=`<div class="ai-err">Add at least one recipient (or set them in Settings → MD &amp; EXCO recipients).</div>`; return false; }
+  const btn=document.getElementById("ex_send_btn"); const done=btnBusy(btn,"Sending…");
+  const link=publishExcoBrief();
+  const d=excoData();
+  const subject=e.subject||("Executive Assurance Brief — "+(e.period||fmtDate(today0())));
+  const text=buildExcoEmailText(d,e,link);
+  let sent=false;
+  try{
+    const res=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:uniq([...to,...cc]),subject,text,ctaUrl:link,ctaLabel:"Open the Executive Assurance Brief"})});
+    const data=await res.json().catch(()=>({})); sent=!!data.sent;
+  }catch(err){}
+  e.sends=e.sends||[]; e.sends.unshift({at:new Date().toISOString(),by:(window.AMS_USER&&window.AMS_USER.name)||"auto",to:to.length+cc.length,period:e.period||fmtDate(today0()),link,sent});
+  if(e.sends.length>50) e.sends=e.sends.slice(0,50);
+  e.lastSentAt=new Date().toISOString();
+  logAudit("exco.sent","Executive Assurance Brief "+(fromAuto?"auto-":"")+"sent to MD & EXCO ("+to.length+" recipient(s))",{recipients:to.length,period:e.period,sent});
+  save();
+  if(done) done();
+  if(!fromAuto){ closeModal(); render(); modalSuccess(sent?("Brief sent to "+to.length+" recipient(s).\n\nPublic link: "+link):("Brief published (public link: "+link+") but the email could not be delivered — check the email configuration / SendGrid sender authentication.")); }
+  return sent;
+}
+let _excoAutoTried=false;
+function maybeAutoSendExco(){
+  if(_excoAutoTried || !isHeadUser()) return;
+  const e=excoMeta();
+  if(!parseEmails(e.recipients).length) return; // no recipients configured
+  const last=e.lastSentAt?new Date(e.lastSentAt):null;
+  if(!last || isNaN(last)) return; // never sent — the first send is manual; auto cadence starts after that
+  const dueMs=60*24*60*60*1000; // ~2 months
+  if((Date.now()-last.getTime())<dueMs) return; // not due yet
+  _excoAutoTried=true; // best-effort, once per session
+  sendExcoBrief(true);
 }
 function modalCaeReport(){
   DB.caeReport=DB.caeReport||{period:"",commentary:""}; const u=DB.caeReport;

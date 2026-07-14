@@ -130,6 +130,8 @@ export async function sendNotificationEmail(params: {
   to: string[];
   subject: string;
   text: string;
+  ctaUrl?: string;
+  ctaLabel?: string;
 }) {
   const apiKey = process.env.SENDGRID_API_KEY?.trim();
   const from = process.env.SENDGRID_SENDER?.trim();
@@ -143,11 +145,18 @@ export async function sendNotificationEmail(params: {
 
   const appUrl = (process.env.APP_URL?.trim() || "http://localhost:3000").replace(/\/$/, "");
   const loginUrl = `${appUrl}/login`;
+  const ctaUrl = params.ctaUrl?.trim() || loginUrl;
+  const ctaLabel = params.ctaLabel?.trim() || "Sign in to AuditLens";
+  // Preserve line breaks in the notification text as HTML paragraphs.
+  const bodyHtml = escapeHtml(params.text)
+    .split(/\n{2,}/)
+    .map((p) => `<p>${p.replace(/\n/g, "<br>")}</p>`)
+    .join("");
   const html = brandedEmail({
     heading: params.subject.replace(/^AuditLens\s*[—-]\s*/i, ""),
-    bodyHtml: `<p>${escapeHtml(params.text)}</p>`,
-    ctaLabel: "Sign in to AuditLens",
-    ctaUrl: loginUrl,
+    bodyHtml,
+    ctaLabel,
+    ctaUrl,
   });
 
   const res = await fetch("https://api.sendgrid.com/v3/mail/send", {

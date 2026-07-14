@@ -4337,3 +4337,13 @@ body.ai-busy .ai-generate-btn:not(:disabled) {
 .owner-announce u { color: var(--accent); font-weight: 600; }
 .owner-announce-x { margin-left: auto; background: none; border: none; font-size: 18px; color: var(--muted); cursor: pointer; line-height: 1; padding: 0 2px; }
 .owner-announce-x:hover { color: var(--ink); }
+
+/* ---- MD & EXCO Executive Assurance Brief ---- */
+.exhero { background: linear-gradient(135deg,#0d5a47,#12795f); color: #fff; border-radius: 16px; padding: 24px 28px; margin-bottom: 18px; box-shadow: 0 10px 28px rgba(13,90,71,.22); }
+.exhero .lbl { font-size: 11px; letter-spacing: 1.4px; text-transform: uppercase; color: #8fd3c4; font-weight: 700; }
+.exhero h2 { margin: 6px 0 4px; font-size: 23px; font-weight: 800; color: #fff; }
+.exhero .postu { font-size: 13px; color: #cfe7de; }
+.exhero .msg { margin-top: 16px; font-size: 14.5px; line-height: 1.6; background: #ffffff1a; border-radius: 10px; padding: 12px 14px; }
+.exhero .msg .detail-bullets { margin: 0; padding-left: 18px; }
+.exco-matters { margin: 0; padding-left: 22px; }
+.exco-matters li { margin: 8px 0; font-size: 14px; line-height: 1.5; }

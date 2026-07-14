@@ -52,6 +52,7 @@ const SECTIONS: { label: string; items: NavItem[] }[] = [
     label: "Oversight",
     items: [
       { view: "approvals", label: "Approvals", icon: CheckmarkBadge01Icon },
+      { view: "exco", label: "MD & EXCO Brief", icon: JusticeScale01Icon },
     ],
   },
   {
@@ -116,7 +117,7 @@ export default function SidebarNav({ user }: SidebarNavProps) {
   const isHead = user.role === "head_of_audit";
   const isOwner = user.role === "action_owner";
   const access = isHead
-    ? new Set<string>([...MAIN_VIEWS, ...ASSESSMENT_VIEWS, "approvals"])
+    ? new Set<string>([...MAIN_VIEWS, ...ASSESSMENT_VIEWS, "approvals", "exco"])
     : isOwner
       ? new Set<string>(["dashboard", "myobs"])
       : new Set<string>([...MAIN_VIEWS, ...(user.sidebarAccess || [])]);
