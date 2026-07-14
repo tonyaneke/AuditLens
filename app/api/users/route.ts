@@ -118,6 +118,9 @@ export async function POST(request: Request) {
       user: userToSession(user),
       emailSent: emailResult.sent,
       emailError: emailResult.sent ? undefined : emailResult.error,
+      // If the welcome email could not be delivered, hand the temp password back to the
+      // Head of Audit so they can share it manually and the new user can still sign in.
+      tempPassword: emailResult.sent ? undefined : tempPassword,
     },
     { status: 201 },
   );

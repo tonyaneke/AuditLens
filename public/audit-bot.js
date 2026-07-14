@@ -423,26 +423,33 @@ function render(){
   renderNotifBell();
   checkHeadClosureAlerts();
 }
-/* ---- Head of Audit: global alert when observations are verified and awaiting closure sign-off ---- */
-let _headAlertSeen=new Set();
+/* ---- Global alert: items awaiting the current user's verification (auditor) or closure (Head) ---- */
+let _pendingAlertSeen=new Set();
 function obsLocate(oid){ const x=allObs().find(o=>o.id===oid); return x?{a:x._a,r:x._r}:null; }
-function pendingHeadClosures(){
-  const obs=allObs().filter(o=>o.reportVerifiedAt && !o.headVerifiedAt && (o.status||"Open")!=="Closed").map(o=>({o,kind:"obs"}));
-  const ext=extList().filter(f=>f.reportVerifiedAt && !f.headVerifiedAt && (f.status||"Open")!=="Closed").map(f=>({o:f,kind:"ext"}));
-  return obs.concat(ext);
+function pendingActionAlerts(){
+  const out=[];
+  // Ready for the auditor (raiser / lead / Head) to verify
+  allObs().forEach(o=>{ if(o.ownerRectifiedAt && !o.reportVerifiedAt && (o.status||"Open")!=="Closed" && canVerifyItem(o,o._a)) out.push({o,kind:"obs",stage:"verify"}); });
+  extList().forEach(f=>{ if(f.ownerRectifiedAt && !f.reportVerifiedAt && (f.status||"Open")!=="Closed" && canVerifyItem(f,undefined)) out.push({o:f,kind:"ext",stage:"verify"}); });
+  // Ready for the Head to close
+  if(isHeadUser()){
+    allObs().forEach(o=>{ if(o.reportVerifiedAt && !o.headVerifiedAt && (o.status||"Open")!=="Closed") out.push({o,kind:"obs",stage:"close"}); });
+    extList().forEach(f=>{ if(f.reportVerifiedAt && !f.headVerifiedAt && (f.status||"Open")!=="Closed") out.push({o:f,kind:"ext",stage:"close"}); });
+  }
+  return out;
 }
 function checkHeadClosureAlerts(){
-  if(!isHeadUser()) return;
+  if(!window.AMS_USER) return;
   const ovEl=document.getElementById("overlay"); if(ovEl && ovEl.classList.contains("show")) return; // don't interrupt an open modal
-  const pend=pendingHeadClosures();
-  const fresh=pend.filter(x=>!_headAlertSeen.has(x.o.id));
+  const pend=pendingActionAlerts();
+  const fresh=pend.filter(x=>!_pendingAlertSeen.has(x.o.id+":"+x.stage));
   if(!fresh.length) return;
-  fresh.forEach(x=>_headAlertSeen.add(x.o.id));
+  fresh.forEach(x=>_pendingAlertSeen.add(x.o.id+":"+x.stage));
   const list=pend.slice(0,6);
-  openModal("Ready for your closure sign-off",`
+  openModal("Items need your attention",`
     <div style="display:flex;flex-direction:column;gap:10px">
-      <div class="hint">${pend.length} item${pend.length!==1?"s have":" has"} been verified by Internal Audit and ${pend.length!==1?"are":"is"} waiting for you to review and close.</div>
-      ${list.map(x=>{ const o=x.o; const isExt=x.kind==="ext"; const badge=isExt?`<span class="pill" style="background:#eef2ff;color:#4b3fa0">${esc(o.severity||"—")}</span>`:`<span class="pill c-${ck(o.criticality)}">${esc(o.criticality)}</span>`; let nav=""; if(isExt){ nav=`go('extfinding',{ext:'${o.id}'})`; } else { const loc=obsLocate(o.id); if(loc) nav=`go('observation',{audit:'${loc.a.id}',report:'${loc.r.id}',obs:'${o.id}'})`; } return `<div class="obs-block" style="padding:10px 12px"><div class="row" style="align-items:flex-start;gap:8px"><b style="flex:1">${esc(o.title)}</b><span class="tag">${isExt?"External":"Internal"}</span>${badge}</div>${nav?`<div style="margin-top:8px"><button class="btn sm" onclick="closeModal();${nav}">Review &amp; close →</button></div>`:""}</div>`; }).join("")}
+      <div class="hint">${pend.length} item${pend.length!==1?"s are":" is"} waiting for you to action.</div>
+      ${list.map(x=>{ const o=x.o; const isExt=x.kind==="ext"; const badge=isExt?`<span class="pill" style="background:#eef2ff;color:#4b3fa0">${esc(o.severity||"—")}</span>`:`<span class="pill c-${ck(o.criticality)}">${esc(o.criticality)}</span>`; let nav=""; if(isExt){ nav=`go('extfinding',{ext:'${o.id}'})`; } else { const loc=obsLocate(o.id); if(loc) nav=`go('observation',{audit:'${loc.a.id}',report:'${loc.r.id}',obs:'${o.id}'})`; } const label=x.stage==="verify"?"Ready for you to verify":"Verified — ready for you to close"; return `<div class="obs-block" style="padding:10px 12px"><div class="row" style="align-items:flex-start;gap:8px"><b style="flex:1">${esc(o.title)}</b><span class="tag">${isExt?"External":"Internal"}</span>${badge}</div><div class="hint" style="margin-top:4px">${label}</div>${nav?`<div style="margin-top:8px"><button class="btn sm" onclick="closeModal();${nav}">Open →</button></div>`:""}</div>`; }).join("")}
       ${pend.length>list.length?`<div class="hint">+ ${pend.length-list.length} more.</div>`:""}
     </div>`,
     `<button class="btn" onclick="closeModal()">Got it</button>`);
@@ -744,7 +751,7 @@ function viewTracker(){
       <span class="dot" style="width:11px;height:11px;border-radius:3px;background:${bcol[g]};display:inline-block"></span>
       <div class="seclabel" style="margin:0">${esc(groupLabel(g))}</div>
       <div class="hint">${rows.length} action${rows.length!==1?"s":""}</div></div>
-      <table><thead><tr><th>Criticality</th><th>Action / observation</th><th>Audit · Report</th><th>Owner</th><th>Expected close</th><th>Status</th></tr></thead><tbody>
+      <table><thead><tr><th>Criticality</th><th>Action / observation</th><th>Audit · Report</th><th>Owner</th><th>${g==="Ready to Close"?"Submitted":g==="Recently Closed"?"Closed":"Expected close"}</th><th>Status</th></tr></thead><tbody>
       ${rows.map(o=>{
         const od=isOverdue(o); const ec=effectiveClose(o,o._r);
         const st=o.status||"Open";
@@ -754,7 +761,7 @@ function viewTracker(){
           <td><b>${esc(o.title)}</b>${o.recommendation?`<div class="hint">${esc(o.recommendation.length>120?o.recommendation.slice(0,119)+"…":o.recommendation)}</div>`:""}</td>
           <td>${esc(o._a.name)}<div class="hint">${esc(o._r.title)}${o._a.area?" · "+esc(o._a.area):""}</div></td>
           <td>${esc(o.owner||"—")}</td>
-          <td>${ec?`${fmtDate(ec)}${od?` <span class="pill c-Critical">overdue</span>`:""}`:`<span class="hint">—</span>`}</td>
+          <td>${g==="Ready to Close"?(o.ownerRectifiedAt?esc(fmtDate(isoToDate(o.ownerRectifiedAt))):"—"):g==="Recently Closed"?(o.closedDateISO?esc(fmtDate(isoToDate(o.closedDateISO))):"—"):(ec?`${fmtDate(ec)}${od?` <span class="pill c-Critical">overdue</span>`:""}`:`<span class="hint">—</span>`)}</td>
           <td onclick="event.stopPropagation()"><div class="tracker-status-cell">${statusPill(o.status)}${pendingStatusChange(o.id)?` <span class="pill sop-pending-pill" title="Change to ${esc(pendingStatusChange(o.id).newStatus)} awaiting Head approval">⏳</span>`:""}${o.updateRequestedAt?` <span class="pill sop-pending-pill" title="Update requested from owner">🔔</span>`:""}<span class="tracker-status-actions">${iconBtn(`modalStatusEdit('${o._a.id}','${o._r.id}','${o.id}')`,"✎","Edit status")}${st!=="Closed"?iconBtn(`requestOwnerUpdate('${o._a.id}','${o._r.id}','${o.id}')`,"🔔","Request update from owner"):""}</span></div></td>
         </tr>`;
       }).join("")}
@@ -3129,8 +3136,8 @@ Return ONLY a JSON object (no commentary) with these exact keys:
   "description": "detailed condition — what testing found, with specifics",
   "criteria": "the policy/standard/expectation not met",
   "risk": "impact & risk if not addressed",
-  "rootCause": "most likely root cause(s)",
-  "recommendation": "specific, actionable recommendation per best practice",
+  "rootCause": "the most likely root cause(s) — if there is more than one, put EACH on its own line separated by a newline (\\n), not packed into one paragraph",
+  "recommendation": "specific, actionable recommendation(s) per best practice — if there is more than one point or step, put EACH on its own line separated by a newline (\\n), not packed into one paragraph",
   "criticality": "Critical | High | Moderate | Low | Process Improvement",
   "owner": "the role/function best placed to own remediation, e.g. Head, Credit Operations",
   "timeline": "Immediate | Short-term | Long-term",
@@ -3730,15 +3737,17 @@ function obsRemediationHTML(o,a,r){
     !o.reportVerifiedAt ? "Awaiting auditor verification." : "Awaiting Head of Audit closure.";
   const composerTitle=primary?"Your comments":"Oversight comment";
   const composerPh=primary?"Add a comment or progress note…":"Add an oversight comment…";
+  // Closure package: the owner's response (owners always see their own; auditor/head see it in the verify/close
+  // modals before closure), the auditor note and head comment — the full review is revealed on the detail page once closed.
   const pkg=[];
-  if(o.ownerResponse && !closed) pkg.push(`<div class="obs-field"><div class="ttl">Action owner's closure response</div><div class="txt">${richText(o.ownerResponse)}${(o.ownerResponseEvidence||[]).map(e=>`<div class="hint" style="margin-top:4px">📎 <a href="/api/files/${esc(e.itemId)}" target="_blank" rel="noopener">${esc(e.name)}</a></div>`).join("")}${o.ownerRectifiedByName?`<div class="hint" style="margin-top:4px">${esc(o.ownerRectifiedByName)}${o.ownerRectifiedAt?" · "+esc(fmtDateTime(o.ownerRectifiedAt)):""}</div>`:""}</div></div>`);
-  if(o.reportVerifiedAt && !closed) pkg.push(`<div class="obs-field"><div class="ttl">Auditor verification &amp; closure note</div><div class="txt">${o.closureNote?richText(o.closureNote):"<span class='hint'>No note.</span>"}<div class="hint" style="margin-top:4px">Verified by ${esc(o.reportVerifiedByName||"—")}${o.reportVerifiedAt?" · "+esc(fmtDateTime(o.reportVerifiedAt)):""}${o.closedDateISO?" · Closure date "+esc(fmtDate(isoToDate(o.closedDateISO))):""}</div></div></div>`);
+  if(o.ownerResponse && (closed || isOwnerViewer)) pkg.push(`<div class="obs-field"><div class="ttl">Action owner's closure response</div><div class="txt">${richText(o.ownerResponse)}${(o.ownerResponseEvidence||[]).map(e=>`<div class="hint" style="margin-top:4px">📎 <a href="/api/files/${esc(e.itemId)}" target="_blank" rel="noopener">${esc(e.name)}</a></div>`).join("")}${o.ownerRectifiedByName?`<div class="hint" style="margin-top:4px">${esc(o.ownerRectifiedByName)}${o.ownerRectifiedAt?" · "+esc(fmtDateTime(o.ownerRectifiedAt)):""}</div>`:""}</div></div>`);
+  if(o.reportVerifiedAt && closed) pkg.push(`<div class="obs-field"><div class="ttl">Auditor verification &amp; closure note</div><div class="txt">${o.closureNote?richText(o.closureNote):"<span class='hint'>No note.</span>"}${o.closureFile?`<div class="hint" style="margin-top:4px">📎 <a href="/api/files/${esc(o.closureFile.itemId)}" target="_blank" rel="noopener">${esc(o.closureFile.name)}</a></div>`:""}<div class="hint" style="margin-top:4px">Verified by ${esc(o.reportVerifiedByName||"—")}${o.reportVerifiedAt?" · "+esc(fmtDateTime(o.reportVerifiedAt)):""}</div></div></div>`);
+  if(o.headComment && closed) pkg.push(`<div class="obs-field"><div class="ttl">Head of Audit comment</div><div class="txt">${richText(o.headComment)}${o.headVerifiedByName?`<div class="hint" style="margin-top:4px">${esc(o.headVerifiedByName)}${o.headVerifiedAt?" · "+esc(fmtDateTime(o.headVerifiedAt)):""}</div>`:""}</div></div>`);
   return `<div class="obs-notes">
     <div class="obs-notes-label">Remediation &amp; verification</div>
     ${verifyStepperHTML(o)}
     ${rej&&!closed?`<div class="note" style="border-left:3px solid var(--crit)"><b>${rej.target==="auditor"?"Returned by the Head of Audit to Internal Audit":"Escalated by the Head of Audit to the action owner"}</b>${rej.note?`<div style="margin-top:4px">${esc(rej.note)}</div>`:""}<div class="hint" style="margin-top:4px">${esc(rej.byName||"Head of Audit")}${rej.at?" · "+esc(fmtDateTime(rej.at)):""}</div></div>`:""}
     ${pkg.join("")}
-    ${o.closureFile&&!closed?`<div class="hint" style="margin:8px 0 4px">Auditor closure evidence: <a href="/api/files/${esc(o.closureFile.itemId)}" target="_blank" rel="noopener">${esc(o.closureFile.name)}</a></div>`:""}
     <div class="obs-notes-label obs-updates-label">Conversation &amp; evidence</div>
     ${visibleUpdates.length?visibleUpdates.map(u=>`<div class="obs-note${u.audience==="owner"?" obs-note-private":""}"><div class="obs-note-text">${linkify(u.text||"")}</div>${(u.evidence||[]).map(e=>`<div class="hint">📎 <a href="/api/files/${esc(e.itemId)}" target="_blank" rel="noopener">${esc(e.name)}</a></div>`).join("")}<div class="obs-note-meta">${u.audience==="owner"?`<span class="pill" style="background:#eef2ff;color:#4b3fa0">private</span> `:""}${esc(u.byName||"")}${u.role?" ("+esc(roleLabel(u.role))+")":""}${u.at?" · "+esc(fmtDateTime(u.at)):""}</div></div>`).join(""):`<div class="hint">No comments yet.</div>`}
     ${canPost?`<div class="obs-composer" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">
@@ -3802,7 +3811,7 @@ function renderObservation(C,T,A){
     ${obsRemediationHTML(o,a,r)}
     ${isOwner?"":notesHTML(o)}
     ${isOwner?"":`<div class="row" style="margin-top:12px"><button class="btn sm" onclick="modalAddNote('${a.id}','${r.id}','${o.id}')">+ Add note</button></div>`}
-    ${o.status==="Closed"?`<div class="obs-detail-closure hint">✓ Closed${o.closedDateISO?" "+fmtDate(isoToDate(o.closedDateISO)):""}${o.verifiedBy?" · Verified by "+esc(o.verifiedBy):""}${o.closureEvidence?" · Evidence: "+esc(o.closureEvidence):""}${o.closureNote?" — "+esc(o.closureNote):""}</div>`:""}
+    ${o.status==="Closed"?`<div class="obs-detail-closure hint">✓ Closed${o.closedDateISO?" "+fmtDate(isoToDate(o.closedDateISO)):""} · Verified by ${esc(o.headVerifiedByName||o.verifiedBy||"—")}${o.raisedByName?`<br>Raised by ${esc(o.raisedByName)}`:""}${o.reportVerifiedByName?" · Verified by auditor "+esc(o.reportVerifiedByName):""}</div>`:""}
   </div>`;
 }
 function field(t,v){ if(!v)return""; return `<div class="obs-field"><div class="ttl">${t}</div><div class="txt">${esc(v)}</div></div>`; }
@@ -3903,8 +3912,8 @@ Return ONLY a JSON object (no commentary) with these exact keys — every field 
   "description": "detailed condition — what was observed, with specifics",
   "criteria": "the policy/standard/expectation that was not met",
   "risk": "impact & risk if not addressed",
-  "rootCause": "most likely root cause(s)",
-  "recommendation": "specific, actionable recommendation per best practice",
+  "rootCause": "the most likely root cause(s) — if there is more than one, put EACH on its own line separated by a newline (\\n), not packed into one paragraph",
+  "recommendation": "specific, actionable recommendation(s) per best practice — if there is more than one point or step, put EACH on its own line separated by a newline (\\n), not packed into one paragraph",
   "criticality": "Critical | High | Moderate | Low | Process Improvement",
   "owner": "the role/function best placed to own remediation, e.g. Head, Credit Operations",
   "timeline": "Immediate | Short-term | Long-term",
@@ -4103,7 +4112,7 @@ async function saveDepartment(id){
   // New department → provision the head as an action_owner login user.
   if(errEl) errEl.innerHTML="";
   const done=btnBusy(btn,"");
-  let userId="", emailSent=false;
+  let userId="", emailSent=false, tempPw="";
   try{
     const res=await fetch("/api/users",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({name:headName,email:headEmail,department:name,role:"action_owner"})});
@@ -4114,11 +4123,12 @@ async function saveDepartment(id){
       const existing=_directoryCache.find(u=>(u.email||"").toLowerCase()===headEmail);
       if(existing) userId=existing.id; else { done(); showErr("That email already has an account that couldn't be linked."); return; }
     } else if(!res.ok){ done(); showErr(data.error||"Could not create the action-owner login."); return; }
-    else { userId=data.user&&data.user.id; emailSent=!!data.emailSent; }
+    else { userId=data.user&&data.user.id; emailSent=!!data.emailSent; tempPw=data.tempPassword||""; }
   }catch(e){ done(); showErr("Network error creating the login."); return; }
   D.push({id:uid(),name,headName,headEmail,headUserId:userId||"",createdAt:new Date().toISOString()});
   save(); await refreshUsersTable(); await loadDirectory(); done(); closeModal(); render();
-  toast(emailSent?`Action owner added. A welcome email was sent to ${headEmail}.`:`Action owner added.${userId?" (Welcome email could not be sent — check SendGrid config.)":""}`,"success");
+  if(emailSent) toast(`Action owner added. A welcome email was sent to ${headEmail}.`,"success");
+  else modalCredentials(headName,headEmail,tempPw,"");
 }
 function delDepartment(id){
   uiConfirm("Remove this department? The head's login account is kept (delete it from User access management if needed).",()=>{
@@ -4128,28 +4138,62 @@ function delDepartment(id){
 /* ---- Action Owner portal ---- */
 function myObsList(){ const me=window.AMS_USER||{}; return allObs().filter(o=>((o.ownerUserId&&o.ownerUserId===me.id)||(o.secondaryOwnerUserId&&o.secondaryOwnerUserId===me.id))&&obsIsApproved(o)); }
 function myExtList(){ const me=window.AMS_USER||{}; return extList().filter(f=>(f.ownerUserId&&f.ownerUserId===me.id)||(f.secondaryOwnerUserId&&f.secondaryOwnerUserId===me.id)); }
+let myObsFilter={type:"All",crit:"All"};
+function myObsSet(k,v){ myObsFilter[k]=v; render(); }
+function myObsCard(x){
+  const o=x.o; const ext=x.type==="External";
+  const nav=ext?`go('extfinding',{ext:'${o.id}'})`:`go('observation',{audit:'${o._a.id}',report:'${o._r.id}',obs:'${o.id}'})`;
+  const sv=EXT_SEV_HEX[o.severity]||"#64748b";
+  const critCell=ext?`<span class="pill" style="background:${hx2rgba(sv,.16)};color:${sv}">${esc(o.severity||"—")}</span>`:`<span class="pill c-${ck(o.criticality)}">${esc(o.criticality)}</span>`;
+  const ctx=ext?`${esc(o.source||"—")}${o.year?" · "+esc(o.year):""}`:`${esc(o._a.name)}${o._a.area?" · "+esc(o._a.area):""}`;
+  const ecStr=ext?(o.dueDate||""):(function(){ const c=effectiveClose(o,o._r); return c?fmtDate(c):""; })();
+  const rfc=!!o.ownerRectifiedAt && (o.status||"Open")!=="Closed";
+  return `<div class="myobs-card" onclick="${nav}" title="Open">
+    <div class="myobs-card-top">${critCell}<span class="tag">${x.type}</span>${statusPill(o.status)}${rfc?`<span class="pill" style="background:color-mix(in oklch,var(--low) 16%,#fff);color:var(--low)">Ready for closure</span>`:""}</div>
+    <div class="myobs-card-title">${esc(o.title)}</div>
+    <div class="myobs-card-meta">${ctx}</div>
+    ${ecStr?`<div class="myobs-card-foot"><span class="hint">Expected close</span><span>${esc(ecStr)}</span></div>`:""}
+  </div>`;
+}
 function viewMyObs(){
-  const items=[...myObsList().map(o=>({o,type:"Internal"})),...myExtList().map(o=>({o,type:"External"}))];
-  if(!items.length){ return `<div class="card"><div class="empty"><div class="big">✦</div>Nothing has been assigned to you yet.<br><br>When Internal Audit raises an observation or external finding against your department, it will appear here for you to respond, add updates and evidence.</div></div>`; }
+  const all=[...myObsList().map(o=>({o,type:"Internal"})),...myExtList().map(o=>({o,type:"External"}))];
+  if(!all.length){ return `<div class="card"><div class="empty"><div class="big">✦</div>Nothing has been assigned to you yet.<br><br>When Internal Audit raises an observation or external finding against your department, it will appear here for you to respond, add updates and evidence.</div></div>`; }
+  let items=all.slice();
+  if(myObsFilter.type!=="All") items=items.filter(x=>x.type===myObsFilter.type);
+  if(myObsFilter.crit!=="All") items=items.filter(x=>x.type==="Internal"?x.o.criticality===myObsFilter.crit:x.o.severity===myObsFilter.crit);
   const open=items.filter(x=>(x.o.status||"Open")!=="Closed");
   const closed=items.filter(x=>(x.o.status||"Open")==="Closed");
-  const rows=[...open,...closed];
-  return `<div class="seclabel" style="margin-bottom:12px">Raised against my department</div>
-    <div class="myobs-grid">
-    ${rows.map(x=>{ const o=x.o; const ext=x.type==="External";
-      const nav=ext?`go('extfinding',{ext:'${o.id}'})`:`go('observation',{audit:'${o._a.id}',report:'${o._r.id}',obs:'${o.id}'})`;
-      const sv=EXT_SEV_HEX[o.severity]||"#64748b";
-      const critCell=ext?`<span class="pill" style="background:${hx2rgba(sv,.16)};color:${sv}">${esc(o.severity||"—")}</span>`:`<span class="pill c-${ck(o.criticality)}">${esc(o.criticality)}</span>`;
-      const ctx=ext?`${esc(o.source||"—")}${o.year?" · "+esc(o.year):""}`:`${esc(o._a.name)}${o._a.area?" · "+esc(o._a.area):""}`;
-      const ecStr=ext?(o.dueDate||""):(function(){ const c=effectiveClose(o,o._r); return c?fmtDate(c):""; })();
-      const rfc=!!o.ownerRectifiedAt && (o.status||"Open")!=="Closed";
-      return `<div class="myobs-card" onclick="${nav}" title="Open">
-        <div class="myobs-card-top">${critCell}<span class="tag">${x.type}</span>${statusPill(o.status)}${rfc?`<span class="pill" style="background:color-mix(in oklch,var(--low) 16%,#fff);color:var(--low)">Ready for closure</span>`:""}</div>
-        <div class="myobs-card-title">${esc(o.title)}</div>
-        <div class="myobs-card-meta">${ctx}</div>
-        ${ecStr?`<div class="myobs-card-foot"><span class="hint">Expected close</span><span>${esc(ecStr)}</span></div>`:""}
-      </div>`; }).join("")}
-    </div>`;
+  const section=(title,arr)=>`<div class="seclabel" style="margin:20px 0 12px">${title} <span class="hint" style="font-weight:400">(${arr.length})</span></div>${arr.length?`<div class="myobs-grid">${arr.map(myObsCard).join("")}</div>`:`<div class="hint" style="margin-bottom:8px">Nothing here.</div>`}`;
+  const critOpts=["All",...CRITS,"High","Medium","Low"].filter((v,i,a)=>a.indexOf(v)===i);
+  let annDismissed=false; try{ annDismissed=!!localStorage.getItem("al_owner_ann_"+((window.AMS_USER&&window.AMS_USER.id)||"")); }catch(e){}
+  const ann=annDismissed?"":`<div class="owner-announce" onclick="modalOwnerSimulation()"><span class="owner-announce-ico" aria-hidden="true">📌</span><div><b>New here?</b> When your department has addressed an observation, open it and use the <b>Ready for Closure</b> button to send it back to Internal Audit. <u>Click to see how it works.</u></div><button class="owner-announce-x" onclick="event.stopPropagation();dismissOwnerAnnounce()" title="Dismiss">×</button></div>`;
+  return ann+`<div class="card" style="padding:12px 16px;margin-bottom:4px"><div class="row" style="gap:10px;flex-wrap:wrap;align-items:center">
+      <div class="filter-group"><span class="filter-label">Type</span>
+        <select class="field-select field-select-sm" onchange="myObsSet('type',this.value)">${["All","Internal","External"].map(t=>`<option${myObsFilter.type===t?" selected":""}>${t}</option>`).join("")}</select></div>
+      <div class="filter-group"><span class="filter-label">Criticality / severity</span>
+        <select class="field-select field-select-sm" onchange="myObsSet('crit',this.value)">${critOpts.map(t=>`<option${myObsFilter.crit===t?" selected":""}>${esc(t)}</option>`).join("")}</select></div>
+      ${(myObsFilter.type!=="All"||myObsFilter.crit!=="All")?`<button class="btn ghost sm" onclick="myObsFilter={type:'All',crit:'All'};render()">Clear</button>`:""}
+      <div class="spacer" style="flex:1"></div><span class="hint">${all.length} total</span>
+    </div></div>
+    ${section("Open observations",open)}
+    ${section("Closed observations",closed)}`;
+}
+function dismissOwnerAnnounce(){ try{ localStorage.setItem("al_owner_ann_"+((window.AMS_USER&&window.AMS_USER.id)||""),"1"); }catch(e){} render(); }
+/* ---- First-login walkthrough for action owners: a simulated observation → response → closure ---- */
+let _simIdx=0;
+const SIM_STEPS=[
+  {title:"1 · An observation is raised",body:"When Internal Audit raises an observation against your department, it appears in <b>My Observations</b>. Open it to read the finding, the risk and the recommendation."},
+  {title:"2 · Add your response",body:"Once your department has done the remediation work, open the observation and click <b>Ready for Closure</b>. You describe exactly what was done — an AI checker makes sure it's concrete — and you can attach evidence."},
+  {title:"3 · Internal Audit verifies & closes",body:"Your response goes back to the auditor to verify, then the Head of Audit signs off and closes it. You're notified (in-app and by email) at each step."}
+];
+function modalOwnerSimulation(){ _simIdx=0; showSimStep(); }
+function showSimStep(){
+  const s=SIM_STEPS[_simIdx]; if(!s){ closeModal(); return; }
+  openModal("How remediation works",`
+    <div class="onboard-step"><div style="font-weight:700;margin-bottom:6px">${s.title}</div>${s.body}</div>
+    ${_simIdx===1?`<div class="myobs-card" style="margin-top:14px;cursor:default"><div class="myobs-card-top"><span class="pill c-High">High</span><span class="tag">Internal</span><span class="status-pill open">Open</span></div><div class="myobs-card-title">Example — Weak segregation of duties in disbursements</div><div style="margin-top:12px"><span class="btn sm" style="pointer-events:none">✓ Ready for Closure</span> <span class="hint">← the button you'll press</span></div></div>`:""}
+    <div class="onboard-dots" style="margin-top:14px">${SIM_STEPS.map((_,i)=>`<span class="onboard-dot${i===_simIdx?" on":""}"></span>`).join("")}</div>`,
+    `${_simIdx>0?`<button class="btn sec" onclick="_simIdx--;showSimStep()">Back</button>`:`<button class="btn sec" onclick="closeModal()">Skip</button>`}<button class="btn" onclick="${_simIdx>=SIM_STEPS.length-1?"dismissOwnerAnnounce();closeModal()":"_simIdx++;showSimStep()"}">${_simIdx>=SIM_STEPS.length-1?"Got it":"Next →"}</button>`);
 }
 function viewOwnerDashboard(){
   const me=window.AMS_USER||{};
@@ -4284,7 +4328,7 @@ async function saveUser(id){
   done();
   if(!id){
     if(data.emailSent) modalSuccess("User created successfully. A welcome email with sign-in details was sent to "+payload.email+".","User created");
-    else modalSuccess("User created successfully. The welcome email could not be sent"+(data.emailError?" ("+data.emailError+")":"")+" — share the temporary password with them manually.","User created");
+    else modalCredentials(payload.name,payload.email,data.tempPassword,data.emailError);
   } else {
     closeModal(); toast("Changes saved.","success");
   }
@@ -4337,6 +4381,16 @@ function isStaff(){ const r=window.AMS_USER&&window.AMS_USER.role; return !r||r=
 function requireHead(){ if(!isHeadUser()){ toast("Only the Head of Audit can perform this action.","error"); return false; } return true; }
 function modalSuccess(msg,title){
   openModal(title||"Success",`<div class="success-modal"><div class="success-check" aria-hidden="true"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div><div class="success-msg">${esc(msg||"Done.")}</div></div>`,
+    `<button class="btn" onclick="closeModal()">Done</button>`);
+}
+// Shown when the welcome email couldn't be delivered — the Head can share the temp password manually.
+function modalCredentials(name,email,tempPassword,emailError){
+  openModal("User created — share sign-in details",`
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="hint">The welcome email could not be delivered${emailError?" ("+esc(emailError)+")":""}. Share these sign-in details with <b>${esc(name)}</b> so they can log in and set their own password:</div>
+      <div class="note"><b>Email:</b> ${esc(email)}<br><b>Temporary password:</b> <code style="background:var(--bg);padding:3px 8px;border-radius:6px;font-weight:700">${esc(tempPassword||"(unavailable — reset from User access management)")}</code></div>
+      <div class="hint" style="color:var(--muted)">Tip: emails to external providers (e.g. Gmail) need SendGrid sender/domain authentication, or they land in spam.</div>
+    </div>`,
     `<button class="btn" onclick="closeModal()">Done</button>`);
 }
 function btnBusy(btn,label){
