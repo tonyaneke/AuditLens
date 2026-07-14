@@ -154,6 +154,7 @@ let view = "dashboard";
 let curAudit = null;   // id
 let curReport = null;  // id
 let curObs = null;     // observation id
+let curExt = null;     // external finding id
 let reportObsFilter={crit:"All",status:"All",q:""};
 let _highlightObsIds=new Set();
 let curProc = null;    // process review id
@@ -222,12 +223,12 @@ function fmtAuditWhen(iso){
 function canAccessView(v){
   const u = window.AMS_USER;
   if(!u) return ["dashboard","audits","tracker","audit","report","observation","newobs","insights","guide"].includes(v);
-  if(u.role==="action_owner"){ return v==="myobs"||v==="observation"||v==="dashboard"; }
+  if(u.role==="action_owner"){ return v==="myobs"||v==="observation"||v==="extfinding"||v==="dashboard"; }
   if(u.role==="head_of_audit"){
-    if(["dashboard","audits","tracker","auditra","fraud","process","external","iasa","approvals","settings","auditlog","audit","report","observation","newobs","insights","guide"].includes(v)) return true;
+    if(["dashboard","audits","tracker","auditra","fraud","process","external","iasa","approvals","settings","auditlog","audit","report","observation","extfinding","newobs","insights","guide"].includes(v)) return true;
     return false;
   }
-  if(["dashboard","audits","tracker","audit","report","observation","newobs","insights","guide"].includes(v)) return true;
+  if(["dashboard","audits","tracker","audit","report","observation","extfinding","newobs","insights","guide"].includes(v)) return true;
   if(v==="settings"||v==="auditlog") return false;
   return (u.sidebarAccess||[]).includes(v);
 }
@@ -279,6 +280,8 @@ function go(v,opts={}){
   if(opts.report!==undefined) curReport=opts.report;
   if(opts.obs!==undefined) curObs=opts.obs;
   else if(v!=="observation" && v!=="sopupdate") curObs=null;
+  if(opts.ext!==undefined) curExt=opts.ext;
+  else if(v!=="extfinding") curExt=null;
   if(opts.unit!==undefined) curRaUnit=opts.unit;
   if(opts.fraud!==undefined) curFraud=opts.fraud;
   document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("active",b.dataset.view===v && v!=="report" && v!=="observation" && v!=="sopupdate" && v!=="audit" && v!=="raunit" && v!=="fraudrisk"));
@@ -369,7 +372,7 @@ function render(){
   else if(view==="raunit"){ renderRaUnit(C,T,A); }
   else if(view==="fraudrisk"){ renderFraudRisk(C,T,A); }
   else if(view==="fraud"){ T.textContent=pageTitleFor("fraud"); A.innerHTML=`${btnDownload("modalFraudDownload()","Download")}${isStaff()?"":`<button class="btn sm dark ai-generate-btn" onclick="modalFraudPrompt()">Generate fraud risks</button><button class="btn sm" onclick="modalFraud()">+ Add fraud risk</button>`}`; C.innerHTML=viewFraud(); }
-  else if(view==="external"){ T.textContent=pageTitleFor("external"); A.innerHTML=`<button class="btn sec sm" onclick="exportExternal()">⤓ Status report (Word)</button><button class="btn sm dark" onclick="modalExtImport()">⤒ Import findings</button><button class="btn sm" onclick="modalExt()">+ Add finding</button>`; C.innerHTML=viewExternal(); }
+  else if(view==="external"){ T.textContent=pageTitleFor("external"); A.innerHTML=`<button class="btn sec sm" onclick="exportExternal()">⤓ Status report (Word)</button><button class="btn sm dark" onclick="modalExtImport()">⤒ Import findings</button><button class="btn sm" onclick="extRaiseStart()">+ Add finding</button>`; C.innerHTML=viewExternal(); }
   else if(view==="iasa"){ T.textContent=pageTitleFor("iasa"); A.innerHTML=`<button class="btn sec sm" onclick="exportIASA()">⤓ Self-assessment (Word)</button><button class="btn sm dark ai-generate-btn" onclick="modalIASAPrompt()">Generate assessment</button>`; C.innerHTML=viewIASA(); }
   else if(view==="audits"){
     T.textContent=pageTitleFor("audits");
@@ -380,6 +383,7 @@ function render(){
   else if(view==="audit"){ renderAudit(C,T,A); }
   else if(view==="report"){ renderReport(C,T,A); }
   else if(view==="observation"){ renderObservation(C,T,A); }
+  else if(view==="extfinding"){ renderExtFinding(C,T,A); }
   else if(view==="sopupdate"){ renderSopUpdate(C,T,A); }
   else if(view==="tracker"){
     T.textContent=pageTitleFor("tracker");
@@ -424,20 +428,24 @@ function render(){
 /* ---- Head of Audit: global alert when observations are verified and awaiting closure sign-off ---- */
 let _headAlertSeen=new Set();
 function obsLocate(oid){ const x=allObs().find(o=>o.id===oid); return x?{a:x._a,r:x._r}:null; }
-function pendingHeadClosures(){ return allObs().filter(o=>o.reportVerifiedAt && !o.headVerifiedAt && (o.status||"Open")!=="Closed"); }
+function pendingHeadClosures(){
+  const obs=allObs().filter(o=>o.reportVerifiedAt && !o.headVerifiedAt && (o.status||"Open")!=="Closed").map(o=>({o,kind:"obs"}));
+  const ext=extList().filter(f=>f.reportVerifiedAt && !f.headVerifiedAt && (f.status||"Open")!=="Closed").map(f=>({o:f,kind:"ext"}));
+  return obs.concat(ext);
+}
 function checkHeadClosureAlerts(){
   if(!isHeadUser()) return;
   const ovEl=document.getElementById("overlay"); if(ovEl && ovEl.classList.contains("show")) return; // don't interrupt an open modal
   const pend=pendingHeadClosures();
-  const fresh=pend.filter(o=>!_headAlertSeen.has(o.id));
+  const fresh=pend.filter(x=>!_headAlertSeen.has(x.o.id));
   if(!fresh.length) return;
-  fresh.forEach(o=>_headAlertSeen.add(o.id));
+  fresh.forEach(x=>_headAlertSeen.add(x.o.id));
   const list=pend.slice(0,6);
   openModal("Ready for your closure sign-off",`
     <div style="display:flex;flex-direction:column;gap:10px">
-      <div class="hint">${pend.length} observation${pend.length!==1?"s have":" has"} been verified by Internal Audit and ${pend.length!==1?"are":"is"} waiting for you to review and close.</div>
-      ${list.map(o=>{ const loc=obsLocate(o.id); return `<div class="obs-block" style="padding:10px 12px"><div class="row" style="align-items:flex-start;gap:8px"><b style="flex:1">${esc(o.title)}</b><span class="pill c-${ck(o.criticality)}">${esc(o.criticality)}</span></div>${loc?`<div style="margin-top:8px"><button class="btn sm" onclick="closeModal();go('observation',{audit:'${loc.a.id}',report:'${loc.r.id}',obs:'${o.id}'})">Review &amp; close →</button></div>`:""}</div>`; }).join("")}
-      ${pend.length>list.length?`<div class="hint">+ ${pend.length-list.length} more in the Remediation Tracker (Ready to close).</div>`:""}
+      <div class="hint">${pend.length} item${pend.length!==1?"s have":" has"} been verified by Internal Audit and ${pend.length!==1?"are":"is"} waiting for you to review and close.</div>
+      ${list.map(x=>{ const o=x.o; const isExt=x.kind==="ext"; const badge=isExt?`<span class="pill" style="background:#eef2ff;color:#4b3fa0">${esc(o.severity||"—")}</span>`:`<span class="pill c-${ck(o.criticality)}">${esc(o.criticality)}</span>`; let nav=""; if(isExt){ nav=`go('extfinding',{ext:'${o.id}'})`; } else { const loc=obsLocate(o.id); if(loc) nav=`go('observation',{audit:'${loc.a.id}',report:'${loc.r.id}',obs:'${o.id}'})`; } return `<div class="obs-block" style="padding:10px 12px"><div class="row" style="align-items:flex-start;gap:8px"><b style="flex:1">${esc(o.title)}</b><span class="tag">${isExt?"External":"Internal"}</span>${badge}</div>${nav?`<div style="margin-top:8px"><button class="btn sm" onclick="closeModal();${nav}">Review &amp; close →</button></div>`:""}</div>`; }).join("")}
+      ${pend.length>list.length?`<div class="hint">+ ${pend.length-list.length} more.</div>`:""}
     </div>`,
     `<button class="btn" onclick="closeModal()">Got it</button>`);
 }
@@ -712,7 +720,7 @@ function viewTracker(){
     ${kpi("warn","Watchlist",watch,"due within 2 weeks")}
     ${kpi("warn","Overdue",overdue,"past expected close")}
     ${kpi("accent","Repeat findings",repeats,"recur from prior audits")}
-    ${kpi("base","No close date",noClose,"need an expected close date")}
+    ${kpi("base","Ready to Close",noClose,"need an expected close date")}
   </div>
   <div class="card tracker-filters"><div class="filter-row filter-row-right">
     <div class="filter-group"><span class="filter-label">Expected close</span>
@@ -2330,7 +2338,7 @@ function extOverdue(f){ if(f.status==="Closed")return false; const d=looseDate(f
 function viewExternal(){
   const F=extList();
   if(!F.length){
-    return `<div class="card"><div class="empty"><div class="big">❖</div>No external findings yet.<br><br><button class="btn dark" onclick="modalExtImport()">⤒ Import findings</button> &nbsp; <button class="btn" onclick="modalExt()">+ Add finding</button></div></div>`;
+    return `<div class="card"><div class="empty"><div class="big">❖</div>No external findings yet.<br><br><button class="btn dark" onclick="modalExtImport()">⤒ Import findings</button> &nbsp; <button class="btn" onclick="extRaiseStart()">+ Add finding</button></div></div>`;
   }
   return `<div class="row" style="margin-bottom:14px"><div class="row" style="gap:6px">
     <button class="btn ${extMode==="register"?"":"sec"} sm" onclick="extMode='register';render()">Register</button>
@@ -2373,7 +2381,7 @@ function extListBody(){
   if(!list.length) return `<div class="card"><div class="empty">No findings match the filter.</div></div>`;
   list=list.slice().sort((a,b)=>(extOverdue(b)-extOverdue(a))||String(a.source||"").localeCompare(String(b.source||"")));
   return `<div class="card"><table><thead><tr><th>Source</th><th>Year</th><th>Ref</th><th>Finding</th><th>Theme</th><th>Severity</th><th>Owner</th><th>Target</th><th>Status</th><th></th></tr></thead><tbody>
-    ${list.map(f=>{ const sv=EXT_SEV_HEX[f.severity]||"#64748b"; const od=extOverdue(f); const st=f.status||"Open"; const stCls=extStatusCls(st); const titleShort=f.title.length>72?f.title.slice(0,71)+"…":f.title; return `<tr class="ext-row-clickable" onclick="modalExtDetail('${f.id}')">
+    ${list.map(f=>{ const sv=EXT_SEV_HEX[f.severity]||"#64748b"; const od=extOverdue(f); const st=f.status||"Open"; const stCls=extStatusCls(st); const titleShort=f.title.length>72?f.title.slice(0,71)+"…":f.title; return `<tr class="ext-row-clickable" onclick="go('extfinding',{ext:'${f.id}'})">
       <td>${esc(f.source||"—")}${f.sourceRef?`<div class="hint">${esc(f.sourceRef)}</div>`:""}${f.isRepeat?`<div style="margin-top:3px"><span class="pill" style="background:#efe3f7;color:#6b3fa0">↻ REPEAT</span></div>`:""}</td>
       <td>${esc(f.year||"—")}</td>
       <td>${esc(f.ref||"")}</td>
@@ -2480,8 +2488,8 @@ function modalExt(id){
       <div><label>Year</label><input id="x_year" value="${esc(f.year||"")}"></div>
     </div>
     <div class="f3">
-      <div><label>Finding ref</label><input id="x_ref" value="${esc(f.ref)}" placeholder="e.g. 3.2"></div>
-      <div><label>Theme</label><select id="x_theme">${EXT_THEMES.map(s=>`<option${f.theme===s?" selected":""}>${s}</option>`).join("")}</select></div>
+      <div><label>Finding ref <span class="hint">(auto)</span></label><input id="x_ref" value="${esc(f.ref||extNextRef())}" readonly style="background:var(--bg)"></div>
+      <div><label>Theme <span class="hint">(pick or type)</span></label><input id="x_theme" list="extThemeListEdit" value="${esc(f.theme||"")}" autocomplete="off"><datalist id="extThemeListEdit">${EXT_THEMES.map(s=>`<option value="${esc(s)}"></option>`).join("")}</datalist></div>
       <div><label>Severity</label><select id="x_sev">${["High","Medium","Low"].map(s=>`<option${f.severity===s?" selected":""}>${s}</option>`).join("")}</select></div>
     </div>
     <label>Finding / observation *</label><input id="x_title" value="${esc(f.title)}">
@@ -2513,7 +2521,142 @@ function saveExt(id){
   o.closedDateISO = status==="Closed" ? (cdate||o.closedDateISO||isoNow()) : "";
   save(); closeModal(); render();
 }
-function delExt(id){ DB.extFindings=extList().filter(x=>x.id!==id); save(); closeModal(); render(); }
+function delExt(id){ DB.extFindings=extList().filter(x=>x.id!==id); save(); closeModal(); if(view==="extfinding") go("external"); else render(); }
+function extNextRef(){ const F=extList(); const used=new Set(F.map(f=>f.ref).filter(Boolean)); let n=F.length+1; let ref; do{ ref="EF-"+String(n).padStart(3,"0"); n++; }while(used.has(ref)); return ref; }
+/* ---- Add external finding — same flow as observations (details → assign owner → lifecycle) ---- */
+let _pendingExt=null;
+function extRaiseStart(){ _pendingExt={f:{source:"Statutory / External Audit",sourceRef:"",year:String((new Date()).getFullYear()),theme:EXT_THEMES[0],severity:"Medium",title:"",detail:"",risk:"",recommendation:""}}; extDetailsStep(); }
+function extDetailsStep(){
+  const f=_pendingExt&&_pendingExt.f; if(!f) return;
+  openModal("Add external finding — details",`
+    <div class="f3">
+      <div><label>Source (external body)</label><select id="xf_src">${EXT_SOURCES.map(s=>`<option${f.source===s?" selected":""}>${s}</option>`).join("")}</select></div>
+      <div><label>Source report / ref</label><input id="xf_sref" value="${esc(f.sourceRef)}" placeholder="e.g. 2024 Statutory Mgmt Letter"></div>
+      <div><label>Year</label><input id="xf_year" value="${esc(f.year||"")}"></div>
+    </div>
+    <div class="f2">
+      <div><label>Theme <span class="hint">(pick one or type your own)</span></label><input id="xf_theme" list="extThemeList" value="${esc(f.theme||"")}" autocomplete="off"><datalist id="extThemeList">${EXT_THEMES.map(s=>`<option value="${esc(s)}"></option>`).join("")}</datalist></div>
+      <div><label>Severity</label><select id="xf_sev">${["High","Medium","Low"].map(s=>`<option${f.severity===s?" selected":""}>${s}</option>`).join("")}</select></div>
+    </div>
+    <label>Finding / observation *</label><input id="xf_title" value="${esc(f.title)}">
+    <label>Detail</label><textarea id="xf_detail">${esc(f.detail)}</textarea>
+    <label>Risk / impact</label><textarea id="xf_risk">${esc(f.risk)}</textarea>
+    <label>Recommendation</label><textarea id="xf_rec">${esc(f.recommendation)}</textarea>
+    <div class="hint" style="margin-top:8px">A finding reference is assigned automatically.</div>
+    <div id="xf_err" style="margin-top:8px"></div>`,
+    `<button class="btn sec" onclick="_pendingExt=null;closeModal();">Cancel</button><button class="btn" onclick="extDetailsNext()">Next: assign owner →</button>`);
+  const m=document.getElementById("modal"); if(m) m.classList.add("wide");
+}
+function extDetailsNext(){
+  const f=_pendingExt&&_pendingExt.f; if(!f) return;
+  const title=val("xf_title"); if(!title){ const e=document.getElementById("xf_err"); if(e) e.innerHTML=`<div class="ai-err">A finding title is required.</div>`; return; }
+  f.source=val("xf_src"); f.sourceRef=val("xf_sref"); f.year=val("xf_year"); f.theme=val("xf_theme")||"Other"; f.severity=val("xf_sev")||"Medium";
+  f.title=title; f.detail=val("xf_detail"); f.risk=val("xf_risk"); f.recommendation=val("xf_rec");
+  extAssignStep();
+}
+function extAssignStep(){
+  const f=_pendingExt&&_pendingExt.f; if(!f) return;
+  const haveOwners=departments().filter(d=>d.headUserId).length>0;
+  openModal("Add external finding — assign owner",`
+    <div class="note" style="margin-bottom:10px"><b>${esc(f.title)}</b> · <span class="pill" style="background:#eef2ff;color:#4b3fa0">${esc(f.severity)}</span></div>
+    <label>Primary action owner (responds &amp; closes) *</label>
+    <select id="xf_owner">${ownerOptions(f.ownerUserId||"","— select primary owner —")}</select>
+    ${haveOwners?"":`<div class="hint" style="color:var(--crit);margin-top:4px">No department heads exist yet — add departments in Settings (you can still add the finding without an owner).</div>`}
+    <label style="margin-top:8px">Secondary action owner <span class="hint">(oversight only — optional)</span></label>
+    <select id="xf_owner2">${ownerOptions(f.secondaryOwnerUserId||"","— none —")}</select>
+    <label style="margin-top:8px">Closure date</label><input type="date" id="xf_due" value="${esc(f.dueDate||"")}">
+    <div class="hint" style="margin-top:10px">The finding is added to the External Findings register and the action owner is notified. It follows the same respond → verify → close flow as observations, but is tracked only on this page (not the Remediation Tracker).</div>`,
+    `<button class="btn sec" onclick="extDetailsStep()">← Back</button><button class="btn" onclick="saveExtRaise()">Add &amp; notify owner</button>`);
+  const m=document.getElementById("modal"); if(m) m.classList.add("wide");
+}
+function saveExtRaise(){
+  const f=_pendingExt&&_pendingExt.f; if(!f) return;
+  const u=window.AMS_USER||{};
+  const ownerId=val("xf_owner"); const dept=departments().find(d=>d.headUserId===ownerId);
+  const owner2Id=val("xf_owner2"); const dueEl=document.getElementById("xf_due");
+  const theme=EXT_THEMES.find(t=>t.toLowerCase()===String(f.theme||"").toLowerCase())||f.theme||"Other";
+  const finding={
+    id:uid(), ref:extNextRef(), isExternal:true,
+    source:f.source, sourceRef:f.sourceRef, year:f.year, theme, severity:f.severity,
+    title:f.title, detail:f.detail, risk:f.risk, recommendation:f.recommendation,
+    owner:dept?dept.headName:"", ownerUserId:ownerId||"", secondaryOwnerUserId:(owner2Id&&owner2Id!==ownerId)?owner2Id:"",
+    departmentId:dept?dept.id:"", dueDate:(dueEl&&dueEl.value)||"", targetDate:(dueEl&&dueEl.value)||"",
+    status:"Open", updates:[], raisedBy:u.id||"", raisedByName:u.name||"", raisedAt:new Date().toISOString(), createdAt:new Date().toISOString()
+  };
+  const dept2=departments().find(d=>d.headUserId===finding.secondaryOwnerUserId); finding.secondaryOwner=dept2?dept2.headName:"";
+  extList().push(finding);
+  notifyOwnerAssigned(finding);
+  logAudit("ext.raised","Added external finding: "+finding.title,{findingId:finding.id});
+  _pendingExt=null;
+  save(); closeModal(); render();
+  modalSuccess(finding.ownerUserId?"External finding added. The action owner has been notified.":"External finding added to the register.");
+}
+function extAssignOwner(fid){
+  const o=extList().find(x=>x.id===fid); if(!o) return;
+  const me=window.AMS_USER&&window.AMS_USER.id;
+  if(!isHeadUser() && o.raisedBy && o.raisedBy!==me){ toast("Only the Head of Audit or the auditor who raised it can assign the owner.","error"); return; }
+  openModal("Assign action owner",`
+    <div class="note" style="margin-bottom:10px"><b>${esc(o.title)}</b></div>
+    <label>Primary action owner (responds &amp; closes)</label>
+    <select id="ea_owner">${ownerOptions(o.ownerUserId||"","— select primary owner —")}</select>
+    <label style="margin-top:8px">Secondary action owner <span class="hint">(oversight — optional)</span></label>
+    <select id="ea_owner2">${ownerOptions(o.secondaryOwnerUserId||"","— none —")}</select>
+    <label style="margin-top:8px">Closure date</label><input type="date" id="ea_due" value="${esc(o.dueDate||"")}">`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveExtAssign('${fid}')">Save &amp; notify</button>`);
+}
+function saveExtAssign(fid){
+  const o=extList().find(x=>x.id===fid); if(!o) return;
+  const u=window.AMS_USER||{};
+  const ownerId=val("ea_owner"); const dept=departments().find(d=>d.headUserId===ownerId);
+  const owner2Id=val("ea_owner2"); const dueEl=document.getElementById("ea_due");
+  const prevOwner=o.ownerUserId, prevSec=o.secondaryOwnerUserId;
+  o.ownerUserId=ownerId||""; o.owner=dept?dept.headName:""; o.departmentId=dept?dept.id:"";
+  o.secondaryOwnerUserId=(owner2Id&&owner2Id!==ownerId)?owner2Id:"";
+  const dept2=departments().find(d=>d.headUserId===o.secondaryOwnerUserId); o.secondaryOwner=dept2?dept2.headName:"";
+  if(dueEl&&dueEl.value){ o.dueDate=dueEl.value; o.targetDate=dueEl.value; }
+  o.updates=o.updates||[];
+  if(!o.raisedBy){ o.raisedBy=u.id||""; o.raisedByName=u.name||""; }
+  if(!o.raisedAt) o.raisedAt=new Date().toISOString();
+  if(o.ownerUserId && o.ownerUserId!==prevOwner){ notify(o.ownerUserId,"assigned","New finding assigned to you: "+o.title,"myobs"); const e=ownerEmailFor(o.ownerUserId); if(e) emailNotify([e],"AuditLens — a finding was assigned to your department",`An external finding "${o.title}" has been assigned to your department. Sign in to AuditLens to respond and close.`); }
+  if(o.secondaryOwnerUserId && o.secondaryOwnerUserId!==prevSec){ notify(o.secondaryOwnerUserId,"assigned","You have oversight on: "+o.title,"myobs"); const e2=ownerEmailFor(o.secondaryOwnerUserId); if(e2) emailNotify([e2],"AuditLens — finding oversight",`You have oversight of the external finding "${o.title}".`); }
+  logAudit("ext.assigned","Assigned owner for finding: "+o.title,{findingId:fid});
+  save(); closeModal(); render(); modalSuccess(o.ownerUserId?"Owner assigned. The action owner has been notified.":"Owner cleared.");
+}
+function renderExtFinding(C,T,A){
+  const o=curExt?extList().find(x=>x.id===curExt):null;
+  const isOwner=isActionOwner();
+  if(!o){ go(isOwner?"myobs":"external"); return; }
+  T.textContent=isOwner?pageTitleFor("myobs"):pageTitleFor("external");
+  setTopBack(backBtn(isOwner?"go('myobs')":"go('external')"));
+  const me=window.AMS_USER&&window.AMS_USER.id;
+  const canManage=isHeadUser()||(o.raisedBy&&o.raisedBy===me)||!o.raisedBy;
+  A.innerHTML=canManage?`${!isOwner?`<button class="btn sm" onclick="extAssignOwner('${o.id}')">${o.ownerUserId?"Reassign owner":"Assign owner"}</button>`:""}<button class="btn sec sm" onclick="modalExt('${o.id}')">Edit</button><button class="btn ghost sm danger" onclick="modalDelExt('${o.id}')">Delete</button>`:"";
+  const sv=EXT_SEV_HEX[o.severity]||"#64748b";
+  C.innerHTML=`<div class="obs-detail-page anim-fade-in">
+    <header class="obs-detail-hero">
+      <div class="obs-detail-badges">
+        <span class="pill" style="background:${hx2rgba(sv,.16)};color:${sv}">${esc(o.severity||"—")}</span>
+        ${statusPill(o.status||"Open")}
+        <span class="tag">External finding</span>
+        ${o.theme?`<span class="tag">${esc(o.theme)}</span>`:""}
+        ${o.source?`<span class="tag">${esc(o.source)}</span>`:""}
+      </div>
+      <h2 class="obs-detail-title">${esc(o.ref?o.ref+" — ":"")}${esc(o.title)}</h2>
+    </header>
+    <div class="obs-detail-meta">
+      ${o.owner?`<div class="obs-meta-item"><span class="obs-meta-label">Owner</span><span class="obs-meta-value">${esc(o.owner)}</span></div>`:""}
+      ${o.year?`<div class="obs-meta-item"><span class="obs-meta-label">Year</span><span class="obs-meta-value">${esc(o.year)}</span></div>`:""}
+      ${o.sourceRef?`<div class="obs-meta-item"><span class="obs-meta-label">Source ref</span><span class="obs-meta-value">${esc(o.sourceRef)}</span></div>`:""}
+      ${o.dueDate?`<div class="obs-meta-item"><span class="obs-meta-label">Closure date</span><span class="obs-meta-value">${esc(o.dueDate)}</span></div>`:""}
+    </div>
+    <div class="obs-detail-sections">
+      ${detailSection("Detail",o.detail)}
+      ${detailSection("Risk / impact",o.risk)}
+      ${detailSection("Recommendation",o.recommendation)}
+    </div>
+    ${obsRemediationHTML(o,{id:"ext"},{id:"ext"})}
+  </div>`;
+}
 function modalExtImport(){
   openModal("Import external findings",`
     <p class="hint" style="margin:0 0 14px">Upload a CSV of external / regulatory findings — each row is imported and analysed into a finding in the register. Use the template to get the columns right.</p>
@@ -3293,8 +3436,10 @@ function detailSection(t,v){
 }
 /* ---- Observation remediation: evidence, updates, verification chain ---- */
 function obsUpdates(o){ o.updates=o.updates||[]; return o.updates; }
-function findObs(aid,rid,oid){ const r=report(audit(aid),rid); return r?r.observations.find(x=>x.id===oid):null; }
+function findObs(aid,rid,oid){ if(aid==="ext") return extList().find(x=>x.id===oid)||null; const r=report(audit(aid),rid); return r?r.observations.find(x=>x.id===oid):null; }
 function canVerifyReport(a){ return isHeadUser() || (!!a && !!a.leadAuditorId && !!window.AMS_USER && a.leadAuditorId===window.AMS_USER.id); }
+// The Head, the lead auditor of the audit, OR the auditor who raised the item can verify remediation.
+function canVerifyItem(o,a){ return canVerifyReport(a) || (!!o && !!o.raisedBy && !!window.AMS_USER && o.raisedBy===window.AMS_USER.id); }
 async function uploadEvidenceFile(obsId,inputEl){
   const f=inputEl&&inputEl.files&&inputEl.files[0]; if(!f) return null;
   const fd=new FormData(); fd.append("file",f); fd.append("obsId",obsId);
@@ -3410,8 +3555,8 @@ async function finalizeReadyForClosure(aid,rid,oid,text){
 }
 /* ---- Auditor verification → Close Observation modal (prepares closure, sends to Head) ---- */
 function modalCloseObservation(aid,rid,oid){
-  const a=audit(aid); if(!canVerifyReport(a)){ toast("Only the lead auditor of this audit or the Head of Audit can verify.","error"); return; }
   const o=findObs(aid,rid,oid); if(!o) return;
+  const a=audit(aid); if(!canVerifyItem(o,a)){ toast("Only the auditor who raised it, the lead auditor, or the Head of Audit can verify.","error"); return; }
   openModal("Close Observation",`
     <div class="note" style="margin-bottom:10px"><b>${esc(o.title)}</b></div>
     ${o.ownerResponse?`<div class="obs-field"><div class="ttl">Action owner's closure response</div><div class="txt">${richText(o.ownerResponse)}</div></div>`:""}
@@ -3446,8 +3591,8 @@ Return plain text only (the closure note).`;
   finally{ done(); }
 }
 async function submitCloseObservation(aid,rid,oid){
-  const a=audit(aid); if(!canVerifyReport(a)){ toast("Only the lead auditor of this audit or the Head of Audit can verify.","error"); return; }
   const o=findObs(aid,rid,oid); if(!o||!o.ownerRectifiedAt) return;
+  const a=audit(aid); if(!canVerifyItem(o,a)){ toast("Only the auditor who raised it, the lead auditor, or the Head of Audit can verify.","error"); return; }
   const btn=event&&event.currentTarget; const done=btnBusy(btn,"Verifying…");
   const fileEl=document.getElementById("co_file");
   if(fileEl&&fileEl.files&&fileEl.files.length){ const ev=await uploadEvidenceFile(oid,fileEl); if(ev) o.closureFile=ev; else { done(); return; } }
@@ -3540,7 +3685,7 @@ function verifyStepperHTML(o){
 }
 function obsRemediationHTML(o,a,r){
   const primary=isPrimaryOwner(o); const secondary=isSecondaryOwner(o);
-  const canVerify=canVerifyReport(a); const head=isHeadUser();
+  const canVerify=canVerifyItem(o,a); const head=isHeadUser();
   const isRaiser=!!(window.AMS_USER && o.raisedBy && o.raisedBy===window.AMS_USER.id);
   const closed=o.status==="Closed";
   const rej=o.closureRejection; // {target:'auditor'|'owner', note, byName, at}
@@ -3960,21 +4105,29 @@ function delDepartment(id){
 }
 /* ---- Action Owner portal ---- */
 function myObsList(){ const me=window.AMS_USER||{}; return allObs().filter(o=>((o.ownerUserId&&o.ownerUserId===me.id)||(o.secondaryOwnerUserId&&o.secondaryOwnerUserId===me.id))&&obsIsApproved(o)); }
+function myExtList(){ const me=window.AMS_USER||{}; return extList().filter(f=>(f.ownerUserId&&f.ownerUserId===me.id)||(f.secondaryOwnerUserId&&f.secondaryOwnerUserId===me.id)); }
 function viewMyObs(){
   const me=window.AMS_USER||{};
-  const mine=myObsList();
-  const open=mine.filter(o=>o.status!=="Closed");
-  const closed=mine.filter(o=>o.status==="Closed");
+  const items=[...myObsList().map(o=>({o,type:"Internal"})),...myExtList().map(o=>({o,type:"External"}))];
   let h=`<div class="dash-welcome anim-fade-in"><div class="dash-welcome-text"><h1>Welcome, ${esc((me.name||"there").split(/\s+/)[0])}</h1><p class="dash-welcome-role">${esc(me.department||"Action Owner")}</p></div></div>`;
-  if(!mine.length){ h+=`<div class="card"><div class="empty"><div class="big">✦</div>No observations have been assigned to you yet.<br><br>When Internal Audit raises and approves an observation against your department, it will appear here for you to respond, add updates and evidence.</div></div>`; return h; }
+  if(!items.length){ h+=`<div class="card"><div class="empty"><div class="big">✦</div>Nothing has been assigned to you yet.<br><br>When Internal Audit raises an observation or external finding against your department, it will appear here for you to respond, add updates and evidence.</div></div>`; return h; }
+  const open=items.filter(x=>(x.o.status||"Open")!=="Closed");
+  const closed=items.filter(x=>(x.o.status||"Open")==="Closed");
   const rows=[...open,...closed];
-  h+=`<div class="card"><div class="seclabel">Observations raised against my department</div>
-    <table><thead><tr><th>Criticality</th><th>Observation</th><th>Audit / Area</th><th>Expected close</th><th>Status</th></tr></thead><tbody>
-    ${rows.map(o=>{ const ec=effectiveClose(o,o._r); return `<tr class="tracker-row" onclick="go('observation',{audit:'${o._a.id}',report:'${o._r.id}',obs:'${o.id}'})" title="Open observation">
-      <td><span class="pill c-${ck(o.criticality)}">${o.criticality}</span></td>
+  h+=`<div class="card"><div class="seclabel">Raised against my department</div>
+    <table><thead><tr><th>Type</th><th>Criticality</th><th>Item</th><th>Source / Area</th><th>Expected close</th><th>Status</th></tr></thead><tbody>
+    ${rows.map(x=>{ const o=x.o; const ext=x.type==="External";
+      const nav=ext?`go('extfinding',{ext:'${o.id}'})`:`go('observation',{audit:'${o._a.id}',report:'${o._r.id}',obs:'${o.id}'})`;
+      const sv=EXT_SEV_HEX[o.severity]||"#64748b";
+      const critCell=ext?`<span class="pill" style="background:${hx2rgba(sv,.16)};color:${sv}">${esc(o.severity||"—")}</span>`:`<span class="pill c-${ck(o.criticality)}">${esc(o.criticality)}</span>`;
+      const ctx=ext?`${esc(o.source||"—")}${o.year?`<div class="hint">${esc(o.year)}</div>`:""}`:`${esc(o._a.name)}<div class="hint">${esc(o._a.area||"")}</div>`;
+      const ecStr=ext?(o.dueDate||"—"):(function(){ const c=effectiveClose(o,o._r); return c?fmtDate(c):"—"; })();
+      return `<tr class="tracker-row" onclick="${nav}" title="Open">
+      <td><span class="tag">${x.type}</span></td>
+      <td>${critCell}</td>
       <td><b>${esc(o.title)}</b></td>
-      <td>${esc(o._a.name)}<div class="hint">${esc(o._a.area||"")}</div></td>
-      <td>${ec?fmtDate(ec):`<span class="hint">—</span>`}</td>
+      <td>${ctx}</td>
+      <td>${esc(ecStr)}</td>
       <td>${statusPill(o.status)}</td>
     </tr>`; }).join("")}
     </tbody></table></div>`;
