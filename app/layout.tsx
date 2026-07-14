@@ -27,8 +27,8 @@ export default function RootLayout({
   return (
     <html lang="en" className={plusJakarta.variable}>
       <head>
-        <link id="favicon" rel="icon" href="" />
-        <link id="touchicon" rel="apple-touch-icon" href="" />
+        <link id="favicon" rel="icon" href="/org-logo.png" />
+        <link id="touchicon" rel="apple-touch-icon" href="/org-logo.png" />
       </head>
       <body>{children}</body>
     </html>

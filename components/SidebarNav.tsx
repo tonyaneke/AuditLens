@@ -52,7 +52,7 @@ const SECTIONS: { label: string; items: NavItem[] }[] = [
     label: "Oversight",
     items: [
       { view: "approvals", label: "Approvals", icon: CheckmarkBadge01Icon },
-      { view: "exco", label: "MD & EXCO Brief", icon: JusticeScale01Icon },
+      { view: "exco", label: "Executive Assurance Brief", icon: JusticeScale01Icon },
     ],
   },
   {

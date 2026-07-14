@@ -4348,6 +4348,32 @@ body.ai-busy .ai-generate-btn:not(:disabled) {
 .exco-matters { margin: 0; padding-left: 22px; }
 .exco-matters li { margin: 8px 0; font-size: 14px; line-height: 1.5; }
 
+/* ---- Executive Assurance Brief — compact report cards (app palette) ---- */
+.exco-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(258px, 1fr)); gap: 16px; }
+.exco-file {
+  position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  overflow: hidden; box-shadow: 0 2px 8px rgba(15,40,34,.05);
+  display: flex; flex-direction: column;
+  transition: box-shadow .18s ease, transform .18s ease, border-color .18s ease;
+}
+.exco-file:hover { box-shadow: 0 10px 26px rgba(15,40,34,.12); transform: translateY(-2px); }
+.exco-file.is-sent { border-color: color-mix(in oklch, var(--low) 30%, var(--line)); }
+.exco-file-state { position: absolute; top: 12px; right: 12px; font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; padding: 2px 8px; border-radius: 999px; }
+.exco-file.is-sent .exco-file-state { background: color-mix(in oklch, var(--low) 14%, #fff); color: var(--low); }
+.exco-file.is-draft .exco-file-state { background: color-mix(in oklch, var(--muted) 12%, #fff); color: var(--muted); }
+.exco-file-body { padding: 15px 16px 12px; flex: 1; }
+.exco-file-kicker { font-size: 9.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 800; }
+.exco-file-title { font-size: 15px; font-weight: 800; color: var(--brand-700); margin: 5px 0 3px; line-height: 1.25; }
+.exco-file-period { font-size: 12.5px; color: var(--ink); font-weight: 600; }
+.exco-file-stats { display: flex; gap: 14px; margin: 12px 0 8px; padding: 11px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.exco-file-stats > div { display: flex; flex-direction: column; }
+.exco-file-stats .v { font-size: 17px; font-weight: 800; color: var(--ink); line-height: 1; }
+.exco-file-stats .l { font-size: 9.5px; color: var(--muted); margin-top: 3px; text-transform: uppercase; letter-spacing: .03em; }
+.exco-file-meta { font-size: 11.5px; color: var(--muted); }
+.exco-file-actions { display: flex; gap: 5px; flex-wrap: wrap; padding: 10px 14px; border-top: 1px solid var(--line); background: var(--bg); }
+.exco-act { transition: background .15s ease, color .15s ease, transform .12s ease; }
+.exco-act:hover { background: var(--accent) !important; color: #fff !important; border-color: var(--accent) !important; transform: translateY(-1px); }
+
 /* ---- Numbered rich-text lists (replaces asterisk bullets) ---- */
 ol.rt-list { margin: 6px 0; padding-left: 22px; }
 ol.rt-list li { margin: 4px 0; }

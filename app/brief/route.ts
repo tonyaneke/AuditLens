@@ -29,6 +29,28 @@ function bandColor(b: string) {
   const map: Record<string, string> = { Low: "#2e7d32", Medium: "#c9a300", High: "#e8590c", Extreme: "#b00020" };
   return map[b] || "#64748b";
 }
+function statusPill(s: string) {
+  const k = s || "Open";
+  const fg = k === "Closed" ? "#2e7d32" : k === "In Progress" ? "#a67c00" : "#3a5a52";
+  const bg = k === "Closed" ? "#e8f3ea" : k === "In Progress" ? "#fbf3dd" : "#eef2f4";
+  return `<span class="pill" style="background:${bg};color:${fg}">${esc(k)}</span>`;
+}
+function toneColors(tone: string): [string, string] {
+  const map: Record<string, [string, string]> = {
+    good: ["#2e7d32", "#f3faf4"],
+    warn: ["#a67c00", "#fdfaf0"],
+    bad: ["#b00020", "#fdf4f5"],
+    neutral: ["#0d5a47", "#f2f7f5"],
+  };
+  return map[tone] || map.neutral;
+}
+const KPI_ICONS: Record<string, string> = {
+  alert: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>`,
+  check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>`,
+  clock: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`,
+  shield: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>`,
+  doc: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>`,
+};
 
 type Snapshot = {
   org?: string;
@@ -45,6 +67,7 @@ type Snapshot = {
   themes?: Array<[string, number]>;
   fraud?: Array<{ res: string; scheme: string; category: string; owner: string; status: string }>;
   ext?: Array<{ source: string; title: string; owner: string; target: string; status: string; overdue: boolean }>;
+  repeats?: Array<{ title: string; audit: string; status: string }>;
 };
 
 function nl2br(s: string) {
@@ -61,8 +84,10 @@ function notFoundPage(message: string) {
 
 function renderBrief(s: Snapshot) {
   const k = s.kpis || { keyOpen: 0, keyOverdue: 0, overdue: 0, unmit: 0, extOpen: 0, extOverdueN: 0 };
-  const kpi = (label: string, num: string | number, sub: string) =>
-    `<div class="kpi"><div class="kpi-num">${esc(num)}</div><div class="kpi-lab">${esc(label)}</div><div class="kpi-sub">${esc(sub)}</div></div>`;
+  const kpi = (label: string, num: string | number, sub: string, tone: string, icon: string) => {
+    const [fg, bg] = toneColors(tone);
+    return `<div class="kpi" style="background:${bg}"><div class="kpi-head"><span class="kpi-ic" style="color:${fg}">${KPI_ICONS[icon] || ""}</span><div class="kpi-lab">${esc(label)}</div></div><div class="kpi-num" style="color:${fg}">${esc(num)}</div><div class="kpi-sub">${esc(sub)}</div></div>`;
+  };
   const maxT = Math.max(1, ...(s.themes || []).map((t) => t[1]));
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Executive Assurance Brief — ${esc(s.org)}</title>
@@ -82,10 +107,20 @@ function renderBrief(s: Snapshot) {
   .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:16px;box-shadow:0 2px 8px rgba(15,40,34,.04)}
   .seclabel{font-size:11px;text-transform:uppercase;letter-spacing:.06em;font-weight:800;color:var(--teal);margin-bottom:12px}
   .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px}
-  .kpi{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px}
-  .kpi-num{font-size:26px;font-weight:800;color:var(--teal)}
-  .kpi-lab{font-size:12px;font-weight:700;margin-top:2px}
-  .kpi-sub{font-size:11.5px;color:var(--muted);margin-top:2px}
+  .kpi{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px;opacity:0;animation:kpiInLeft .6s cubic-bezier(.34,1.56,.64,1) both}
+  .kpi-head{display:flex;align-items:center;gap:7px;margin-bottom:9px}
+  .kpi-ic{width:18px;height:18px;flex:none;display:inline-flex}
+  .kpi-ic svg{width:18px;height:18px}
+  @keyframes kpiInLeft{0%{opacity:0;transform:translateX(-90px) scale(.9)}60%{opacity:1}100%{opacity:1;transform:translateX(0) scale(1)}}
+  .kpi:nth-child(1){animation-delay:.06s}
+  .kpi:nth-child(2){animation-delay:.19s}
+  .kpi:nth-child(3){animation-delay:.32s}
+  .kpi:nth-child(4){animation-delay:.45s}
+  .kpi:nth-child(5){animation-delay:.58s}
+  @media(prefers-reduced-motion:reduce){.kpi{animation:none;opacity:1}}
+  .kpi-num{font-size:26px;font-weight:800;line-height:1;color:var(--teal)}
+  .kpi-lab{font-size:11.5px;font-weight:700;color:var(--ink)}
+  .kpi-sub{font-size:11px;color:var(--muted);margin-top:4px}
   ol.matters{margin:0;padding-left:22px}
   ol.matters li{margin:8px 0;font-size:14px}
   table{width:100%;border-collapse:collapse;font-size:13px}
@@ -118,11 +153,11 @@ function renderBrief(s: Snapshot) {
     ${s.commentary ? `<div class="card"><div class="seclabel">Chief Audit Executive's commentary</div><div style="font-size:13.5px">${nl2br(s.commentary)}</div></div>` : ""}
 
     <div class="kpis">
-      ${kpi("Critical & High open", k.keyOpen, `${k.keyOverdue} overdue`)}
-      ${kpi("Remediation rate", `${s.remRate}%`, `${s.closed} of ${s.total} closed`)}
-      ${kpi("Overdue actions", k.overdue, "past target date")}
-      ${kpi("Unmitigated fraud", k.unmit, "High/Extreme residual")}
-      ${kpi("Regulatory findings", k.extOpen, `${k.extOverdueN} overdue`)}
+      ${kpi("Critical & High open", k.keyOpen, `${k.keyOverdue} overdue`, k.keyOpen ? "warn" : "good", "alert")}
+      ${kpi("Remediation rate", `${s.remRate}%`, `${s.closed} of ${s.total} closed`, (s.remRate || 0) >= 70 ? "good" : (s.remRate || 0) >= 40 ? "warn" : "bad", "check")}
+      ${kpi("Overdue actions", k.overdue, "past target date", k.overdue ? "bad" : "good", "clock")}
+      ${kpi("Unmitigated fraud", k.unmit, "High/Extreme residual", k.unmit ? "bad" : "good", "shield")}
+      ${kpi("External findings", k.extOpen, `${k.extOverdueN} overdue`, k.extOpen ? "warn" : "good", "doc")}
     </div>
 
     <div class="card"><div class="seclabel">Matters requiring EXCO attention</div>
@@ -138,7 +173,7 @@ function renderBrief(s: Snapshot) {
         <td><b>${esc(o.title)}</b><div class="sub">${esc(o.area)}</div></td>
         <td>${esc(o.owner)}</td>
         <td>${esc(o.targetClose)}${o.overdue ? ` <span class="over">overdue</span>` : ""}</td>
-        <td>${esc(o.status)}</td></tr>`,
+        <td>${statusPill(o.status)}</td></tr>`,
             )
             .join("")}</tbody></table>`
         : `<div class="sub">No open Critical or High-risk issues.</div>`}
@@ -152,10 +187,18 @@ function renderBrief(s: Snapshot) {
         : `<div class="sub">No open issues to theme yet.</div>`}
     </div>
 
+    <div class="card"><div class="seclabel">Repeat findings — recurring from prior audits</div>
+      ${(s.repeats || []).length
+        ? `<table><thead><tr><th>Observation</th><th>Audit</th><th>Status</th></tr></thead><tbody>${(s.repeats || [])
+            .map((rp) => `<tr><td><b>${esc(rp.title)}</b></td><td>${esc(rp.audit)}</td><td>${statusPill(rp.status)}</td></tr>`)
+            .join("")}</tbody></table>`
+        : `<div class="sub">No repeat findings flagged.</div>`}
+    </div>
+
     <div class="card"><div class="seclabel">Unmitigated fraud risks — High / Extreme residual</div>
       ${(s.fraud || []).length
         ? `<table><thead><tr><th>Residual</th><th>Scheme</th><th>Category</th><th>Owner</th><th>Status</th></tr></thead><tbody>${(s.fraud || [])
-            .map((f) => `<tr><td><span class="pill" style="background:${bandColor(f.res)}1a;color:${bandColor(f.res)}">${esc(f.res)}</span></td><td><b>${esc(f.scheme)}</b></td><td>${esc(f.category)}</td><td>${esc(f.owner)}</td><td>${esc(f.status)}</td></tr>`)
+            .map((f) => `<tr><td><span class="pill" style="background:${bandColor(f.res)}1a;color:${bandColor(f.res)}">${esc(f.res)}</span></td><td><b>${esc(f.scheme)}</b></td><td>${esc(f.category)}</td><td>${esc(f.owner)}</td><td>${statusPill(f.status)}</td></tr>`)
             .join("")}</tbody></table>`
         : `<div class="sub">No fraud risks at High/Extreme residual outstanding.</div>`}
     </div>
@@ -163,7 +206,7 @@ function renderBrief(s: Snapshot) {
     <div class="card"><div class="seclabel">Regulatory &amp; external audit exposure</div>
       ${(s.ext || []).length
         ? `<table><thead><tr><th>Source</th><th>Finding</th><th>Owner</th><th>Target</th><th>Status</th></tr></thead><tbody>${(s.ext || [])
-            .map((f) => `<tr><td>${esc(f.source)}</td><td><b>${esc(f.title)}</b></td><td>${esc(f.owner)}</td><td>${esc(f.target)}${f.overdue ? ` <span class="over">overdue</span>` : ""}</td><td>${esc(f.status)}</td></tr>`)
+            .map((f) => `<tr><td>${esc(f.source)}</td><td><b>${esc(f.title)}</b></td><td>${esc(f.owner)}</td><td>${esc(f.target)}${f.overdue ? ` <span class="over">overdue</span>` : ""}</td><td>${statusPill(f.status)}</td></tr>`)
             .join("")}</tbody></table>`
         : `<div class="sub">No open external/regulatory findings.</div>`}
     </div>
@@ -187,21 +230,23 @@ export async function GET(request: Request) {
     });
   }
 
-  const exco = (data as { exco?: { token?: string; snapshot?: Snapshot } }).exco;
-  if (!exco || !exco.token || !exco.snapshot) {
-    return new NextResponse(notFoundPage("No executive brief has been published yet."), {
+  const exco = (data as { exco?: { briefs?: Array<{ token?: string; snapshot?: Snapshot }> } }).exco;
+  const briefs = exco && Array.isArray(exco.briefs) ? exco.briefs : [];
+  if (!id) {
+    return new NextResponse(notFoundPage("No brief specified."), {
       status: 404,
       headers: { "content-type": "text/html; charset=utf-8" },
     });
   }
-  if (!id || id !== exco.token) {
-    return new NextResponse(notFoundPage("This link is invalid or has expired."), {
+  const brief = briefs.find((b) => b && b.token === id);
+  if (!brief || !brief.snapshot) {
+    return new NextResponse(notFoundPage("This link is invalid or the brief is no longer available."), {
       status: 404,
       headers: { "content-type": "text/html; charset=utf-8" },
     });
   }
 
-  return new NextResponse(renderBrief(exco.snapshot), {
+  return new NextResponse(renderBrief(brief.snapshot), {
     status: 200,
     headers: {
       "content-type": "text/html; charset=utf-8",

@@ -1,6 +1,8 @@
+import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { defaultWorkspaceData, type WorkspaceDb } from "@/lib/db-data";
 import { sendNotificationEmail } from "@/lib/email";
+import { computeExcoSnapshot, fmtDate } from "@/lib/exco-compute";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -9,10 +11,10 @@ export const dynamic = "force-dynamic";
 const WORKSPACE_ID = "default";
 
 // Auto-send schedule: the 1st of the month and the 3rd week (days 15–21),
-// starting September 2026. A daily scheduler hitting this endpoint sends
+// starting August 2026. A daily scheduler hitting this endpoint sends
 // each occurrence once (deduplicated by key). No user needs to be logged in.
 const START_YEAR = 2026;
-const START_MONTH = 8; // September (0-indexed)
+const START_MONTH = 7; // August (0-indexed)
 
 function scheduleSlot(now: Date): { due: boolean; key: string } {
   const y = now.getFullYear();
@@ -81,15 +83,17 @@ export async function GET(request: Request) {
   const now = new Date();
   const slot = scheduleSlot(now);
   if (!slot.due && !force) {
-    return NextResponse.json({ ok: true, sent: false, reason: "Not a scheduled send day (1st or 3rd week, from September 2026)." });
+    return NextResponse.json({ ok: true, sent: false, reason: "Not a scheduled send day (1st or 3rd week, from August 2026)." });
   }
 
   const row = await prisma.workspaceData.findUnique({ where: { id: WORKSPACE_ID } });
   const data = ((row?.data as WorkspaceDb) || defaultWorkspaceData()) as WorkspaceDb & {
     exco?: {
-      recipients?: string; cc?: string; subject?: string; token?: string;
-      snapshot?: Snapshot; sends?: unknown[]; lastSentAt?: string;
+      recipients?: string; cc?: string; subject?: string; lastSentAt?: string;
+      headline?: string; commentary?: string;
+      recipientList?: Array<{ name?: string; role?: string; email?: string }>;
       autoState?: { lastKey?: string };
+      briefs?: Array<{ id?: string; token?: string; period?: string; generatedAt?: string; headline?: string; commentary?: string; snapshot?: Snapshot; sentAt?: string; sentTo?: number }>;
     };
   };
   const exco = data.exco;
@@ -101,17 +105,27 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, sent: false, reason: `Already sent for ${occKey}.` });
   }
 
-  const recipients = parseEmails(exco.recipients);
+  const recipients = Array.from(
+    new Set([
+      ...(Array.isArray(exco.recipientList) ? exco.recipientList.map((r) => (r.email || "").trim()) : []),
+      ...parseEmails(exco.recipients),
+    ].filter((e) => e.includes("@"))),
+  );
   const cc = parseEmails(exco.cc);
   if (!recipients.length) return NextResponse.json({ ok: true, sent: false, reason: "No recipients configured in Settings." });
-  if (!exco.snapshot || !exco.token) {
-    return NextResponse.json({ ok: true, sent: false, reason: "The brief has not been published yet — send once manually first." });
-  }
+
+  // Generate a fresh brief snapshot from current data (a new brief is created on every scheduled send).
+  const period = `As at ${fmtDate(now)}`;
+  const snap = computeExcoSnapshot(data, { period, headline: exco.headline || "", commentary: exco.commentary || "" });
+  const token = randomUUID().replace(/-/g, "");
+  const brief = { id: randomUUID(), token, period, generatedAt: snap.generatedAt, headline: snap.headline, commentary: snap.commentary, snapshot: snap as Snapshot, sentAt: "", sentTo: 0 };
+  exco.briefs = Array.isArray(exco.briefs) ? exco.briefs : [];
+  exco.briefs.unshift(brief);
 
   const appUrl = (process.env.APP_URL?.trim() || url.origin).replace(/\/$/, "");
-  const link = `${appUrl}/brief?id=${encodeURIComponent(exco.token)}`;
-  const subject = exco.subject || `Executive Assurance Brief — ${exco.snapshot.period || ""}`;
-  const text = briefEmailText(exco.snapshot, link);
+  const link = `${appUrl}/brief?id=${encodeURIComponent(token)}`;
+  const subject = exco.subject || `Executive Assurance Brief — ${period}`;
+  const text = briefEmailText(snap, link);
 
   const result = await sendNotificationEmail({
     to: [...recipients, ...cc],
@@ -121,18 +135,27 @@ export async function GET(request: Request) {
     ctaLabel: "Open the Executive Assurance Brief",
   });
 
+  // Confirm to the Head(s) of Audit that the brief was auto-sent.
+  try {
+    const heads = await prisma.user.findMany({ where: { role: "head_of_audit" }, select: { email: true } });
+    const headEmails = heads.map((h) => h.email).filter((x): x is string => !!x && x.includes("@"));
+    if (headEmails.length) {
+      await sendNotificationEmail({
+        to: headEmails,
+        subject: "AuditLens — Executive Assurance Brief auto-sent",
+        text: `The Executive Assurance Brief "${period}" was automatically sent to ${recipients.length} MD & EXCO recipient(s). Public link: ${link}`,
+        ctaUrl: link,
+        ctaLabel: "Open the Executive Assurance Brief",
+      });
+    }
+  } catch {
+    /* non-fatal */
+  }
+
   exco.autoState.lastKey = occKey;
   exco.lastSentAt = now.toISOString();
-  exco.sends = Array.isArray(exco.sends) ? exco.sends : [];
-  exco.sends.unshift({
-    at: now.toISOString(),
-    by: "auto-schedule",
-    to: recipients.length + cc.length,
-    period: exco.snapshot.period,
-    link,
-    sent: result.sent,
-  });
-  if (exco.sends.length > 50) exco.sends = exco.sends.slice(0, 50);
+  brief.sentAt = now.toISOString();
+  brief.sentTo = recipients.length + cc.length;
 
   await prisma.workspaceData.upsert({
     where: { id: WORKSPACE_ID },
