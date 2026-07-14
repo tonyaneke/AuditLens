@@ -4034,7 +4034,7 @@ function viewSettings(){
       <label class="btn sec" style="display:inline-block;margin:0">⤒ Import backup<input type="file" accept="application/json" style="display:none" onchange="importData(event)"></label>
     </div>
   </div>
-  ${isHead?`<div class="card"><div class="row"><h3 style="margin:0">Departments &amp; action owners</h3><div class="spacer"></div><button class="btn sm" onclick="modalDepartment()">+ Add department</button></div>
+  ${isHead?`<div class="card"><div class="row"><h3 style="margin:0">Departments &amp; action owners</h3><div class="spacer"></div><button class="btn sm" onclick="modalDepartment()">+ Add Action Owner</button></div>
     <div class="hint" style="margin-top:4px">Each department's head becomes an <b>Action Owner</b> login (welcome email with a temporary password) and can be assigned remediation actions.</div>
     <div id="deptTableWrap" style="margin-top:12px">${departmentsTableHTML()}</div>
   </div>
@@ -4058,15 +4058,15 @@ function departmentsTableHTML(){
 function refreshDepartmentsTable(){ const el=document.getElementById("deptTableWrap"); if(el) el.innerHTML=departmentsTableHTML(); }
 function modalDepartment(id){
   const d=id?deptById(id):null;
-  openModal(id?"Edit department":"Add department",`
+  openModal(id?"Edit department":"Add Action Owner",`
     <label>Department name *</label><input id="dp_name" value="${esc(d?d.name:"")}" placeholder="e.g. Credit Operations">
     <div class="f2">
       <div><label>Name *</label><input id="dp_head" value="${esc(d?d.headName:"")}" placeholder="e.g. Jane Doe"></div>
       <div><label>Email *</label><input id="dp_email" type="email" value="${esc(d?d.headEmail:"")}" ${d&&d.headUserId?"disabled title='Linked to a login account — email cannot be changed here'":""}></div>
     </div>
-    ${id?"":`<p class="hint" style="margin:10px 0 0">On save, an <b>Action Owner</b> login is created for this head and a welcome email (temporary password) is sent.</p>`}
+    ${id?"":`<p class="hint" style="margin:10px 0 0">On save, an <b>Action Owner</b> login is created for this person and a welcome email (temporary password) is sent.</p>`}
     <div id="dp_err" style="margin-top:10px"></div>`,
-    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveDepartment('${id||""}')">Save</button>`);
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveDepartment('${id||""}')">Add User</button>`);
 }
 async function saveDepartment(id){
   const name=val("dp_name"), headName=val("dp_head"), headEmail=val("dp_email").toLowerCase();
