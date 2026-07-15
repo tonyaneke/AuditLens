@@ -6,7 +6,7 @@ Data is stored in the browser via `localStorage` (key: `auditBotData`).
 
 ## Getting started
 
-```bash...
+```bash
 cd audit-app
 npm install
 npm run dev
