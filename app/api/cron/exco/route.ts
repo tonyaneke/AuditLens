@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { defaultWorkspaceData, type WorkspaceDb } from "@/lib/db-data";
-import { sendNotificationEmail } from "@/lib/email";
+import { buildBriefEmailHtml, sendNotificationEmail } from "@/lib/email";
 import { computeExcoSnapshot, fmtDate } from "@/lib/exco-compute";
 import { prisma } from "@/lib/prisma";
 
@@ -76,7 +76,10 @@ export async function GET(request: Request) {
   const key = url.searchParams.get("key") || "";
   const force = url.searchParams.get("force") === "1";
   const secret = process.env.CRON_SECRET?.trim();
-  if (secret && key !== secret) {
+  // Vercel Cron sends "Authorization: Bearer <CRON_SECRET>" automatically when CRON_SECRET is set.
+  const authHeader = request.headers.get("authorization") || "";
+  const bearer = authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+  if (secret && key !== secret && bearer !== secret) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
@@ -133,6 +136,7 @@ export async function GET(request: Request) {
     text,
     ctaUrl: link,
     ctaLabel: "Open the Executive Assurance Brief",
+    bodyHtml: buildBriefEmailHtml(snap, link),
   });
 
   // Confirm to the Head(s) of Audit that the brief was auto-sent.

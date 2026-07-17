@@ -235,7 +235,7 @@ function fmtAuditWhen(iso){
 function canAccessView(v){
   const u = window.AMS_USER;
   if(!u) return ["dashboard","audits","tracker","audit","report","observation","newobs","insights","guide"].includes(v);
-  if(u.role==="action_owner"){ return v==="myobs"||v==="observation"||v==="extfinding"||v==="dashboard"; }
+  if(u.role==="action_owner"){ return v==="myobs"||v==="myext"||v==="observation"||v==="extfinding"||v==="dashboard"; }
   if(u.role==="head_of_audit"){
     if(["dashboard","audits","tracker","auditra","fraud","process","external","iasa","approvals","exco","settings","auditlog","audit","report","observation","extfinding","newobs","insights","guide"].includes(v)) return true;
     return false;
@@ -304,7 +304,7 @@ const ICON_TRASH=`<svg viewBox="0 0 24 24" width="14" height="14" fill="none" st
 function iconBtn(fn,icon,title,danger){ return `<button type="button" class="btn-icon-action${danger?" danger":""}" title="${esc(title)}" onclick="${fn}">${icon}</button>`; }
 function delBtn(fn,title){ return iconBtn(fn,ICON_TRASH,title||"Delete",true); }
 function pageTitleFor(v){
-  const map={dashboard:"Dashboard",audits:"Audits & Reports",tracker:"Remediation Tracker",auditra:"Audit Risk Assessment",fraud:"Fraud Risk",process:"Process Review",external:"External Findings",iasa:"IA Self-Assessment",approvals:"Approvals",exco:"Executive Assurance Brief",myobs:"My Observations",guide:"How to use AuditLens",settings:"Settings",auditlog:"Audit log"};
+  const map={dashboard:"Dashboard",audits:"Audits & Reports",tracker:"Remediation Tracker",auditra:"Audit Risk Assessment",fraud:"Fraud Risk",process:"Process Review",external:"External Findings",iasa:"IA Self-Assessment",approvals:"Approvals",exco:"Executive Assurance Brief",myobs:"Internal Observations",myext:"External Observations",guide:"How to use AuditLens",settings:"Settings",auditlog:"Audit log"};
   return map[v]||"AuditLens";
 }
 function planYearOptions(selected){
@@ -420,6 +420,11 @@ function render(){
     if(!canAccessView("myobs")){ go("dashboard"); return; }
     T.textContent=pageTitleFor("myobs");
     C.innerHTML=viewMyObs();
+  }
+  else if(view==="myext"){
+    if(!canAccessView("myext")){ go("dashboard"); return; }
+    T.textContent=pageTitleFor("myext");
+    C.innerHTML=viewMyExt();
   }
   else {
     T.textContent=pageTitleFor(view)||"AuditLens";
@@ -3469,6 +3474,12 @@ async function addObsUpdate(aid,rid,oid){
   const text=val("upd_text"); const fileEl=document.getElementById("upd_file");
   const hasFile=fileEl&&fileEl.files&&fileEl.files.length;
   if(!text && !hasFile){ toast("Add a comment or attach a file.","error"); return; }
+  // Light quality gate — keep comments relevant/solid (not strict). A file counts as substance.
+  if(text && !hasFile){
+    const t=text.trim().toLowerCase().replace(/[.!\s]+$/,"");
+    const trivial=["ok","okay","noted","done","yes","no","thanks","thank you","fine","good","great","sure","received","seen","acknowledged","k","nil","na","n/a"];
+    if(t.length<10 || trivial.includes(t)){ toast("Add a little more detail so the comment is meaningful — what was done, or the specifics.","error"); return; }
+  }
   const audEl=document.getElementById("upd_aud"); const audience=(audEl&&audEl.value==="owner")?"owner":"ia";
   const btn=document.getElementById("upd_save"); if(btn){ btn.disabled=true; btn.textContent="Saving…"; }
   let ev=null;
@@ -3499,6 +3510,47 @@ async function addObsUpdate(aid,rid,oid){
   }
   logAudit("obs.update","Update posted on: "+o.title,{observationId:oid});
   save(); render();
+}
+/* ---- Reassign an observation's action owner (any time, incl. closed) ---- */
+function modalReassignObs(aid,rid,oid){
+  const o=findObs(aid,rid,oid); if(!o) return;
+  const me=window.AMS_USER&&window.AMS_USER.id;
+  if(!isHeadUser() && !canVerifyItem(o,audit(aid)) && !(o.raisedBy&&o.raisedBy===me)){ toast("Only the Head of Audit or the auditor who raised it can reassign.","error"); return; }
+  openModal("Reassign action owner",`
+    <div class="note" style="margin-bottom:10px"><b>${esc(o.title)}</b></div>
+    <label>Primary action owner (responds &amp; closes)</label>
+    <select id="ra_owner">${ownerOptions(o.ownerUserId||"","— select primary owner —")}</select>
+    <label style="margin-top:8px">Secondary action owner <span class="hint">(oversight — optional)</span></label>
+    <select id="ra_owner2">${ownerOptions(o.secondaryOwnerUserId||"","— none —")}</select>
+    <label style="margin-top:8px">Closure date</label><input type="date" id="ra_due" value="${esc(o.dueDate||"")}">
+    <div class="hint" style="margin-top:8px">The newly-assigned owner(s) are notified. Reassignment works on any observation, including recent or past (closed) ones.</div>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveReassignObs('${aid}','${rid}','${oid}')">Save &amp; notify</button>`);
+}
+function saveReassignObs(aid,rid,oid){
+  const o=findObs(aid,rid,oid); if(!o) return;
+  const ownerId=val("ra_owner"); const dept=departments().find(d=>d.headUserId===ownerId);
+  const owner2Id=val("ra_owner2"); const dueEl=document.getElementById("ra_due");
+  const prevOwner=o.ownerUserId, prevSec=o.secondaryOwnerUserId;
+  o.ownerUserId=ownerId||""; o.owner=dept?dept.headName:(o.owner||""); if(dept) o.departmentId=dept.id;
+  o.secondaryOwnerUserId=(owner2Id&&owner2Id!==ownerId)?owner2Id:"";
+  const dept2=departments().find(d=>d.headUserId===o.secondaryOwnerUserId); o.secondaryOwner=dept2?dept2.headName:"";
+  if(dueEl&&dueEl.value) o.dueDate=dueEl.value;
+  if(o.ownerUserId && o.ownerUserId!==prevOwner) notifyBoth(o.ownerUserId,"assigned","Observation reassigned to you: "+o.title,"myobs","AuditLens — An Observation was assigned to your department",`The audit observation "${o.title}" has been assigned to your department as the primary action owner. Sign in to AuditLens to respond and close it.`);
+  if(o.secondaryOwnerUserId && o.secondaryOwnerUserId!==prevSec) notifyBoth(o.secondaryOwnerUserId,"assigned","You have oversight on: "+o.title,"myobs","AuditLens — observation oversight",`You now have oversight of the observation "${o.title}". Sign in to AuditLens to follow progress and add comments.`);
+  logAudit("obs.reassigned","Reassigned owner: "+o.title,{observationId:oid});
+  save(); closeModal(); render(); modalSuccess("Owner reassigned. The action owner has been notified.");
+}
+/* ---- Auditor requests a progress report — persists until Ready for Closure ---- */
+function requestProgressReport(aid,rid,oid){
+  const o=findObs(aid,rid,oid); if(!o) return;
+  if(!canVerifyItem(o,audit(aid)) && !isHeadUser()){ toast("Only Internal Audit can request a progress report.","error"); return; }
+  if(o.ownerRectifiedAt){ toast("This is already marked Ready for Closure.","error"); return; }
+  const u=window.AMS_USER||{};
+  o.progressReport={by:u.id||"",byName:u.name||"",at:new Date().toISOString()};
+  if(o.ownerUserId) notifyBoth(o.ownerUserId,"progress","Progress report requested: "+o.title,"myobs","AuditLens — progress report requested",`Internal Audit requested a progress report on "${o.title}". Sign in to AuditLens and post your progress. This stays requested until you mark it Ready for Closure.`);
+  if(o.secondaryOwnerUserId) notify(o.secondaryOwnerUserId,"progress","Progress report requested: "+o.title,"myobs");
+  logAudit("obs.progress_requested","Requested progress report: "+o.title,{observationId:oid});
+  save(); render(); toast("Progress report requested from the action owner.","success");
 }
 function obsHasEvidence(o){ return obsUpdates(o).some(u=>(u.evidence||[]).length) || !!o.ownerSop; }
 /* ---- Ready for Closure (primary owner) — response + optional evidence + AI concreteness gate ---- */
@@ -3567,6 +3619,7 @@ async function finalizeReadyForClosure(aid,rid,oid,text){
   o.ownerResponseEvidence = ev ? [ev] : (o.ownerResponseEvidence||[]);
   o.ownerRectifiedBy=u.id||""; o.ownerRectifiedByName=u.name||""; o.ownerRectifiedAt=new Date().toISOString();
   if(o.closureRejection && o.closureRejection.target==="owner") o.closureRejection=null;
+  o.progressReport=null; // clear any outstanding progress-report request
   if(o.status==="Open") o.status="In Progress";
   const a=audit(aid);
   // Route back to the auditor who raised it, plus the lead auditor and the Head.
@@ -3727,6 +3780,7 @@ function obsRemediationHTML(o,a,r){
       actions+=`<button class="btn sec sm" onclick="modalClosureReject('${a.id}','${r.id}','${o.id}','owner')">Escalate to owner</button>`;
     }
     if((canVerify||head) && o.ownerUserId && !o.ownerRectifiedAt) actions+=`<button class="btn sec sm" onclick="requestOwnerUpdate('${a.id}','${r.id}','${o.id}')">${o.updateRequestedAt?"🔔 Update requested":"Request feedback from owner"}</button>`;
+    if((canVerify||head) && !o.ownerRectifiedAt) actions+=`<button class="btn sec sm" onclick="requestProgressReport('${a.id}','${r.id}','${o.id}')">${o.progressReport?"🔔 Progress report requested":"Request progress report"}</button>`;
   }
   // Only the action owners (primary/secondary) post free-form comments here; auditors/head act via the buttons + modals.
   const isOwnerViewer=primary||secondary;
@@ -3754,6 +3808,7 @@ function obsRemediationHTML(o,a,r){
     <div class="obs-notes-label">Remediation &amp; verification</div>
     ${verifyStepperHTML(o)}
     ${rej&&!closed?`<div class="note" style="border-left:3px solid var(--crit)"><b>${rej.target==="auditor"?"Returned by the Head of Audit to Internal Audit":"Escalated by the Head of Audit to the action owner"}</b>${rej.note?`<div style="margin-top:4px">${esc(rej.note)}</div>`:""}<div class="hint" style="margin-top:4px">${esc(rej.byName||"Head of Audit")}${rej.at?" · "+esc(fmtDateTime(rej.at)):""}</div></div>`:""}
+    ${o.progressReport&&!o.ownerRectifiedAt&&!closed?`<div class="note" style="border-left:3px solid #c98a00"><b>📋 Progress report requested by Internal Audit</b><div class="hint" style="margin-top:4px">${isOwnerViewer?"Post a progress update below — it stays requested until you mark this Ready for Closure.":"Awaiting a progress update from the action owner."} · ${esc(o.progressReport.byName||"Internal Audit")}${o.progressReport.at?" · "+esc(fmtDateTime(o.progressReport.at)):""}</div></div>`:""}
     ${pkg.join("")}
     <div class="obs-notes-label obs-updates-label">Conversation &amp; evidence</div>
     ${visibleUpdates.length?visibleUpdates.map(u=>`<div class="obs-note${u.audience==="owner"?" obs-note-private":""}"><div class="obs-note-text">${linkify(u.text||"")}</div>${(u.evidence||[]).map(e=>`<div class="hint">📎 <a href="/api/files/${esc(e.itemId)}" target="_blank" rel="noopener">${esc(e.name)}</a></div>`).join("")}<div class="obs-note-meta">${u.audience==="owner"?`<span class="pill" style="background:#eef2ff;color:#4b3fa0">private</span> `:""}${esc(u.byName||"")}${u.role?" ("+esc(roleLabel(u.role))+")":""}${u.at?" · "+esc(fmtDateTime(u.at)):""}</div></div>`).join(""):`<div class="hint">No comments yet.</div>`}
@@ -3785,7 +3840,7 @@ function renderObservation(C,T,A){
   const isOwner=window.AMS_USER&&window.AMS_USER.role==="action_owner";
   T.textContent=pageTitleFor(isOwner?"myobs":"audits");
   setTopBack(backBtn(isOwner?"go('myobs')":("go('report',{audit:'"+a.id+"',report:'"+r.id+"'})")));
-  A.innerHTML=(isHeadUser()||canVerifyReport(a))?`<button class="btn sec sm" onclick="modalObs('${a.id}','${r.id}','${o.id}')">Edit</button>
+  A.innerHTML=(isHeadUser()||canVerifyItem(o,a))?`<button class="btn sm" onclick="modalReassignObs('${a.id}','${r.id}','${o.id}')">Reassign owner</button><button class="btn sec sm" onclick="modalObs('${a.id}','${r.id}','${o.id}')">Edit</button>
     <button class="btn ghost sm danger" onclick="delObs('${a.id}','${r.id}','${o.id}')">Delete</button>`:"";
   const ec=effectiveClose(o,r); const age=obsAge(o,r); const od=isOverdueObs(o,r);
   C.innerHTML=`<div class="obs-detail-page anim-fade-in">
@@ -4166,28 +4221,43 @@ function myObsCard(x){
     ${ecStr?`<div class="myobs-card-foot"><span class="hint">Expected close</span><span>${esc(ecStr)}</span></div>`:""}
   </div>`;
 }
-function viewMyObs(){
-  const all=[...myObsList().map(o=>({o,type:"Internal"})),...myExtList().map(o=>({o,type:"External"}))];
-  if(!all.length){ return `<div class="card"><div class="empty"><div class="big">✦</div>Nothing has been assigned to you yet.<br><br>When Internal Audit raises an observation or external finding against your department, it will appear here for you to respond, add updates and evidence.</div></div>`; }
-  let items=all.slice();
-  if(myObsFilter.type!=="All") items=items.filter(x=>x.type===myObsFilter.type);
-  if(myObsFilter.crit!=="All") items=items.filter(x=>x.type==="Internal"?x.o.criticality===myObsFilter.crit:x.o.severity===myObsFilter.crit);
-  const open=items.filter(x=>(x.o.status||"Open")!=="Closed");
-  const closed=items.filter(x=>(x.o.status||"Open")==="Closed");
-  const section=(title,arr)=>`<div class="seclabel" style="margin:20px 0 12px">${title} <span class="hint" style="font-weight:400">(${arr.length})</span></div>${arr.length?`<div class="myobs-grid">${arr.map(myObsCard).join("")}</div>`:`<div class="hint" style="margin-bottom:8px">Nothing here.</div>`}`;
-  const critOpts=["All",...CRITS,"High","Medium","Low"].filter((v,i,a)=>a.indexOf(v)===i);
+function ownerAnnounceHTML(){
   let annDismissed=false; try{ annDismissed=!!localStorage.getItem("al_owner_ann_"+((window.AMS_USER&&window.AMS_USER.id)||"")); }catch(e){}
-  const ann=annDismissed?"":`<div class="owner-announce" onclick="modalOwnerSimulation()"><span class="owner-announce-ico" aria-hidden="true">📌</span><div><b>New here?</b> When your department has addressed an observation, open it and use the <b>Ready for Closure</b> button to send it back to Internal Audit. <u>Click to see how it works.</u></div><button class="owner-announce-x" onclick="event.stopPropagation();dismissOwnerAnnounce()" title="Dismiss">×</button></div>`;
-  return ann+`<div class="card" style="padding:12px 16px;margin-bottom:4px"><div class="row" style="gap:10px;flex-wrap:wrap;align-items:center">
-      <div class="filter-group"><span class="filter-label">Type</span>
-        <select class="field-select field-select-sm" onchange="myObsSet('type',this.value)">${["All","Internal","External"].map(t=>`<option${myObsFilter.type===t?" selected":""}>${t}</option>`).join("")}</select></div>
-      <div class="filter-group"><span class="filter-label">Criticality / severity</span>
-        <select class="field-select field-select-sm" onchange="myObsSet('crit',this.value)">${critOpts.map(t=>`<option${myObsFilter.crit===t?" selected":""}>${esc(t)}</option>`).join("")}</select></div>
-      ${(myObsFilter.type!=="All"||myObsFilter.crit!=="All")?`<button class="btn ghost sm" onclick="myObsFilter={type:'All',crit:'All'};render()">Clear</button>`:""}
-      <div class="spacer" style="flex:1"></div><span class="hint">${all.length} total</span>
-    </div></div>
-    ${section("Open observations",open)}
-    ${section("Closed observations",closed)}`;
+  return annDismissed?"":`<div class="owner-announce" onclick="modalOwnerSimulation()"><span class="owner-announce-ico" aria-hidden="true">📌</span><div><b>New here?</b> When your department has addressed an observation, open it and use the <b>Ready for Closure</b> button to send it back to Internal Audit. <u>Click to see how it works.</u></div><button class="owner-announce-x" onclick="event.stopPropagation();dismissOwnerAnnounce()" title="Dismiss">×</button></div>`;
+}
+function myObsSectionsHTML(items0,filterHTML,totalLabel){
+  const open=items0.filter(x=>(x.o.status||"Open")!=="Closed");
+  const closed=items0.filter(x=>(x.o.status||"Open")==="Closed");
+  const section=(title,arr)=>`<div class="seclabel" style="margin:20px 0 12px">${title} <span class="hint" style="font-weight:400">(${arr.length})</span></div>${arr.length?`<div class="myobs-grid">${arr.map(myObsCard).join("")}</div>`:`<div class="hint" style="margin-bottom:8px">Nothing here.</div>`}`;
+  return filterHTML+section(totalLabel[0],open)+section(totalLabel[1],closed);
+}
+function viewMyObs(){
+  const items0=myObsList().map(o=>({o,type:"Internal"}));
+  if(!items0.length){ return ownerAnnounceHTML()+`<div class="card"><div class="empty"><div class="big">✦</div>No internal observations assigned to you yet.<br><br>When Internal Audit raises an observation against your department, it appears here for you to respond, add updates and evidence.</div></div>`; }
+  let items=items0.slice();
+  if(myObsFilter.crit!=="All") items=items.filter(x=>x.o.criticality===myObsFilter.crit);
+  const filterHTML=`<div class="card" style="padding:12px 16px;margin-bottom:4px"><div class="row" style="gap:10px;flex-wrap:wrap;align-items:center">
+      <div class="filter-group"><span class="filter-label">Criticality</span>
+        <select class="field-select field-select-sm" onchange="myObsSet('crit',this.value)">${["All",...CRITS].map(t=>`<option${myObsFilter.crit===t?" selected":""}>${esc(t)}</option>`).join("")}</select></div>
+      ${myObsFilter.crit!=="All"?`<button class="btn ghost sm" onclick="myObsFilter={type:'All',crit:'All'};render()">Clear</button>`:""}
+      <div class="spacer" style="flex:1"></div><span class="hint">${items0.length} total</span>
+    </div></div>`;
+  return ownerAnnounceHTML()+myObsSectionsHTML(items,filterHTML,["Open observations","Closed observations"]);
+}
+let myExtFilter={sev:"All"};
+function myExtSet(k,v){ myExtFilter[k]=v; render(); }
+function viewMyExt(){
+  const items0=myExtList().map(o=>({o,type:"External"}));
+  if(!items0.length){ return `<div class="card"><div class="empty"><div class="big">❖</div>No external findings assigned to you yet.<br><br>When an external / regulatory finding is assigned to your department, it appears here for you to respond, add updates and evidence.</div></div>`; }
+  let items=items0.slice();
+  if(myExtFilter.sev!=="All") items=items.filter(x=>x.o.severity===myExtFilter.sev);
+  const filterHTML=`<div class="card" style="padding:12px 16px;margin-bottom:4px"><div class="row" style="gap:10px;flex-wrap:wrap;align-items:center">
+      <div class="filter-group"><span class="filter-label">Severity</span>
+        <select class="field-select field-select-sm" onchange="myExtSet('sev',this.value)">${["All","High","Medium","Low"].map(t=>`<option${myExtFilter.sev===t?" selected":""}>${t}</option>`).join("")}</select></div>
+      ${myExtFilter.sev!=="All"?`<button class="btn ghost sm" onclick="myExtFilter={sev:'All'};render()">Clear</button>`:""}
+      <div class="spacer" style="flex:1"></div><span class="hint">${items0.length} total</span>
+    </div></div>`;
+  return myObsSectionsHTML(items,filterHTML,["Open findings","Closed findings"]);
 }
 function dismissOwnerAnnounce(){ try{ localStorage.setItem("al_owner_ann_"+((window.AMS_USER&&window.AMS_USER.id)||""),"1"); }catch(e){} render(); }
 /* ---- First-login walkthrough for action owners: a simulated observation → response → closure ---- */
@@ -5356,7 +5426,7 @@ function excoCardHTML(b){
       <div class="exco-file-period">For: ${esc(b.period||"—")}</div>
       <div class="exco-file-stats">
         <div><span class="v" style="color:${remC}">${esc(rem)}%</span><span class="l">remediated</span></div>
-        <div><span class="v" style="color:${keyC}">${esc(k.keyOpen||0)}</span><span class="l">Crit/High</span></div>
+        <div><span class="v" style="color:${keyC}">${esc(k.keyOpen||0)}</span><span class="l">High</span></div>
         <div><span class="v" style="color:${odC}">${esc(k.overdue||0)}</span><span class="l">overdue</span></div>
       </div>
       ${sent?`<div class="exco-file-meta">Sent ${esc(fmtDate(new Date(b.sentAt)))} · ${b.sentTo||0} recipient(s)</div>`:""}
@@ -5409,7 +5479,7 @@ async function sendExcoBriefRecord(id){
     const link=briefLink(b.token); const subject=e.subject||("Executive Assurance Brief — "+b.period);
     const text=buildExcoEmailTextFromSnapshot(b.snapshot,link);
     let sent=false;
-    try{ const res=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to,subject,text,ctaUrl:link,ctaLabel:"Open the Executive Assurance Brief"})}); const data=await res.json().catch(()=>({})); sent=!!data.sent; }catch(err){}
+    try{ const res=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to,subject,text,ctaUrl:link,ctaLabel:"Open the Executive Assurance Brief",excoBrief:{snapshot:b.snapshot,link}})}); const data=await res.json().catch(()=>({})); sent=!!data.sent; }catch(err){}
     // Confirm to the Head(s) of Audit that the brief went out
     const heads=headUsers(); heads.forEach(h=>notify(h.id,"exco_sent","Executive Assurance Brief ("+b.period+") sent to MD & EXCO","exco"));
     const headEmails=heads.map(h=>h.email).filter(Boolean);

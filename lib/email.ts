@@ -126,12 +126,67 @@ export async function sendWelcomeEmail(params: WelcomeEmailParams) {
   return { sent: true as const };
 }
 
+// Rich, email-safe HTML for the Executive Assurance Brief — mirrors the public /brief page
+// (teal hero + condition-coloured KPI cards + numbered matters) with the confidential footer.
+type BriefSnapshot = {
+  org?: string; period?: string; remRate?: number; closed?: number; total?: number;
+  kpis?: { keyOpen?: number; keyOverdue?: number; overdue?: number; unmit?: number; extOpen?: number; extOverdueN?: number };
+  matters?: string[];
+};
+export function buildBriefEmailHtml(s: BriefSnapshot, link: string) {
+  const org = s.org || "";
+  const period = String(s.period || "").replace(/^as at\s+/i, "");
+  const k = s.kpis || {};
+  const matters = Array.isArray(s.matters) ? s.matters : [];
+  const tones: Record<string, [string, string]> = {
+    good: ["#2e7d32", "#f3faf4"], warn: ["#a67c00", "#fdfaf0"], bad: ["#b00020", "#fdf4f5"], neutral: ["#0d5a47", "#f2f7f5"],
+  };
+  const cell = (label: string, num: string | number, sub: string, tone: string) => {
+    const [fg, bg] = tones[tone] || tones.neutral;
+    return `<td width="20%" valign="top" style="padding:4px"><div style="background:${bg};border:1px solid #e1eae7;border-radius:10px;padding:11px 11px"><div style="font-size:11px;font-weight:700;color:#19302a">${escapeHtml(label)}</div><div style="font-size:21px;font-weight:800;color:${fg};line-height:1.1;margin-top:6px">${escapeHtml(String(num))}</div><div style="font-size:10px;color:#64807a;margin-top:3px">${escapeHtml(sub)}</div></div></td>`;
+  };
+  const remTone = (s.remRate || 0) >= 70 ? "good" : (s.remRate || 0) >= 40 ? "warn" : "bad";
+  return `
+  <div style="background:#f2f7f5;padding:20px 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+    <div style="max-width:680px;margin:0 auto">
+      <div style="background:#0d5a47;border-radius:14px;padding:22px 24px;color:#ffffff">
+        <table width="100%" role="presentation"><tr>
+          <td valign="top">
+            <div style="font-size:11px;letter-spacing:1.2px;text-transform:uppercase;color:#8fd3c4;font-weight:700">Internal Audit · Executive Assurance Brief</div>
+            <div style="font-size:20px;font-weight:800;margin-top:5px">${escapeHtml(org)}</div>
+            <div style="font-size:12.5px;color:#cfe7de;margin-top:5px">As at ${escapeHtml(period)}</div>
+          </td>
+          <td valign="top" align="right" width="96">
+            <div style="font-size:34px;font-weight:800;line-height:1">${escapeHtml(String(s.remRate || 0))}%</div>
+            <div style="font-size:11px;color:#cfe7de">issues remediated</div>
+          </td>
+        </tr></table>
+      </div>
+      <table width="100%" role="presentation" style="border-collapse:separate;margin-top:12px"><tr>
+        ${cell("Critical & High open", k.keyOpen || 0, `${k.keyOverdue || 0} overdue`, (k.keyOpen || 0) ? "warn" : "good")}
+        ${cell("Remediation rate", `${s.remRate || 0}%`, `${s.closed || 0} of ${s.total || 0} closed`, remTone)}
+        ${cell("Overdue actions", k.overdue || 0, "past target date", (k.overdue || 0) ? "bad" : "good")}
+        ${cell("Unmitigated fraud", k.unmit || 0, "High/Extreme residual", (k.unmit || 0) ? "bad" : "good")}
+        ${cell("External findings", k.extOpen || 0, `${k.extOverdueN || 0} overdue`, (k.extOpen || 0) ? "warn" : "good")}
+      </tr></table>
+      <div style="background:#ffffff;border:1px solid #e1eae7;border-radius:12px;padding:16px 20px;margin-top:12px">
+        <div style="font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#0d5a47;margin-bottom:8px">Matters requiring EXCO attention</div>
+        <ol style="margin:0;padding-left:20px;color:#19302a;font-size:13.5px;line-height:1.55">${matters.map((t) => `<li style="margin:7px 0">${escapeHtml(t)}</li>`).join("")}</ol>
+      </div>
+      <p style="font-size:13px;color:#334155;margin:16px 4px 4px">The full Executive Assurance Brief — critical &amp; high-risk issues, emerging risk themes, unmitigated fraud risks and regulatory exposure — is available at the link below. Open it in your web browser to view the complete brief.</p>
+      <div style="margin:10px 4px 4px"><a href="${escapeHtml(link)}" style="display:inline-block;background:#1f8a5b;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600;font-size:14px">Open the Executive Assurance Brief</a></div>
+      <p style="font-size:11px;color:#94a3b8;margin:16px 4px 0;border-top:1px solid #e2e8f0;padding-top:10px">Prepared by Internal Audit, ${escapeHtml(org)} · ${escapeHtml(period)} · Strictly confidential — for the Managing Director &amp; Executive Committee.</p>
+    </div>
+  </div>`.trim();
+}
+
 export async function sendNotificationEmail(params: {
   to: string[];
   subject: string;
   text: string;
   ctaUrl?: string;
   ctaLabel?: string;
+  bodyHtml?: string;
 }) {
   const apiKey = process.env.SENDGRID_API_KEY?.trim();
   const from = process.env.SENDGRID_SENDER?.trim();
@@ -148,16 +203,17 @@ export async function sendNotificationEmail(params: {
   const ctaUrl = params.ctaUrl?.trim() || loginUrl;
   const ctaLabel = params.ctaLabel?.trim() || "Sign in to AuditLens";
   // Preserve line breaks in the notification text as HTML paragraphs.
-  const bodyHtml = escapeHtml(params.text)
-    .split(/\n{2,}/)
-    .map((p) => `<p>${p.replace(/\n/g, "<br>")}</p>`)
-    .join("");
-  const html = brandedEmail({
-    heading: params.subject.replace(/^AuditLens\s*[—-]\s*/i, ""),
-    bodyHtml,
-    ctaLabel,
-    ctaUrl,
-  });
+  const html = params.bodyHtml
+    ? params.bodyHtml
+    : brandedEmail({
+        heading: params.subject.replace(/^AuditLens\s*[—-]\s*/i, ""),
+        bodyHtml: escapeHtml(params.text)
+          .split(/\n{2,}/)
+          .map((p) => `<p>${p.replace(/\n/g, "<br>")}</p>`)
+          .join(""),
+        ctaLabel,
+        ctaUrl,
+      });
 
   const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
     method: "POST",

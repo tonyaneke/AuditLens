@@ -3957,10 +3957,10 @@ body.ai-busy .ai-generate-btn:not(:disabled) {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  /* Drop your exact artwork at public/login-bg.png; it wins. Otherwise the themed
-     login-bg.svg shows, and the gradient is the final fallback. */
+  /* Org-branded artwork (public/logo-bg.png). Drop a custom public/login-bg.png to override;
+     the gradient is the final fallback. */
   background-color: #eef6f3;
-  background-image: url("/login-bg.png"), url("/login-bg.svg"),
+  background-image: url("/login-bg.png"), url("/logo-bg.png"),
     linear-gradient(160deg, #e8f5f0 0%, #f8fafc 45%, #eef6f3 100%);
   background-size: cover, cover, cover;
   background-position: center, center, center;
@@ -4370,7 +4370,9 @@ body.ai-busy .ai-generate-btn:not(:disabled) {
 .exco-file-stats .v { font-size: 17px; font-weight: 800; color: var(--ink); line-height: 1; }
 .exco-file-stats .l { font-size: 9.5px; color: var(--muted); margin-top: 3px; text-transform: uppercase; letter-spacing: .03em; }
 .exco-file-meta { font-size: 11.5px; color: var(--muted); }
-.exco-file-actions { display: flex; gap: 5px; flex-wrap: wrap; padding: 10px 14px; border-top: 1px solid var(--line); background: var(--bg); }
+.exco-file-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 11px 14px; border-top: 1px solid var(--line); background: var(--bg); }
+.exco-file-actions .btn { width: 100%; justify-content: center; }
+.exco-file-actions .btn-icon-action { width: 100%; }
 .exco-act { transition: background .15s ease, color .15s ease, transform .12s ease; }
 .exco-act:hover { background: var(--accent) !important; color: #fff !important; border-color: var(--accent) !important; transform: translateY(-1px); }
 

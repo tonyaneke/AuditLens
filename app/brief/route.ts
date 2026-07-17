@@ -143,7 +143,7 @@ function renderBrief(s: Snapshot) {
         <div style="flex:1">
           <div class="lbl">Internal Audit · Executive Assurance Brief</div>
           <h1>${esc(s.org)}</h1>
-          <div class="postu">As at ${esc(s.period)}</div>
+          <div class="postu">As at ${esc(String(s.period || "").replace(/^as at\s+/i, ""))}</div>
         </div>
         <div style="text-align:right"><div class="rate">${esc(s.remRate)}%</div><div style="font-size:12px;color:#cfe7de">issues remediated</div></div>
       </div>

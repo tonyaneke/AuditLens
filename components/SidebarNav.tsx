@@ -58,7 +58,8 @@ const SECTIONS: { label: string; items: NavItem[] }[] = [
   {
     label: "Portal",
     items: [
-      { view: "myobs", label: "My Observations", icon: Folder01Icon },
+      { view: "myobs", label: "Internal Observations", icon: Folder01Icon },
+      { view: "myext", label: "External Observations", icon: BookOpen01Icon },
     ],
   },
 ];
@@ -119,7 +120,7 @@ export default function SidebarNav({ user }: SidebarNavProps) {
   const access = isHead
     ? new Set<string>([...MAIN_VIEWS, ...ASSESSMENT_VIEWS, "approvals", "exco"])
     : isOwner
-      ? new Set<string>(["dashboard", "myobs"])
+      ? new Set<string>(["dashboard", "myobs", "myext"])
       : new Set<string>([...MAIN_VIEWS, ...(user.sidebarAccess || [])]);
 
   return (
