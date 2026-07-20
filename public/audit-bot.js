@@ -834,6 +834,7 @@ function requestOwnerUpdate(aid,rid,oid){
   if(!o.ownerUserId){ toast("This observation has no assigned action owner — assign one first."); return; }
   const u=window.AMS_USER||{};
   o.updateRequestedAt=new Date().toISOString(); o.updateRequestedBy=u.name||"";
+  _reqSession.add("upd:"+oid);
   notify(o.ownerUserId,"update_request","Update requested on: "+o.title,"myobs");
   const dept=deptById(o.departmentId); if(dept&&dept.headEmail) emailNotify([dept.headEmail],"AuditLens — update requested",`The audit team requested an update on "${o.title}". Sign in to AuditLens to respond.`);
   logAudit("obs.update_requested","Requested owner update: "+o.title,{observationId:oid});
@@ -3474,18 +3475,39 @@ async function addObsUpdate(aid,rid,oid){
   const text=val("upd_text"); const fileEl=document.getElementById("upd_file");
   const hasFile=fileEl&&fileEl.files&&fileEl.files.length;
   if(!text && !hasFile){ toast("Add a comment or attach a file.","error"); return; }
-  // Light quality gate — keep comments relevant/solid (not strict). A file counts as substance.
-  if(text && !hasFile){
+  const audEl=document.getElementById("upd_aud"); const audience=(audEl&&audEl.value==="owner")?"owner":"ia";
+  // Quality gate on the action owner's submissions. A progress report is held to a much higher
+  // bar than a plain comment. Private co-owner notes and auditor comments are not gated.
+  const isOwnerPoster=isPrimaryOwner(o)||isSecondaryOwner(o);
+  const progressMode=!!(o.progressReport && !o.ownerRectifiedAt);
+  const aiBox=document.getElementById("upd_ai");
+  if(aiBox) aiBox.innerHTML="";
+  if(text && isOwnerPoster && audience!=="owner"){
     const t=text.trim().toLowerCase().replace(/[.!\s]+$/,"");
     const trivial=["ok","okay","noted","done","yes","no","thanks","thank you","fine","good","great","sure","received","seen","acknowledged","k","nil","na","n/a"];
-    if(t.length<10 || trivial.includes(t)){ toast("Add a little more detail so the comment is meaningful — what was done, or the specifics.","error"); return; }
+    if(!hasFile && (t.length<6 || trivial.includes(t))){ // obvious filler — skip the AI round-trip
+      if(aiBox) aiBox.innerHTML=`<div class="ai-err">${progressMode?"A progress report needs specifics — what has been done so far, the current status, and what remains.":"Add a little more detail so the comment carries some information."}</div>`;
+      return;
+    }
+    const gbtn=document.getElementById("upd_save"); const gdone=btnBusy(gbtn,"Checking…");
+    let verdict=null;
+    try{ verdict=await runCommentCheck(o,text,progressMode?"progress":"comment"); }catch(e){ verdict=null; }
+    gdone();
+    if(verdict && !verdict.ok){
+      if(aiBox) aiBox.innerHTML=`<div class="note" style="border-left:3px solid var(--crit)">
+        <div style="font-weight:700;color:var(--crit);margin-bottom:4px">⚠ ${progressMode?"This progress report needs to be more concrete":"Add a bit more to this comment"}</div>
+        <div class="hint">${esc(verdict.feedback||(progressMode?"State what has been done so far, the current status, and what remains.":"Add some detail so the comment is meaningful."))}</div>
+        ${verdict.questions.length?`<ul style="margin:8px 0 0;padding-left:18px;font-size:13px">${verdict.questions.map(q=>`<li>${esc(q)}</li>`).join("")}</ul>`:""}
+      </div>`;
+      return;
+    }
   }
-  const audEl=document.getElementById("upd_aud"); const audience=(audEl&&audEl.value==="owner")?"owner":"ia";
   const btn=document.getElementById("upd_save"); if(btn){ btn.disabled=true; btn.textContent="Saving…"; }
   let ev=null;
-  if(hasFile){ ev=await uploadEvidenceFile(oid,fileEl); if(!ev){ if(btn){ btn.disabled=false; btn.textContent="Post comment"; } return; } }
+  if(hasFile){ ev=await uploadEvidenceFile(oid,fileEl); if(!ev){ if(btn){ btn.disabled=false; btn.textContent=(isOwnerPoster&&progressMode)?"Post progress report":"Post comment"; } return; } }
   const u=window.AMS_USER||{};
-  obsUpdates(o).push({id:uid(),by:u.id||"",byName:u.name||"",role:u.role||"",at:new Date().toISOString(),text:text||"",evidence:ev?[ev]:[],audience});
+  const isProgressPost=!!(isOwnerPoster && progressMode && audience!=="owner");
+  obsUpdates(o).push({id:uid(),by:u.id||"",byName:u.name||"",role:u.role||"",at:new Date().toISOString(),text:text||"",evidence:ev?[ev]:[],audience,kind:isProgressPost?"progress":"comment"});
   const a=audit(aid);
   const snippet=text?` "${text.slice(0,140)}${text.length>140?"…":""}"`:"";
   if(audience==="owner"){
@@ -3540,6 +3562,28 @@ function saveReassignObs(aid,rid,oid){
   logAudit("obs.reassigned","Reassigned owner: "+o.title,{observationId:oid});
   save(); closeModal(); render(); modalSuccess("Owner reassigned. The action owner has been notified.");
 }
+/* Tracks request buttons clicked in THIS page session only — cleared on refresh so the
+   auditor can request again, while the underlying request itself stays persisted. */
+const _reqSession=new Set();
+/* ---- AI quality check for owner comments. Two bars: a PROGRESS REPORT must be concrete;
+   a plain COMMENT only needs to be relevant (lenient). ---- */
+async function runCommentCheck(o,text,mode){
+  const isProgress=mode==="progress";
+  const prompt=`You are an internal audit quality reviewer. An action owner has posted ${isProgress?"a PROGRESS REPORT":"a comment"} on an audit observation. Decide whether it is acceptable to submit.
+
+${isProgress
+  ? `A PROGRESS REPORT must be CONCRETE. It should say what has actually been done so far, the current status, and ideally what remains and by when. REJECT vague statements such as "in progress", "we are working on it", "ongoing", "will do soon" that contain no specifics, dates, or named actions.`
+  : `A COMMENT only needs to be RELEVANT and carry some information — a genuine question, clarification, or update. BE LENIENT: accept short but meaningful comments. REJECT only empty filler such as "ok", "noted", "done", "seen" that carries no information at all.`}
+
+Observation: ${o.title}
+Recommendation: ${o.recommendation||"(none stated)"}
+${isProgress?"Progress report":"Comment"}: """${text}"""
+
+Return ONLY a JSON object: {"ok": true or false, "feedback": "one or two sentences of specific, friendly guidance on what to add (only when not ok)", "questions": ["a short probing question the owner should answer","..."]}`;
+  const raw=await aiGenerate(prompt,"json");
+  const d=parseAiJson(raw);
+  return { ok: d.ok===true||String(d.ok).toLowerCase()==="true", feedback:d.feedback||"", questions:Array.isArray(d.questions)?d.questions:[] };
+}
 /* ---- Auditor requests a progress report — persists until Ready for Closure ---- */
 function requestProgressReport(aid,rid,oid){
   const o=findObs(aid,rid,oid); if(!o) return;
@@ -3547,6 +3591,7 @@ function requestProgressReport(aid,rid,oid){
   if(o.ownerRectifiedAt){ toast("This is already marked Ready for Closure.","error"); return; }
   const u=window.AMS_USER||{};
   o.progressReport={by:u.id||"",byName:u.name||"",at:new Date().toISOString()};
+  _reqSession.add("prog:"+oid);
   if(o.ownerUserId) notifyBoth(o.ownerUserId,"progress","Progress report requested: "+o.title,"myobs","AuditLens — progress report requested",`Internal Audit requested a progress report on "${o.title}". Sign in to AuditLens and post your progress. This stays requested until you mark it Ready for Closure.`);
   if(o.secondaryOwnerUserId) notify(o.secondaryOwnerUserId,"progress","Progress report requested: "+o.title,"myobs");
   logAudit("obs.progress_requested","Requested progress report: "+o.title,{observationId:oid});
@@ -3779,8 +3824,9 @@ function obsRemediationHTML(o,a,r){
       actions+=`<button class="btn sec sm" onclick="modalClosureReject('${a.id}','${r.id}','${o.id}','auditor')">Reject to auditor</button>`;
       actions+=`<button class="btn sec sm" onclick="modalClosureReject('${a.id}','${r.id}','${o.id}','owner')">Escalate to owner</button>`;
     }
-    if((canVerify||head) && o.ownerUserId && !o.ownerRectifiedAt) actions+=`<button class="btn sec sm" onclick="requestOwnerUpdate('${a.id}','${r.id}','${o.id}')">${o.updateRequestedAt?"🔔 Update requested":"Request feedback from owner"}</button>`;
-    if((canVerify||head) && !o.ownerRectifiedAt) actions+=`<button class="btn sec sm" onclick="requestProgressReport('${a.id}','${r.id}','${o.id}')">${o.progressReport?"🔔 Progress report requested":"Request progress report"}</button>`;
+    // The "requested" label is session-only — after a page refresh the button returns to its default so it can be re-requested.
+    if((canVerify||head) && o.ownerUserId && !o.ownerRectifiedAt) actions+=`<button class="btn sec sm" onclick="requestOwnerUpdate('${a.id}','${r.id}','${o.id}')">${_reqSession.has("upd:"+o.id)?"🔔 Update requested":"Request feedback from owner"}</button>`;
+    if((canVerify||head) && !o.ownerRectifiedAt) actions+=`<button class="btn sec sm" onclick="requestProgressReport('${a.id}','${r.id}','${o.id}')">${_reqSession.has("prog:"+o.id)?"🔔 Progress report requested":"Request progress report"}</button>`;
   }
   // Only the action owners (primary/secondary) post free-form comments here; auditors/head act via the buttons + modals.
   const isOwnerViewer=primary||secondary;
@@ -3796,8 +3842,11 @@ function obsRemediationHTML(o,a,r){
     primary ? "Your department has marked this Ready for Closure. Internal Audit will verify." :
     !o.ownerRectifiedAt ? "Awaiting the action owner's response." :
     !o.reportVerifiedAt ? "Awaiting auditor verification." : "Awaiting Head of Audit closure.";
-  const composerTitle=primary?"Your comments":"Oversight comment";
-  const composerPh=primary?"Add a comment or progress note…":"Add an oversight comment…";
+  const progressMode=!!(o.progressReport && !o.ownerRectifiedAt);
+  const composerTitle=progressMode&&isOwnerViewer?"Progress report":(primary?"Your comments":"Oversight comment");
+  const composerPh=progressMode&&isOwnerViewer
+    ? "Describe concretely what has been done so far, the current status, what remains and by when…"
+    : (primary?"Add a comment or progress note…":"Add an oversight comment…");
   // Closure package: the owner's response (owners always see their own; auditor/head see it in the verify/close
   // modals before closure), the auditor note and head comment — the full review is revealed on the detail page once closed.
   const pkg=[];
@@ -3811,7 +3860,7 @@ function obsRemediationHTML(o,a,r){
     ${o.progressReport&&!o.ownerRectifiedAt&&!closed?`<div class="note" style="border-left:3px solid #c98a00"><b>📋 Progress report requested by Internal Audit</b><div class="hint" style="margin-top:4px">${isOwnerViewer?"Post a progress update below — it stays requested until you mark this Ready for Closure.":"Awaiting a progress update from the action owner."} · ${esc(o.progressReport.byName||"Internal Audit")}${o.progressReport.at?" · "+esc(fmtDateTime(o.progressReport.at)):""}</div></div>`:""}
     ${pkg.join("")}
     <div class="obs-notes-label obs-updates-label">Conversation &amp; evidence</div>
-    ${visibleUpdates.length?visibleUpdates.map(u=>`<div class="obs-note${u.audience==="owner"?" obs-note-private":""}"><div class="obs-note-text">${linkify(u.text||"")}</div>${(u.evidence||[]).map(e=>`<div class="hint">📎 <a href="/api/files/${esc(e.itemId)}" target="_blank" rel="noopener">${esc(e.name)}</a></div>`).join("")}<div class="obs-note-meta">${u.audience==="owner"?`<span class="pill" style="background:#eef2ff;color:#4b3fa0">private</span> `:""}${esc(u.byName||"")}${u.role?" ("+esc(roleLabel(u.role))+")":""}${u.at?" · "+esc(fmtDateTime(u.at)):""}</div></div>`).join(""):`<div class="hint">No comments yet.</div>`}
+    ${visibleUpdates.length?visibleUpdates.map(u=>`<div class="obs-note${u.audience==="owner"?" obs-note-private":""}"><div class="obs-note-text">${linkify(u.text||"")}</div>${(u.evidence||[]).map(e=>`<div class="hint">📎 <a href="/api/files/${esc(e.itemId)}" target="_blank" rel="noopener">${esc(e.name)}</a></div>`).join("")}<div class="obs-note-meta">${u.audience==="owner"?`<span class="pill" style="background:#eef2ff;color:#4b3fa0">private</span> `:""}${u.kind==="progress"?`<span class="pill" style="background:#fbf3dd;color:#a67c00">progress report</span> `:""}${esc(u.byName||"")}${u.role?" ("+esc(roleLabel(u.role))+")":""}${u.at?" · "+esc(fmtDateTime(u.at)):""}</div></div>`).join(""):`<div class="hint">No comments yet.</div>`}
     ${canPost?`<div class="obs-composer" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">
       <div class="obs-notes-label obs-updates-label" style="border-top:none;padding-top:0;margin-top:0">${composerTitle}</div>
       ${nextHint?`<div class="hint" style="margin:2px 0 8px">${esc(nextHint)}</div>`:""}
@@ -3823,8 +3872,9 @@ function obsRemediationHTML(o,a,r){
         <span class="hint" id="upd_fileName">No file chosen</span>
         ${coOwnerExists?`<select id="upd_aud" class="field-select field-select-sm"><option value="ia">Send to Internal Audit</option><option value="owner">Private note to co-owner</option></select>`:""}
         <div class="spacer" style="flex:1"></div>
-        <button class="btn sm" id="upd_save" onclick="addObsUpdate('${a.id}','${r.id}','${o.id}')">Post comment</button>
+        <button class="btn sm" id="upd_save" onclick="addObsUpdate('${a.id}','${r.id}','${o.id}')">${progressMode&&isOwnerViewer?"Post progress report":"Post comment"}</button>
       </div>
+      <div id="upd_ai" style="margin-top:10px"></div>
       ${actions?`<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)">${actions}</div>`:""}
     </div>`:(actions||nextHint?`<div class="obs-actions-block" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">
       <div class="obs-notes-label obs-updates-label" style="border-top:none;padding-top:0;margin-top:0">${closed?"Closed":"Next step"}</div>
