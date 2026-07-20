@@ -163,7 +163,7 @@ export function buildBriefEmailHtml(s: BriefSnapshot, link: string) {
         </tr></table>
       </div>
       <table width="100%" role="presentation" style="border-collapse:separate;margin-top:12px"><tr>
-        ${cell("Critical & High open", k.keyOpen || 0, `${k.keyOverdue || 0} overdue`, (k.keyOpen || 0) ? "warn" : "good")}
+        ${cell("High Open", k.keyOpen || 0, `${k.keyOverdue || 0} overdue`, (k.keyOpen || 0) ? "warn" : "good")}
         ${cell("Remediation rate", `${s.remRate || 0}%`, `${s.closed || 0} of ${s.total || 0} closed`, remTone)}
         ${cell("Overdue actions", k.overdue || 0, "past target date", (k.overdue || 0) ? "bad" : "good")}
         ${cell("Unmitigated fraud", k.unmit || 0, "High/Extreme residual", (k.unmit || 0) ? "bad" : "good")}

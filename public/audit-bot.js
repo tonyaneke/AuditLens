@@ -5487,7 +5487,7 @@ async function sendExcoBriefRecord(id){
     b.sentAt=new Date().toISOString(); b.sentTo=to.length; e.lastSentAt=b.sentAt;
     logAudit("exco.sent","Executive Assurance Brief sent to MD & EXCO ("+to.length+" recipient(s))",{period:b.period,sent});
     save(); render();
-    modalSuccess(sent?("Brief sent to "+to.length+" recipient(s).\n\nPublic link: "+link):("Could not deliver the email — check the email configuration. The public link still works: "+link));
+    modalSuccess(sent?"Brief sent":("Could not deliver the email — check the email configuration. The public link still works: "+link));
   },{confirmLabel:"Send"});
 }
 function excoRecipients(){ const e=excoMeta(); e.recipientList=e.recipientList||[]; return e.recipientList; }
@@ -5530,7 +5530,7 @@ function excoSections(d,e){
   let h="";
   if(e.commentary) h+=`<div class="card"><div class="seclabel">Chief Audit Executive's commentary</div><div style="font-size:13.5px;line-height:1.6">${richText(e.commentary)}</div></div>`;
   h+=`<div class="dash-kpis" style="grid-template-columns:repeat(5,1fr)">
-    ${kpi(d.keyOpen.length?"warn":"good","Critical &amp; High open",d.keyOpen.length,d.keyOverdue.length+" overdue")}
+    ${kpi(d.keyOpen.length?"warn":"good","High Open",d.keyOpen.length,d.keyOverdue.length+" overdue")}
     ${kpi("good","Remediation rate",d.remRate+"%",d.closed+" of "+d.total+" closed")}
     ${kpi(d.overdue.length?"warn":"base","Overdue actions",d.overdue.length,"past target date")}
     ${kpi(d.unmit.length?"warn":"good","Unmitigated fraud",d.unmit.length,"High/Extreme residual")}

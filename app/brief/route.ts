@@ -153,7 +153,7 @@ function renderBrief(s: Snapshot) {
     ${s.commentary ? `<div class="card"><div class="seclabel">Chief Audit Executive's commentary</div><div style="font-size:13.5px">${nl2br(s.commentary)}</div></div>` : ""}
 
     <div class="kpis">
-      ${kpi("Critical & High open", k.keyOpen, `${k.keyOverdue} overdue`, k.keyOpen ? "warn" : "good", "alert")}
+      ${kpi("High Open", k.keyOpen, `${k.keyOverdue} overdue`, k.keyOpen ? "warn" : "good", "alert")}
       ${kpi("Remediation rate", `${s.remRate}%`, `${s.closed} of ${s.total} closed`, (s.remRate || 0) >= 70 ? "good" : (s.remRate || 0) >= 40 ? "warn" : "bad", "check")}
       ${kpi("Overdue actions", k.overdue, "past target date", k.overdue ? "bad" : "good", "clock")}
       ${kpi("Unmitigated fraud", k.unmit, "High/Extreme residual", k.unmit ? "bad" : "good", "shield")}
