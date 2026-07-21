@@ -4398,3 +4398,9 @@ ol.rt-list li { margin: 4px 0; }
 .iasa-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
 .iasa-assess-card { display: flex; flex-direction: column; }
 .iasa-due-card { margin-bottom: 4px; }
+
+/* ---- Clickable tracker KPI cards (filter shortcuts) ---- */
+.kpi-click { cursor: pointer; border-radius: 14px; transition: transform .12s ease, box-shadow .12s ease; }
+.kpi-click:hover { transform: translateY(-1px); }
+.kpi-click:hover .kpi { box-shadow: 0 4px 14px rgba(13,90,71,.10); }
+.kpi-click.active .kpi { outline: 2px solid var(--accent, #1f8a5b); outline-offset: 1px; }

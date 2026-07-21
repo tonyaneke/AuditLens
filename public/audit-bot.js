@@ -707,8 +707,19 @@ function tlPill(t){
 function statusClass(s){ return s==="Closed"?"s-Closed":s==="In Progress"?"s-InProgress":"s-Open"; }
 
 /* ============================ REMEDIATION TRACKER ============================ */
-let trackerFilter={crit:"All",tl:"All",status:"All"};
+let trackerFilter={crit:"All",tl:"All",status:"All",repeat:false};
 let trackerMode="actions";
+function trackerClear(){ trackerFilter={crit:"All",tl:"All",status:"All",repeat:false}; render(); }
+function trackerApplyKpi(which){
+  const f=trackerFilter;
+  if(which==="open"){ f.status="All"; f.tl="All"; f.crit="All"; f.repeat=false; }
+  else if(which==="ready"){ f.tl = f.tl==="Ready to Close"?"All":"Ready to Close"; }
+  else if(which==="watch"){ f.tl = f.tl==="≤ 2 weeks"?"All":"≤ 2 weeks"; }
+  else if(which==="overdue"){ f.tl = f.tl==="Overdue"?"All":"Overdue"; }
+  else if(which==="closed"){ f.status="All"; f.tl = f.tl==="Recently Closed"?"All":"Recently Closed"; }
+  else if(which==="repeat"){ f.repeat=!f.repeat; }
+  render();
+}
 let expandedObs={};
 function obsExpandKey(aid,rid,oid){ return aid+"|"+rid+"|"+oid; }
 function toggleObsExpand(aid,rid,oid,ev){
@@ -739,40 +750,49 @@ function viewTracker(){
   const overdue=openAll.filter(isOverdue).length;
   const repeats=openAll.filter(o=>o.isRepeat).length;
 
-  let items=obs.slice();
-  if(trackerFilter.status==="All") items=items.filter(o=>o.status!=="Closed");
-  else items=items.filter(o=>(o.status||"Open")===trackerFilter.status);
-  if(trackerFilter.crit!=="All") items=items.filter(o=>o.criticality===trackerFilter.crit);
-  if(trackerFilter.tl!=="All"){ if(trackerFilter.tl==="Ready to Close") items=items.filter(readyToClose); else if(trackerFilter.tl==="Recently Closed") items=[]; else items=items.filter(o=>trackerBucketOf(o)===trackerFilter.tl); }
+  // Criticality + repeat form the base pool; status & expected-close drive which groups render.
+  let pool=obs.slice();
+  if(trackerFilter.crit!=="All") pool=pool.filter(o=>o.criticality===trackerFilter.crit);
+  if(trackerFilter.repeat) pool=pool.filter(o=>o.isRepeat);
+  const statusF=trackerFilter.status, tlF=trackerFilter.tl;
+  const showOpenGroups = statusF!=="Closed";
+  const showClosedGroup = statusF==="All" || statusF==="Closed";
+  const passStatus = o => statusF==="All" || (o.status||"Open")===statusF;
+  const filtersActive = trackerFilter.crit!=="All" || statusF!=="All" || tlF!=="All" || trackerFilter.repeat;
 
   const CLOSE_GROUPS=["Ready to Close",...CLOSE_BUCKETS,"No date","Recently Closed"];
   const groupLabel=g=>g==="No date"?"No expected close date":g==="Ready to Close"?"Ready to close — awaiting verification":g==="Recently Closed"?"Recently closed":g;
+  const kpiActive={ ready:tlF==="Ready to Close", closed:tlF==="Recently Closed", watch:tlF==="≤ 2 weeks", overdue:tlF==="Overdue", repeat:trackerFilter.repeat, open:!filtersActive };
+  const kc=(which,card)=>`<div class="kpi-click${kpiActive[which]?" active":""}" onclick="trackerApplyKpi('${which}')" title="Click to filter">${card}</div>`;
   let h=`
   <div class="dash-kpis" style="grid-template-columns:repeat(6,1fr)">
-    ${kpi("good","Recently closed",recentClosed.length,"verified &amp; closed")}
-    ${kpi("good","Ready to close",readyCount,"awaiting verification")}
-    ${kpi("base","Open actions",openAll.length,"across all audits")}
-    ${kpi("warn","Watchlist",watch,"due within 2 weeks")}
-    ${kpi("warn","Overdue",overdue,"past expected close")}
-    ${kpi("accent","Repeat findings",repeats,"recur from prior audits")}
+    ${kc("closed",kpi("good","Recently closed",recentClosed.length,"verified &amp; closed"))}
+    ${kc("ready",kpi("good","Ready to close",readyCount,"awaiting verification"))}
+    ${kc("open",kpi("base","Open actions",openAll.length,"across all audits"))}
+    ${kc("watch",kpi("warn","Watchlist",watch,"due within 2 weeks"))}
+    ${kc("overdue",kpi("warn","Overdue",overdue,"past expected close"))}
+    ${kc("repeat",kpi("accent","Repeat findings",repeats,"recur from prior audits"))}
   </div>
   <div class="card tracker-filters"><div class="filter-row filter-row-right">
     <div class="filter-group"><span class="filter-label">Expected close</span>
-      <select class="field-select field-select-sm" onchange="trackerSet('tl',this.value)"><option value="All"${trackerFilter.tl==="All"?" selected":""}>All</option>${CLOSE_GROUPS.map(x=>`<option value="${esc(x)}"${trackerFilter.tl===x?" selected":""}>${esc(groupLabel(x))}</option>`).join("")}</select></div>
+      <select class="field-select field-select-sm" onchange="trackerSet('tl',this.value)"><option value="All"${tlF==="All"?" selected":""}>All</option>${CLOSE_GROUPS.map(x=>`<option value="${esc(x)}"${tlF===x?" selected":""}>${esc(groupLabel(x))}</option>`).join("")}</select></div>
     <div class="filter-group"><span class="filter-label">Criticality</span>
       <select class="field-select field-select-sm" onchange="trackerSet('crit',this.value)">${["All",...CRITS].map(x=>`<option value="${esc(x)}"${trackerFilter.crit===x?" selected":""}>${esc(x)}</option>`).join("")}</select></div>
     <div class="filter-group"><span class="filter-label">Status</span>
-      <select class="field-select field-select-sm" onchange="trackerSet('status',this.value)">${["All",...STATUSES].map(x=>`<option value="${esc(x)}"${trackerFilter.status===x?" selected":""}>${esc(x)}</option>`).join("")}</select></div>
+      <select class="field-select field-select-sm" onchange="trackerSet('status',this.value)">${["All",...STATUSES].map(x=>`<option value="${esc(x)}"${statusF===x?" selected":""}>${esc(x)}</option>`).join("")}</select></div>
+    <label class="filter-check" style="display:flex;align-items:center;gap:6px;font-weight:500"><input type="checkbox" style="width:auto"${trackerFilter.repeat?" checked":""} onchange="trackerSet('repeat',this.checked)"> Repeats only</label>
+    ${filtersActive?`<button class="btn ghost sm" onclick="trackerClear()">Clear filters</button>`:""}
   </div></div>`;
 
   const crank=o=>CRITS.indexOf(o.criticality);
   const bcol={"Ready to Close":"#1f8a5b","Recently Closed":"#2e7d32","Overdue":"#b00020","≤ 2 weeks":"#e8590c","2–4 weeks":"#c98a00","1–3 months":"#2c5f8a","> 3 months":"#2e7d32","No date":"#64748b"};
   let any=false;
   CLOSE_GROUPS.forEach(g=>{
+    if(tlF!=="All" && tlF!==g) return;               // a specific expected-close filter shows only that group
     let rows;
-    if(g==="Ready to Close") rows=items.filter(readyToClose);
-    else if(g==="Recently Closed"){ if(!(trackerFilter.tl==="All"||trackerFilter.tl==="Recently Closed")) return; rows=recentClosed.slice(0,50); }
-    else rows=items.filter(o=>!readyToClose(o) && trackerBucketOf(o)===g);
+    if(g==="Ready to Close"){ if(!showOpenGroups) return; rows=pool.filter(o=>readyToClose(o) && passStatus(o)); }
+    else if(g==="Recently Closed"){ if(!showClosedGroup) return; rows=pool.filter(o=>(o.status||"Open")==="Closed").sort((a,b)=>String(b.closedDateISO||"").localeCompare(String(a.closedDateISO||""))).slice(0,50); }
+    else { if(!showOpenGroups) return; rows=pool.filter(o=>(o.status||"Open")!=="Closed" && !readyToClose(o) && passStatus(o) && trackerBucketOf(o)===g); }
     if(!rows.length) return;
     any=true;
     rows.sort((a,b)=>{ const da=daysToClose(a,a._r), db=daysToClose(b,b._r); if(da==null&&db==null) return crank(a)-crank(b); if(da==null) return 1; if(db==null) return -1; return (da-db)||(crank(a)-crank(b)); });
@@ -959,20 +979,27 @@ function modalNewAuditPlan(){
   if(!requireHead())return;
   const cur=(new Date()).getFullYear();
   const U=auditUniverse().slice().sort((a,b)=>raComposite(b.factors)-raComposite(a.factors));
+  if(!U.length){
+    openModal("New annual audit plan",`<div class="empty"><div class="big">🗂</div>Your audit universe is empty.<br>Add or generate auditable units in <b>Audit Risk Assessment</b> first — the annual plan is built from them.</div>`,
+      `<button class="btn sec" onclick="closeModal()">Close</button><button class="btn" onclick="closeModal();go('auditra')">Go to Audit Risk Assessment</button>`);
+    return;
+  }
   openModal("New annual audit plan",`
+    <p class="hint" style="margin:0 0 12px">Open a plan year and choose which auditable units are scheduled into it. Checked units roll their timing to the plan year; set each unit's quarters afterwards from the Audit Risk Assessment.</p>
     <label>Plan year *</label>
     <input type="number" id="np_year" min="2000" max="2100" value="${cur}" placeholder="e.g. ${cur}">
     <div id="np_err" style="margin-top:8px"></div>
-    <div class="seclabel" style="margin:16px 0 6px">Which units go into this plan?</div>
+    <div class="row" style="align-items:center;margin:16px 0 8px"><div class="seclabel" style="margin:0">Units in this plan</div><div class="spacer"></div><span class="hint" id="np_count">${U.length} of ${U.length} selected</span></div>
     <label class="filter-check" style="display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:8px"><input type="checkbox" id="np_all" checked onchange="npToggleAll(this)" style="width:auto"> Include all ${U.length} unit(s)</label>
     <div class="np-unit-list">
       ${U.map(e=>{ const band=e.ratingOverride||raBand(raComposite(e.factors)); return `<label class="filter-check np-unit-row"><input type="checkbox" class="np_unit" value="${e.id}" checked onchange="npSyncAll()" style="width:auto"><span class="np-unit-name">${esc(e.name)}</span>${e.category?`<span class="hint np-unit-cat">${esc(e.category)}</span>`:""}<span class="pill" style="background:${hx2rgba(RA_HEX[band],.16)};color:${RA_HEX[band]}">${band}</span></label>`; }).join("")}
     </div>
-    <div class="hint" style="margin-top:8px">Checked units are scheduled into the plan year (their timing rolls to that year — edit a unit to set quarters). Unchecked units are excluded from this year's plan.</div>`,
+    <div class="hint" style="margin-top:8px">Unchecked units are excluded from this year's plan.</div>`,
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="createAuditPlan()">Create plan</button>`);
 }
-function npToggleAll(cb){ document.querySelectorAll(".np_unit").forEach(x=>{ x.checked=cb.checked; }); }
-function npSyncAll(){ const all=document.getElementById("np_all"); if(!all)return; const boxes=Array.from(document.querySelectorAll(".np_unit")); all.checked=boxes.length>0 && boxes.every(x=>x.checked); }
+function npUpdateCount(){ const boxes=Array.from(document.querySelectorAll(".np_unit")); const sel=boxes.filter(x=>x.checked).length; const el=document.getElementById("np_count"); if(el) el.textContent=`${sel} of ${boxes.length} selected`; }
+function npToggleAll(cb){ document.querySelectorAll(".np_unit").forEach(x=>{ x.checked=cb.checked; }); npUpdateCount(); }
+function npSyncAll(){ const all=document.getElementById("np_all"); if(all){ const boxes=Array.from(document.querySelectorAll(".np_unit")); all.checked=boxes.length>0 && boxes.every(x=>x.checked); } npUpdateCount(); }
 function createAuditPlan(){
   const y=val("np_year"); const errEl=document.getElementById("np_err");
   if(!/^20\d{2}$/.test(y)){ if(errEl) errEl.innerHTML=`<div class="hint" style="color:var(--crit)">Enter a valid year, e.g. ${(new Date()).getFullYear()}.</div>`; return; }
@@ -1233,14 +1260,15 @@ function viewApprovals(){
   h+=`</div>`;
   if(decided.length){
     h+=`<div class="card"><div class="seclabel">Recent decisions</div>
-      <table style="margin-top:6px"><thead><tr><th>Type</th><th>Item</th><th>Requested by</th><th>Decision</th><th>Decided by</th><th>When</th></tr></thead><tbody>`+
+      <table style="margin-top:6px"><thead><tr><th>Type</th><th>Item</th><th>Requested by</th><th>Decision</th><th>Decided by</th><th>When</th><th style="text-align:right">Details</th></tr></thead><tbody>`+
       decided.map(a=>`<tr>
         <td><span class="tag">${esc(approvalKindLabel(a.kind))}</span></td>
-        <td>${esc(approvalItemTitle(a))}</td>
+        <td><a href="#" onclick="modalApprovalDetails('${a.id}');return false" title="View details">${esc(approvalItemTitle(a))}</a></td>
         <td>${esc(a.requestedByName||"—")}</td>
         <td>${a.status==="approved"?`<span class="pill c-Low">Approved</span>`:`<span class="pill c-Critical">Rejected</span>`}</td>
         <td>${esc(a.decidedByName||"—")}</td>
         <td>${a.decidedAt?esc(fmtDateTime(a.decidedAt)):"—"}</td>
+        <td style="text-align:right;white-space:nowrap"><button class="btn sec sm" onclick="modalApprovalDetails('${a.id}')">View</button></td>
       </tr>`).join("")+`</tbody></table></div>`;
   }
   return h;
@@ -1252,7 +1280,12 @@ function obsDetailRowsHTML(o){
 function modalApprovalDetails(aid){
   const ap=approvals().find(x=>x.id===aid); if(!ap){ toast("Request not found.","error"); return; }
   const r=report(audit(ap.auditId),ap.reportId); const o=r&&r.observations.find(x=>x.id===ap.obsId);
-  const head=`<div class="hint" style="margin-bottom:10px"><span class="tag">${esc(approvalKindLabel(ap.kind))}</span> · requested by <b>${esc(ap.requestedByName||"—")}</b>${ap.requestedAt?" · "+esc(fmtDateTime(ap.requestedAt)):""}</div>`;
+  let head=`<div class="hint" style="margin-bottom:10px"><span class="tag">${esc(approvalKindLabel(ap.kind))}</span> · requested by <b>${esc(ap.requestedByName||"—")}</b>${ap.requestedAt?" · "+esc(fmtDateTime(ap.requestedAt)):""}</div>`;
+  if(ap.status && ap.status!=="pending"){
+    const dec=ap.status==="approved"?`<span class="pill c-Low">Approved</span>`:ap.status==="rejected"?`<span class="pill c-Critical">Rejected</span>`:`<span class="pill">${esc(ap.status)}</span>`;
+    const reason=ap.headReason||ap.decisionReason||"";
+    head+=`<div class="note" style="margin-bottom:10px">${dec} by <b>${esc(ap.decidedByName||"—")}</b>${ap.decidedAt?" · "+esc(fmtDateTime(ap.decidedAt)):""}${reason?`<div style="margin-top:4px"><b>Reason:</b> ${esc(reason)}</div>`:""}</div>`;
+  }
   let body;
   if(ap.kind==="observation_update" && ap.changes){
     const nb=ap.changes; const cur=o||{};
@@ -1546,18 +1579,29 @@ function modalFraud(id){
     <div class="hint" style="margin-top:6px">Prevention / response actions are added in the <b>Fraud Prevention Plan</b> section below (one or more per risk, each tracked separately).</div>
     <div class="f3" style="margin-top:8px">
       <div><label>Residual rating <span class="hint">(blank = auto)</span></label><select id="fr_res"><option value="">Auto</option>${BANDS.map(b=>`<option${f.residualOverride===b?" selected":""}>${b}</option>`).join("")}</select></div>
-      <div><label>Owner</label><input id="fr_owner" value="${esc(f.owner||"")}"></div>
+      <div><label>Owner <span class="hint">(action owner)</span></label><select id="fr_owner">${ownerOptions(f.ownerUserId||"")}</select>${(!f.ownerUserId&&f.owner)?`<div class="hint" style="margin-top:3px">Currently: ${esc(f.owner)}</div>`:""}</div>
       <div><label>Overall status <span class="hint">(auto from actions)</span></label><select id="fr_status"${(f.actions&&f.actions.length)?" disabled":""}>${FRAUD_STATUS.map(s=>`<option${f.status===s?" selected":""}>${s}</option>`).join("")}</select></div>
-    </div>`,
+    </div>
+    ${departments().filter(d=>d.headUserId).length?"":`<div class="hint" style="color:var(--crit);margin-top:4px">No action owners exist yet — add departments in Settings to assign one (you can still save without an owner).</div>`}`,
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveFraud('${id||""}')">Save</button>`);
 }
 function saveFraud(id){
   const F=fraudList(); const scheme=val("fr_scheme"); if(!scheme){toast("Scheme title required");return;}
+  const prev=id?(F.find(x=>x.id===id)||{}):{};
+  // Resolve the assigned action owner from the department model (headUserId → head name).
+  const ownerId=val("fr_owner"); const dept=departments().find(d=>d.headUserId===ownerId);
+  let ownerUserId="", ownerName="", departmentId="";
+  if(ownerId){ ownerUserId=ownerId; ownerName=dept?dept.headName:""; departmentId=dept?dept.id:""; }
+  else if(!prev.ownerUserId){ ownerName=prev.owner||""; departmentId=prev.departmentId||""; } // preserve a legacy free-text owner
   const data={year:val("fr_year"),process:val("fr_proc"),category:val("fr_cat"),scheme,description:val("fr_desc"),
     likelihood:+val("fr_like")||3,impact:+val("fr_imp")||3,existingControls:val("fr_ctrl"),controlStrength:val("fr_cs"),
-    residualOverride:val("fr_res"),owner:val("fr_owner"),status:val("fr_status")};
+    residualOverride:val("fr_res"),ownerUserId,owner:ownerName,departmentId,status:val("fr_status")};
   let obj; if(id){ obj=F.find(x=>x.id===id); Object.assign(obj,data); } else { obj={id:uid(),...data,createdAt:new Date().toISOString()}; F.push(obj); }
   rollupFraud(obj);
+  // Notify the owner on a new assignment (in-app + email).
+  if(ownerUserId && ownerUserId!==prev.ownerUserId){
+    notifyBoth(ownerUserId,"assigned","Fraud risk assigned to you: "+scheme,"dashboard","AuditLens — fraud risk assigned",`You have been assigned as owner of the fraud risk "${scheme}". Sign in to AuditLens for details, or contact Internal Audit.`);
+  }
   save(); closeModal(); render();
 }
 function delFraud(id){ if(!requireHead())return; uiConfirm("Delete this fraud risk?",()=>{ DB.fraudRisks=fraudList().filter(x=>x.id!==id); save(); render(); },{danger:true,confirmLabel:"Delete"}); }
