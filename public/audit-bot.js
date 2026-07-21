@@ -38,6 +38,9 @@ function rcThemes(text){ const out=[]; const t=text||""; RC_THEMES.forEach(([n,r
 const FRAUD_CATS=["Asset Misappropriation","Corruption","Financial Statement Fraud","Other"];
 const CTRL_STRENGTH=["Strong","Moderate","Weak","None"];
 const FRAUD_STATUS=["Identified","Mitigating","Mitigated"];
+// Canonical organisation departments (used to pre-fill the "Department" picker when raising observations).
+const DEPARTMENTS=["Strategy Department","Credit Operations","Audit Department","Finance Department","Legal Department","People & Culture Department","Risk Management","Procurement Department","Operations Department","Administration Department","Office of the Managing Director"];
+function deptOptionsHTML(sel){ return `<option value="">— select department —</option>`+DEPARTMENTS.map(d=>`<option value="${esc(d)}"${sel===d?" selected":""}>${esc(d)}</option>`).join(""); }
 const LIKE_LABEL=["","Rare","Unlikely","Possible","Likely","Almost certain"];
 const IMP_LABEL=["","Insignificant","Minor","Moderate","Major","Severe"];
 const BANDS=["Low","Medium","High","Extreme"];
@@ -371,7 +374,7 @@ function render(){
   else if(view==="fraudrisk"){ renderFraudRisk(C,T,A); }
   else if(view==="fraud"){ T.textContent=pageTitleFor("fraud"); A.innerHTML=`${btnDownload("modalFraudDownload()","Download")}${isStaff()?"":`<button class="btn sm dark ai-generate-btn" onclick="modalFraudPrompt()">Generate fraud risks</button><button class="btn sm" onclick="modalFraud()">+ Add fraud risk</button>`}`; C.innerHTML=viewFraud(); }
   else if(view==="external"){ T.textContent=pageTitleFor("external"); A.innerHTML=`<button class="btn sec sm" onclick="exportExternal()">⤓ Status report (Word)</button><button class="btn sm dark" onclick="modalExtImport()">⤒ Import findings</button><button class="btn sm" onclick="extRaiseStart()">+ Add finding</button>`; C.innerHTML=viewExternal(); }
-  else if(view==="iasa"){ T.textContent=pageTitleFor("iasa"); A.innerHTML=`<button class="btn sec sm" onclick="exportIASA()">⤓ Self-assessment (Word)</button><button class="btn sm dark ai-generate-btn" onclick="modalIASAPrompt()">Generate assessment</button>`; C.innerHTML=viewIASA(); }
+  else if(view==="iasa"){ T.textContent=pageTitleFor("iasa"); A.innerHTML=iasaTopActions(); C.innerHTML=viewIASA(); }
   else if(view==="audits"){
     T.textContent=pageTitleFor("audits");
     setTopSearch(`<input id="afq" class="topbar-search" value="${esc(auditFilter.q||"")}" placeholder="Search audits &amp; reports…" oninput="auditFilter.q=this.value;refreshAuditList()">`);
@@ -789,6 +792,11 @@ function updateObsStatus(aid,rid,oid,v){
 function pendingStatusChange(oid){ return approvals().find(a=>a.kind==="observation_status_change"&&a.obsId===oid&&a.status==="pending"); }
 function applyStatusChange(o,v){ stampClosed(o,v); o.status=v; }
 function cancelPendingStatusChange(oid){ const u=window.AMS_USER||{}; approvals().forEach(a=>{ if(a.kind==="observation_status_change"&&a.obsId===oid&&a.status==="pending"){ a.status="superseded"; a.decidedBy=u.id||""; a.decidedByName=u.name||""; a.decidedAt=new Date().toISOString(); } }); }
+/* ---- Edit / delete approval requests (audit staff cannot mutate observations directly) ---- */
+function pendingUpdate(oid){ return approvals().find(a=>a.kind==="observation_update"&&a.obsId===oid&&a.status==="pending"); }
+function pendingDelete(oid){ return approvals().find(a=>a.kind==="observation_delete"&&a.obsId===oid&&a.status==="pending"); }
+function supersedePendingUpdate(oid){ const u=window.AMS_USER||{}; approvals().forEach(a=>{ if(a.kind==="observation_update"&&a.obsId===oid&&a.status==="pending"){ a.status="superseded"; a.decidedBy=u.id||""; a.decidedByName=u.name||""; a.decidedAt=new Date().toISOString(); } }); }
+function cancelPendingDelete(oid){ const u=window.AMS_USER||{}; approvals().forEach(a=>{ if(a.kind==="observation_delete"&&a.obsId===oid&&a.status==="pending"){ a.status="superseded"; a.decidedBy=u.id||""; a.decidedByName=u.name||""; a.decidedAt=new Date().toISOString(); } }); }
 function modalStatusEdit(aid,rid,oid){
   const o=findObs(aid,rid,oid); if(!o)return;
   const pend=pendingStatusChange(oid);
@@ -1181,10 +1189,10 @@ function openNotif(id){
   const nav={observation:"audits",tracker:"tracker"}[n.link]||n.link;
   if(nav && canAccessView(nav)){ go(nav); } else { render(); }
 }
-function approvalKindLabel(k){ return k==="observation_raise"?"New observation":k==="engagement_completion"?"Plan completion":k==="observation_status_change"?"Status change":k==="observation_update_request"?"Update request":(k||"—"); }
+function approvalKindLabel(k){ return k==="observation_raise"?"New observation":k==="engagement_completion"?"Plan completion":k==="observation_status_change"?"Status change":k==="observation_update"||k==="observation_update_request"?"Edit request":k==="observation_delete"?"Delete request":(k||"—"); }
 function approvalItemTitle(a){ if(a.kind==="engagement_completion"){ const e=auditUniverse().find(x=>x.id===a.unitId); return e?e.name:(a.unitName||"(removed unit)"); } return a.obsTitle||a.unitName||"(item)"; }
-function approveAny(aid){ const a=approvals().find(x=>x.id===aid); if(!a)return; if(a.kind==="engagement_completion") return approveCompletion(aid); if(a.kind==="observation_raise") return approveObservation(aid); if(a.kind==="observation_status_change") return approveStatusChange(aid); }
-function rejectAny(aid){ const a=approvals().find(x=>x.id===aid); if(!a)return; if(a.kind==="engagement_completion") return rejectCompletion(aid); if(a.kind==="observation_raise") return rejectObservation(aid); if(a.kind==="observation_status_change") return rejectStatusChange(aid); }
+function approveAny(aid){ const a=approvals().find(x=>x.id===aid); if(!a)return; if(a.kind==="engagement_completion") return approveCompletion(aid); if(a.kind==="observation_raise") return approveObservation(aid); if(a.kind==="observation_status_change") return approveStatusChange(aid); if(a.kind==="observation_update") return approveUpdate(aid); if(a.kind==="observation_delete") return approveDelete(aid); }
+function rejectAny(aid){ const a=approvals().find(x=>x.id===aid); if(!a)return; if(a.kind==="engagement_completion") return rejectCompletion(aid); if(a.kind==="observation_raise") return rejectObservation(aid); if(a.kind==="observation_status_change") return rejectStatusChange(aid); if(a.kind==="observation_update") return rejectUpdate(aid); if(a.kind==="observation_delete") return rejectDelete(aid); }
 function viewApprovals(){
   if(!isHeadUser()) return `<div class="card"><div class="empty">Approvals are only available to the Head of Audit.</div></div>`;
   const all=approvals().slice().sort((a,b)=>String(b.requestedAt||"").localeCompare(String(a.requestedAt||"")));
@@ -1201,10 +1209,10 @@ function viewApprovals(){
     h+=`<table style="margin-top:6px"><thead><tr><th>Type</th><th>Item</th><th>Requested by</th><th>Requested</th><th style="text-align:right">Decision</th></tr></thead><tbody>`+
       pend.map(a=>`<tr>
         <td><span class="tag">${esc(approvalKindLabel(a.kind))}</span></td>
-        <td><b>${esc(approvalItemTitle(a))}</b>${a.newStatus?`<div class="hint">→ ${esc(a.newStatus)}</div>`:""}</td>
+        <td><b><a href="#" onclick="modalApprovalDetails('${a.id}');return false" title="View details">${esc(approvalItemTitle(a))}</a></b>${a.newStatus?`<div class="hint">→ ${esc(a.newStatus)}</div>`:""}</td>
         <td>${esc(a.requestedByName||"—")}</td>
         <td>${a.requestedAt?esc(fmtDateTime(a.requestedAt)):"—"}</td>
-        <td style="text-align:right;white-space:nowrap"><button class="btn sm" onclick="approveAny('${a.id}')">Approve</button> <button class="btn ghost sm danger" onclick="rejectAny('${a.id}')">Reject</button></td>
+        <td style="text-align:right;white-space:nowrap"><button class="btn sec sm" onclick="modalApprovalDetails('${a.id}')">View</button> <button class="btn sm" onclick="approveAny('${a.id}')">Approve</button> <button class="btn ghost sm danger" onclick="rejectAny('${a.id}')">Reject</button></td>
       </tr>`).join("")+`</tbody></table>`;
   }
   h+=`</div>`;
@@ -1221,6 +1229,37 @@ function viewApprovals(){
       </tr>`).join("")+`</tbody></table></div>`;
   }
   return h;
+}
+const OBS_FIELD_LABELS=[["ref","Ref"],["title","Title"],["criticality","Criticality"],["status","Status"],["category","Category / control theme"],["description","Detailed description"],["criteria","Criteria / expectation"],["risk","Impact / risk"],["rootCause","Possible root cause"],["recommendation","Recommendation"],["sopUpdate","Proposed SOP update"],["managementResponse","Management response"],["owner","Action owner"],["timeline","Resolution timeline"],["dueDate","Closure action"]];
+function obsDetailRowsHTML(o){
+  return OBS_FIELD_LABELS.map(([k,lab])=>{ const v=o[k]; if(v==null||v==="")return""; return `<div class="obs-field"><div class="ttl">${esc(lab)}</div><div class="txt">${esc(String(v))}</div></div>`; }).join("")||`<div class="hint">No details captured.</div>`;
+}
+function modalApprovalDetails(aid){
+  const ap=approvals().find(x=>x.id===aid); if(!ap){ toast("Request not found.","error"); return; }
+  const r=report(audit(ap.auditId),ap.reportId); const o=r&&r.observations.find(x=>x.id===ap.obsId);
+  const head=`<div class="hint" style="margin-bottom:10px"><span class="tag">${esc(approvalKindLabel(ap.kind))}</span> · requested by <b>${esc(ap.requestedByName||"—")}</b>${ap.requestedAt?" · "+esc(fmtDateTime(ap.requestedAt)):""}</div>`;
+  let body;
+  if(ap.kind==="observation_update" && ap.changes){
+    const nb=ap.changes; const cur=o||{};
+    const changed=OBS_FIELD_LABELS.filter(([k])=>String(nb[k]==null?"":nb[k])!==String(cur[k]==null?"":cur[k]));
+    body=head+`<div class="seclabel">Proposed changes</div>`+
+      (changed.length? changed.map(([k,lab])=>`<div class="obs-field"><div class="ttl">${esc(lab)}</div>
+        <div class="txt" style="color:var(--crit);text-decoration:line-through;opacity:.75">${esc(String(cur[k]==null?"":cur[k])||"—")}</div>
+        <div class="txt" style="color:#2e7d32">${esc(String(nb[k]==null?"":nb[k])||"—")}</div></div>`).join("")
+        : `<div class="hint">No effective changes versus the current observation.</div>`);
+  } else if(ap.kind==="observation_delete"){
+    body=head+`<div class="note" style="border-left:3px solid var(--crit)">Deletion request — approving will permanently remove this observation.</div>`+(o?obsDetailRowsHTML(o):`<div class="hint">The observation no longer exists.</div>`);
+  } else if(ap.kind==="observation_status_change"){
+    body=head+`<div class="note">Status change: <b>${esc(ap.fromStatus||"—")}</b> → <b>${esc(ap.newStatus||"—")}</b></div>`+(o?obsDetailRowsHTML(o):`<div class="hint">The observation no longer exists.</div>`);
+  } else if(o){
+    body=head+obsDetailRowsHTML(o);
+  } else {
+    body=head+`<div class="hint">${esc(approvalItemTitle(ap))}</div>`;
+  }
+  const foot=ap.status==="pending"
+    ? `<button class="btn ghost danger" onclick="closeModal();rejectAny('${ap.id}')">Reject</button><button class="btn" onclick="closeModal();approveAny('${ap.id}')">Approve</button>`
+    : `<button class="btn sec" onclick="closeModal()">Close</button>`;
+  openModal("Approval — "+approvalItemTitle(ap),body,foot);
 }
 function raLinkSet(id,v){ const e=auditUniverse().find(x=>x.id===id); if(e){ e.linkedAuditId=v||""; save(); } }
 function modalRA(id){
@@ -2102,8 +2141,63 @@ const CONF_HEX={"Conforms":"#2e7d32","Generally Conforms":"#2e7d32","Partially C
 const IASA_CONF=STD_CONF; const IASA_CONF_HEX=CONF_HEX; // legacy aliases
 const MATURITY=["—","1 · Initial","2 · Developing","3 · Established","4 · Managed","5 · Optimised"];
 const GIAS_DOMAINS=GIAS.map(g=>({d:g.d+" · "+g.dt,ps:g.ps.map(p=>[p.n,p.t])})); // legacy shape
-let iasaMode="assessment";
-function iaSA(){ const s=DB.iaSA=DB.iaSA||{}; s.period=s.period||""; s.assessor=s.assessor||""; s.scope=s.scope||""; s.approach=s.approach||""; s.lastEQA=s.lastEQA||""; s.commentary=s.commentary||""; s.items=s.items||{}; s.std=s.std||{}; return s; }
+let iasaMode="overview";
+// ---- Periodic self-assessments (semi-annual). The IA function self-assesses every 6 months;
+// each assessment is a dated record, past ones stay viewable, and the overview shows done + due. ----
+const IASA_CADENCE_MONTHS=6;
+function normOneIASA(s){ s=s||{}; s.id=s.id||uid(); s.period=s.period||""; s.assessor=s.assessor||""; s.scope=s.scope||""; s.approach=s.approach||""; s.lastEQA=s.lastEQA||""; s.commentary=s.commentary||""; s.items=s.items||{}; s.std=s.std||{}; s.status=s.status||(s.completedAt?"completed":"in_progress"); s.startedAt=s.startedAt||s.createdAt||""; return s; }
+function iaSAAll(){
+  DB.iaSAList=DB.iaSAList||[];
+  // One-time migration of the legacy single assessment into the list.
+  if(DB.iaSA && Object.keys(DB.iaSA).length && !DB.iaSA._migrated){
+    const legacy=normOneIASA(DB.iaSA); legacy.startedAt=legacy.startedAt||new Date().toISOString();
+    DB.iaSAList.unshift(legacy); DB.iaSA={_migrated:true}; DB.iaSACurrentId=legacy.id; save();
+  }
+  DB.iaSAList.forEach(normOneIASA);
+  return DB.iaSAList;
+}
+function iaSACurrent(){ const all=iaSAAll(); return all.find(s=>s.id===DB.iaSACurrentId)||null; }
+// When set, all rating/rollup accessors compute against this record instead of the current one.
+// Used to summarise each past assessment on the overview without switching the selection.
+let _iasaCtx=null;
+function withIASA(rec,fn){ const prev=_iasaCtx; _iasaCtx=rec; try{ return fn(); } finally{ _iasaCtx=prev; } }
+// Returns the assessment the Assessment/Insights tabs operate on. Auto-creates one only when a
+// user is actually working in those tabs and none is selected (preserves legacy behaviour).
+function iaSA(){
+  if(_iasaCtx) return _iasaCtx;
+  const all=iaSAAll(); let cur=iaSACurrent();
+  if(!cur){ cur=all[0]; if(cur){ DB.iaSACurrentId=cur.id; } else { cur=newIASA(); } }
+  return cur;
+}
+function iasaPeriodForDate(d){ const y=d.getFullYear(); const h=d.getMonth()<6?1:2; return "H"+h+" "+y; }
+function newIASA(period){
+  const all=iaSAAll(); const now=new Date();
+  const rec=normOneIASA({id:uid(),period:period||iasaPeriodForDate(now),startedAt:now.toISOString(),status:"in_progress"});
+  all.unshift(rec); DB.iaSACurrentId=rec.id; save(); return rec;
+}
+function openIASA(id){ const s=iaSAAll().find(x=>x.id===id); if(!s)return; DB.iaSACurrentId=s.id; iasaMode="assessment"; save(); render(); }
+function completeIASA(id){ const s=iaSAAll().find(x=>x.id===(id||DB.iaSACurrentId)); if(!s)return; s.status="completed"; s.completedAt=new Date().toISOString(); save(); iasaMode="overview"; render(); toast("Assessment marked complete.","success"); }
+function reopenIASA(id){ const s=iaSAAll().find(x=>x.id===id); if(!s)return; s.status="in_progress"; s.completedAt=""; save(); render(); }
+function deleteIASA(id){ uiConfirm("Delete this self-assessment? This cannot be undone.",()=>{ DB.iaSAList=iaSAAll().filter(x=>x.id!==id); if(DB.iaSACurrentId===id) DB.iaSACurrentId=""; save(); iasaMode="overview"; render(); },{danger:true,confirmLabel:"Delete"}); }
+function iasaLastCompleted(){ return iaSAAll().filter(s=>s.status==="completed"&&s.completedAt).sort((a,b)=>String(b.completedAt).localeCompare(String(a.completedAt)))[0]||null; }
+function iasaNextDue(){
+  const last=iasaLastCompleted();
+  if(!last) return {due:null,overdue:false,txt:"Due now",sub:"No self-assessment on record yet"};
+  const d=new Date(last.completedAt); const due=new Date(d.getFullYear(),d.getMonth()+IASA_CADENCE_MONTHS,d.getDate());
+  const now=today0(); const overdue=due<=now;
+  return {due,overdue,txt:overdue?"Due now":"Due "+fmtDate(due),sub:"Last completed "+fmtDate(new Date(last.completedAt))+" · "+(last.period||"")};
+}
+function iasaTopActions(){
+  if(iasaMode==="overview"){
+    return `<button class="btn sec sm" onclick="startIASA(false)">+ New assessment</button><button class="btn sm dark ai-generate-btn" onclick="startIASA(true)">Generate assessment</button>`;
+  }
+  const cur=iaSACurrent();
+  return `<button class="btn ghost sm" onclick="iasaMode='overview';render()">← All assessments</button>`+
+    `<button class="btn sec sm" onclick="exportIASA()">⤓ Word</button>`+
+    (cur&&cur.status!=="completed"?`<button class="btn sm dark ai-generate-btn" onclick="modalIASAPrompt()">Generate</button><button class="btn sm" onclick="completeIASA()">✓ Mark complete</button>`:(cur?`<button class="btn sec sm" onclick="reopenIASA('${cur.id}')">Reopen</button>`:""));
+}
+// Start a fresh assessment for the next due period, then optionally open the AI generator.
+function startIASA(ai){ newIASA(iasaPeriodForDate(new Date())); iasaMode="assessment"; save(); render(); if(ai) modalIASAPrompt(); }
 function allPrinc(){ return GIAS.flatMap(g=>g.ps.map(p=>({n:p.n,t:p.t,d:g.d,dt:g.dt,s:p.s}))); }
 function allPrinciples(){ return allPrinc().map(p=>({n:p.n,t:p.t,d:p.d+" · "+p.dt})); } // legacy
 function allStandards(){ return GIAS.flatMap(g=>g.ps.flatMap(p=>p.s.map(([num,title])=>({num,title,pn:p.n,pt:p.t,d:g.d,dt:g.dt})))); }
@@ -2150,14 +2244,71 @@ function iasaStats(){
 }
 function opTone(op){ return op==="Generally Conforms"?"good":op==="Partially Conforms"?"mid":op==="Does Not Conform"?"bad":"base"; }
 function viewIASA(){
+  if(iasaMode==="overview") return iasaOverview();
+  const cur=iaSA(); // ensures a current record exists
   const sub=`<div class="iasa-tabs anim-fade-in">
     <div class="iasa-tab-group">
+      <button class="iasa-tab" type="button" onclick="iasaMode='overview';render()">Overview</button>
       <button class="iasa-tab${iasaMode==="assessment"?" active":""}" type="button" onclick="iasaMode='assessment';render()">Assessment</button>
       <button class="iasa-tab${iasaMode==="insights"?" active":""}" type="button" onclick="iasaMode='insights';render()">Insights</button>
     </div>
-    <span class="iasa-tab-meta">GIAS 2024 · 5 domains · 52 standards</span>
+    <span class="iasa-tab-meta">${esc(cur.period||"Current period")} · ${cur.status==="completed"?"Completed "+fmtDate(new Date(cur.completedAt)):"In progress"} · 52 standards</span>
   </div>`;
   return sub + (iasaMode==="insights"? iasaInsights() : iasaAssessment());
+}
+function iasaSummary(rec){
+  return withIASA(rec,()=>{ const st=iasaStats(); return {op:overallOpinion(),rated:st.rated,total:st.total,avgMat:st.avgMat}; });
+}
+function iasaOverview(){
+  const all=iaSAAll().slice().sort((a,b)=>String(b.startedAt||b.completedAt||"").localeCompare(String(a.startedAt||a.completedAt||"")));
+  const nd=iasaNextDue();
+  const done=all.filter(s=>s.status==="completed");
+  const inprog=all.filter(s=>s.status!=="completed");
+  const dueTone=nd.overdue?"bad":"mid";
+  let h=`<div class="dash-kpis anim-fade-in" style="grid-template-columns:repeat(3,1fr)">
+    ${iasaKpi("accent","Completed",done.length,"self-assessments on record")}
+    ${iasaKpi("base","In progress",inprog.length,"awaiting completion")}
+    ${iasaKpi(dueTone==="bad"?"bad":"good","Next assessment",nd.overdue?"Due now":(nd.due?fmtDate(nd.due):"Due now"),"6-monthly cadence")}
+  </div>`;
+  // Due / to-be-done card
+  h+=`<div class="card iasa-due-card anim-fade-in" style="border-left:4px solid ${nd.overdue?"var(--crit)":"var(--accent)"}">
+    <div class="row" style="align-items:center;gap:12px;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px">
+        <div class="seclabel" style="margin:0">${nd.overdue?"Self-assessment due":"Next self-assessment"}</div>
+        <div style="font-size:16px;font-weight:700;margin-top:2px">${esc(nd.txt)}</div>
+        <div class="hint">${esc(nd.sub)}</div>
+      </div>
+      <div class="row" style="gap:8px">
+        <button class="btn sec sm" onclick="startIASA(false)">Start blank</button>
+        <button class="btn dark sm ai-generate-btn" onclick="startIASA(true)">Generate assessment</button>
+      </div>
+    </div>
+  </div>`;
+  // Assessment cards
+  h+=`<div class="seclabel" style="margin:16px 0 8px">Assessments</div>`;
+  if(!all.length){
+    h+=`<div class="card"><div class="empty"><div class="big">⚖</div>No self-assessments yet.<br>Run one every 6 months to track conformance with the Global Internal Audit Standards.<br><br><button class="btn dark" onclick="startIASA(true)">Generate first assessment</button></div></div>`;
+    return h;
+  }
+  h+=`<div class="iasa-card-grid">`+all.map(s=>{
+    const sum=iasaSummary(s); const tone=opTone(sum.op);
+    const badge=s.status==="completed"?`<span class="pill c-Low">Completed</span>`:`<span class="pill" style="background:#fbf3dd;color:#a67c00">In progress</span>`;
+    const when=s.status==="completed"?("Completed "+(s.completedAt?fmtDate(new Date(s.completedAt)):"—")):("Started "+(s.startedAt?fmtDate(new Date(s.startedAt)):"—"));
+    return `<div class="card iasa-assess-card anim-fade-in">
+      <div class="row" style="align-items:flex-start;gap:8px"><div style="flex:1"><div style="font-weight:700;font-size:15px">${esc(s.period||"Untitled period")}</div><div class="hint">${esc(when)}</div></div>${badge}</div>
+      <div class="row" style="gap:14px;margin-top:10px;flex-wrap:wrap">
+        <div><div class="hint">Opinion</div><b style="color:${CONF_HEX[sum.op]||"#475569"}">${esc(sum.op)}</b></div>
+        <div><div class="hint">Rated</div><b>${sum.rated}/${sum.total}</b></div>
+        <div><div class="hint">Avg maturity</div><b>${sum.avgMat?sum.avgMat.toFixed(1)+" / 5":"—"}</b></div>
+      </div>
+      <div class="row" style="gap:8px;margin-top:12px">
+        <button class="btn sm" onclick="openIASA('${s.id}')">${s.status==="completed"?"View":"Continue"}</button>
+        <div class="spacer" style="flex:1"></div>
+        <button class="btn ghost sm danger" onclick="deleteIASA('${s.id}')">Delete</button>
+      </div>
+    </div>`;
+  }).join("")+`</div>`;
+  return h;
 }
 function iasaMeta(){
   const sa=iaSA();
@@ -3464,11 +3615,38 @@ function findObs(aid,rid,oid){ if(aid==="ext") return extList().find(x=>x.id===o
 function canVerifyReport(a){ return isHeadUser() || (!!a && !!a.leadAuditorId && !!window.AMS_USER && a.leadAuditorId===window.AMS_USER.id); }
 // The Head, the lead auditor of the audit, OR the auditor who raised the item can verify remediation.
 function canVerifyItem(o,a){ return canVerifyReport(a) || (!!o && !!o.raisedBy && !!window.AMS_USER && o.raisedBy===window.AMS_USER.id); }
-async function uploadEvidenceFile(obsId,inputEl){
+// Upload a file to `url` with a live progress bar. onProgress(pct 0-100, loaded, total).
+// Uses XMLHttpRequest because fetch() cannot report upload progress.
+function uploadWithProgress(url,formData,onProgress){
+  return new Promise((resolve,reject)=>{
+    const xhr=new XMLHttpRequest();
+    xhr.open("POST",url);
+    xhr.upload.onprogress=e=>{ if(onProgress){ const pct=e.lengthComputable?Math.round(e.loaded/e.total*100):null; onProgress(pct,e.loaded,e.total); } };
+    xhr.onload=()=>{ let data={}; try{ data=JSON.parse(xhr.responseText||"{}"); }catch(_){} if(xhr.status>=200&&xhr.status<300) resolve(data); else reject(new Error(data.error||("Upload failed ("+xhr.status+").")));  };
+    xhr.onerror=()=>reject(new Error("Upload failed (network)."));
+    xhr.send(formData);
+  });
+}
+function renderUploadProgress(elId,pct,label){
+  const el=document.getElementById(elId); if(!el) return;
+  el.hidden=false;
+  const p=(pct==null?null:Math.max(0,Math.min(100,pct)));
+  el.innerHTML=`<div class="upload-progress-row"><span class="upload-progress-name">${esc(label||"Uploading…")}</span><span class="upload-progress-pct">${p==null?"":p+"%"}</span></div>
+    <div class="upload-progress-track"><div class="upload-progress-fill${p==null?" indeterminate":""}" style="width:${p==null?100:p}%"></div></div>`;
+}
+function clearUploadProgress(elId){ const el=document.getElementById(elId); if(el){ el.hidden=true; el.innerHTML=""; } }
+async function uploadEvidenceFile(obsId,inputEl,progressElId){
   const f=inputEl&&inputEl.files&&inputEl.files[0]; if(!f) return null;
   const fd=new FormData(); fd.append("file",f); fd.append("obsId",obsId);
-  try{ const res=await fetch("/api/files",{method:"POST",body:fd}); const data=await res.json().catch(()=>({})); if(!res.ok){ toast(data.error||"Upload failed.","error"); return null; } return data.file; }
-  catch(e){ toast("Upload failed (network).","error"); return null; }
+  const pid=progressElId||"upd_progress";
+  try{
+    renderUploadProgress(pid,0,"Uploading "+f.name);
+    const data=await uploadWithProgress("/api/files",fd,(pct)=>renderUploadProgress(pid,pct,"Uploading "+f.name));
+    renderUploadProgress(pid,100,"Uploaded "+f.name);
+    setTimeout(()=>clearUploadProgress(pid),800);
+    return data.file;
+  }
+  catch(e){ clearUploadProgress(pid); toast(e.message||"Upload failed.","error"); return null; }
 }
 async function addObsUpdate(aid,rid,oid){
   const o=findObs(aid,rid,oid); if(!o) return;
@@ -3874,6 +4052,7 @@ function obsRemediationHTML(o,a,r){
         <div class="spacer" style="flex:1"></div>
         <button class="btn sm" id="upd_save" onclick="addObsUpdate('${a.id}','${r.id}','${o.id}')">${progressMode&&isOwnerViewer?"Post progress report":"Post comment"}</button>
       </div>
+      <div id="upd_progress" class="upload-progress" hidden></div>
       <div id="upd_ai" style="margin-top:10px"></div>
       ${actions?`<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)">${actions}</div>`:""}
     </div>`:(actions||nextHint?`<div class="obs-actions-block" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">
@@ -3890,8 +4069,9 @@ function renderObservation(C,T,A){
   const isOwner=window.AMS_USER&&window.AMS_USER.role==="action_owner";
   T.textContent=pageTitleFor(isOwner?"myobs":"audits");
   setTopBack(backBtn(isOwner?"go('myobs')":("go('report',{audit:'"+a.id+"',report:'"+r.id+"'})")));
-  A.innerHTML=(isHeadUser()||canVerifyItem(o,a))?`<button class="btn sm" onclick="modalReassignObs('${a.id}','${r.id}','${o.id}')">Reassign owner</button><button class="btn sec sm" onclick="modalObs('${a.id}','${r.id}','${o.id}')">Edit</button>
-    <button class="btn ghost sm danger" onclick="delObs('${a.id}','${r.id}','${o.id}')">Delete</button>`:"";
+  const _canEdit=isHeadUser()||canVerifyItem(o,a); const _head=isHeadUser();
+  A.innerHTML=_canEdit?`${_head?`<button class="btn sm" onclick="modalReassignObs('${a.id}','${r.id}','${o.id}')">Reassign owner</button>`:""}<button class="btn sec sm" onclick="modalObs('${a.id}','${r.id}','${o.id}')">${_head?"Edit":"Propose edit"}</button>
+    <button class="btn ghost sm danger" onclick="delObs('${a.id}','${r.id}','${o.id}')">${_head?"Delete":"Request deletion"}</button>${(!_head&&(pendingUpdate(o.id)||pendingDelete(o.id)))?`<span class="pill sop-pending-pill" style="margin-left:6px">⏳ Change pending approval</span>`:""}`:"";
   const ec=effectiveClose(o,r); const age=obsAge(o,r); const od=isOverdueObs(o,r);
   C.innerHTML=`<div class="obs-detail-page anim-fade-in">
     <header class="obs-detail-hero">
@@ -3937,8 +4117,8 @@ function viewNewObs(){
     <label>Your one-liner observation</label>
     <input id="ol" placeholder="e.g. Loan disbursements approved without evidence of credit committee sign-off">
     <div class="f2">
-      <div><label>Process / Department</label><input id="olArea" placeholder="e.g. Credit Operations"></div>
-      <div><label>Audit area / context (optional)</label><input id="olCtx" placeholder="e.g. Consumer loan origination"></div>
+      <div><label>Department</label><select id="olArea">${deptOptionsHTML("")}</select></div>
+      <div><label>Process / audit area</label><input id="olCtx" placeholder="e.g. Consumer loan origination"></div>
     </div>
     ${DB.audits.some(a=>a.reports.length)?`
       <label>Target report</label>
@@ -4013,8 +4193,8 @@ function buildObsPrompt(ol,area,ctx){
 ${CRITS.map(c=>`- ${c}: ${RUBRIC[c]}`).join("\n")}
 
 One-liner: ${ol}
-Process / Department: ${area||"(not specified)"}
-Context: ${ctx||"(not specified)"}
+Department: ${area||"(not specified)"}
+Process / audit area: ${ctx||"(not specified)"}
 
 Return ONLY a JSON object (no commentary) with these exact keys — every field must be populated with substantive content:
 {
@@ -4803,41 +4983,66 @@ function saveObs(aid,rid,oid){
   const r=report(audit(aid),rid);
   const title=val("o_title"); if(!title){toast("Title required");return;}
   const status=val("o_status");
+  const cdate=val("o_cdate");
   const data={ref:val("o_ref"),title,category:val("o_cat"),description:val("o_desc"),criteria:val("o_crit2"),
     risk:val("o_risk"),rootCause:val("o_root"),recommendation:val("o_rec"),sopUpdate:val("o_sop"),criticality:val("o_crit"),
     managementResponse:val("o_mgmt"),owner:val("o_owner"),timeline:val("o_tl"),dueDate:val("o_due"),status,
     isRepeat:!!document.getElementById("o_rep").checked,repeatOf:val("o_repof"),
     verifiedBy:val("o_vby"),closureEvidence:val("o_cev"),closureNote:val("o_cnote")};
-  const cdate=val("o_cdate");
-  let obj, statusPendingMsg=false;
+  if(status==="Closed" && cdate) data.closedDateISO=cdate;
+  let obj;
   if(oid){
     obj=r.observations.find(x=>x.id===oid);
-    const oldStatus=obj.status||"Open";
-    if(status!==oldStatus && !isHeadUser()){
-      // Non-head status changes must be approved by the Head of Audit — keep the old status, route the change.
-      data.status=oldStatus;
-      Object.assign(obj,data);
-      if(!pendingStatusChange(oid)){
-        const u=window.AMS_USER||{};
-        approvals().push({id:uid(),kind:"observation_status_change",obsId:oid,auditId:aid,reportId:rid,obsTitle:title,fromStatus:oldStatus,newStatus:status,requestedBy:u.id||"",requestedByName:u.name||"",requestedAt:new Date().toISOString(),status:"pending"});
-        notifyHeadsApproval(title+" (status → "+status+")");
-        statusPendingMsg=true;
-      }
-    } else {
-      stampClosed(obj,status); Object.assign(obj,data);
-      if(status==="Closed" && cdate) obj.closedDateISO=cdate;
-      if(status!==oldStatus) cancelPendingStatusChange(oid); // head applied directly — supersede any pending request
+    if(!isHeadUser()){
+      // Audit staff cannot edit an observation directly — the full proposed change is
+      // routed to the Head of Audit for approval. The live observation is left untouched.
+      const u=window.AMS_USER||{};
+      supersedePendingUpdate(oid);
+      approvals().push({id:uid(),kind:"observation_update",obsId:oid,auditId:aid,reportId:rid,obsTitle:obj.title||title,
+        changes:data,requestedBy:u.id||"",requestedByName:u.name||"",requestedAt:new Date().toISOString(),status:"pending"});
+      notifyHeadsApproval(title+" (edit request)");
+      logAudit("obs.update_requested","Requested edit to observation: "+title,{auditId:aid,reportId:rid,observationId:oid});
+      save(); closeModal(); render();
+      toast("Edit submitted to the Head of Audit for approval.","success");
+      return;
     }
+    const oldStatus=obj.status||"Open";
+    stampClosed(obj,status); Object.assign(obj,data);
+    if(status!==oldStatus) cancelPendingStatusChange(oid); // head applied directly — supersede any pending request
   } else {
     obj={id:uid(),...data,createdAt:new Date().toISOString()}; stampClosed(obj,status); r.observations.push(obj); markObsHighlight(obj.id); logAudit("workspace.observation_created","Created observation "+title,{ auditId:aid, reportId:rid, observationId:obj.id, title });
-    if(status==="Closed" && cdate) obj.closedDateISO=cdate;
+    if(!isHeadUser()){
+      // Staff-created observations are held pending Head of Audit approval before they are published.
+      const u=window.AMS_USER||{};
+      obj.obsApproval="pending"; obj.raisedBy=u.id||""; obj.raisedByName=u.name||""; obj.raisedAt=obj.createdAt;
+      approvals().push({id:uid(),kind:"observation_raise",obsId:obj.id,auditId:aid,reportId:rid,obsTitle:obj.title,ownerUserId:obj.ownerUserId||"",requestedBy:obj.raisedBy,requestedByName:obj.raisedByName,requestedAt:obj.raisedAt,status:"pending"});
+      notifyHeadsApproval(obj.title);
+      save(); closeModal(); render();
+      toast("Observation submitted to the Head of Audit for approval.","success");
+      return;
+    }
+    obj.obsApproval="approved";
   }
   save(); closeModal(); render();
-  if(statusPendingMsg) toast("Saved. The status change was submitted to the Head of Audit for approval.","success");
 }
 function delObs(aid,rid,oid){
+  const r=report(audit(aid),rid); const o=r&&r.observations.find(x=>x.id===oid);
+  if(!isHeadUser()){
+    // Audit staff cannot delete directly — a deletion request goes to the Head of Audit.
+    uiConfirm("Request deletion of this observation? The Head of Audit must approve before it is removed.",()=>{
+      const u=window.AMS_USER||{};
+      if(pendingDelete(oid)){ toast("A deletion request is already awaiting approval.","info"); return; }
+      approvals().push({id:uid(),kind:"observation_delete",obsId:oid,auditId:aid,reportId:rid,obsTitle:(o&&o.title)||"",requestedBy:u.id||"",requestedByName:u.name||"",requestedAt:new Date().toISOString(),status:"pending"});
+      notifyHeadsApproval(((o&&o.title)||"observation")+" (deletion request)");
+      logAudit("obs.delete_requested","Requested deletion of observation: "+((o&&o.title)||""),{auditId:aid,reportId:rid,observationId:oid});
+      save(); render();
+      toast("Deletion request submitted to the Head of Audit.","success");
+    },{confirmLabel:"Request deletion"});
+    return;
+  }
   uiConfirm("Delete this observation? This cannot be undone.",()=>{
-    const r=report(audit(aid),rid); r.observations=r.observations.filter(x=>x.id!==oid); save();
+    const rr=report(audit(aid),rid); rr.observations=rr.observations.filter(x=>x.id!==oid);
+    supersedePendingUpdate(oid); cancelPendingStatusChange(oid); cancelPendingDelete(oid); save();
     if(view==="observation") go("report",{audit:aid,report:rid});
     else render();
   },{danger:true,confirmLabel:"Delete"});
@@ -5056,6 +5261,42 @@ function rejectObservation(aid){
   const u=window.AMS_USER||{}; ap.status="rejected"; ap.decidedBy=u.id||""; ap.decidedByName=u.name||""; ap.decidedAt=new Date().toISOString();
   if(o){ o.obsApproval="rejected"; if(o.raisedBy) notifyBoth(o.raisedBy,"obs_rejected","Rejected: "+o.title,"audits","AuditLens — observation not approved",`Your observation "${o.title}" was not approved by the Head of Audit.`); }
   logAudit("obs.rejected","Rejected observation: "+(ap.obsTitle||""),{observationId:ap.obsId});
+  save(); render();
+}
+function approveUpdate(aid){
+  if(!isHeadUser()){ toast("Only the Head of Audit can approve.","error"); return; }
+  const ap=approvals().find(x=>x.id===aid); if(!ap||ap.status!=="pending")return;
+  const r=report(audit(ap.auditId),ap.reportId); const o=r&&r.observations.find(x=>x.id===ap.obsId);
+  const u=window.AMS_USER||{}; ap.status="approved"; ap.decidedBy=u.id||""; ap.decidedByName=u.name||""; ap.decidedAt=new Date().toISOString();
+  if(o && ap.changes){ const nb=ap.changes; stampClosed(o,nb.status||o.status); Object.assign(o,nb); if((nb.status||o.status)==="Closed" && nb.closedDateISO) o.closedDateISO=nb.closedDateISO; }
+  if(ap.requestedBy) notifyBoth(ap.requestedBy,"obs_update_approved","Edit approved: "+(ap.obsTitle||""),"audits","AuditLens — edit approved",`Your proposed edit to "${ap.obsTitle||"an observation"}" was approved by the Head of Audit and applied.`);
+  logAudit("obs.update_approved","Approved edit to observation: "+(ap.obsTitle||""),{observationId:ap.obsId});
+  save(); render();
+}
+function rejectUpdate(aid){
+  if(!isHeadUser()){ toast("Only the Head of Audit can reject.","error"); return; }
+  const ap=approvals().find(x=>x.id===aid); if(!ap||ap.status!=="pending")return;
+  const u=window.AMS_USER||{}; ap.status="rejected"; ap.decidedBy=u.id||""; ap.decidedByName=u.name||""; ap.decidedAt=new Date().toISOString();
+  if(ap.requestedBy) notifyBoth(ap.requestedBy,"obs_update_rejected","Edit not approved: "+(ap.obsTitle||""),"audits","AuditLens — edit not approved",`Your proposed edit to "${ap.obsTitle||"an observation"}" was not approved by the Head of Audit.`);
+  logAudit("obs.update_rejected","Rejected edit to observation: "+(ap.obsTitle||""),{observationId:ap.obsId});
+  save(); render();
+}
+function approveDelete(aid){
+  if(!isHeadUser()){ toast("Only the Head of Audit can approve.","error"); return; }
+  const ap=approvals().find(x=>x.id===aid); if(!ap||ap.status!=="pending")return;
+  const r=report(audit(ap.auditId),ap.reportId);
+  const u=window.AMS_USER||{}; ap.status="approved"; ap.decidedBy=u.id||""; ap.decidedByName=u.name||""; ap.decidedAt=new Date().toISOString();
+  if(r){ r.observations=r.observations.filter(x=>x.id!==ap.obsId); supersedePendingUpdate(ap.obsId); cancelPendingStatusChange(ap.obsId); }
+  if(ap.requestedBy) notifyBoth(ap.requestedBy,"obs_delete_approved","Deletion approved: "+(ap.obsTitle||""),"audits","AuditLens — deletion approved",`Your request to delete "${ap.obsTitle||"an observation"}" was approved by the Head of Audit.`);
+  logAudit("obs.delete_approved","Approved deletion of observation: "+(ap.obsTitle||""),{observationId:ap.obsId});
+  save(); render();
+}
+function rejectDelete(aid){
+  if(!isHeadUser()){ toast("Only the Head of Audit can reject.","error"); return; }
+  const ap=approvals().find(x=>x.id===aid); if(!ap||ap.status!=="pending")return;
+  const u=window.AMS_USER||{}; ap.status="rejected"; ap.decidedBy=u.id||""; ap.decidedByName=u.name||""; ap.decidedAt=new Date().toISOString();
+  if(ap.requestedBy) notifyBoth(ap.requestedBy,"obs_delete_rejected","Deletion not approved: "+(ap.obsTitle||""),"audits","AuditLens — deletion not approved",`Your request to delete "${ap.obsTitle||"an observation"}" was not approved by the Head of Audit.`);
+  logAudit("obs.delete_rejected","Rejected deletion of observation: "+(ap.obsTitle||""),{observationId:ap.obsId});
   save(); render();
 }
 

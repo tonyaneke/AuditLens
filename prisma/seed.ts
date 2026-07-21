@@ -1,6 +1,5 @@
 import { PrismaClient, Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
-import { isPasswordChangeRequired } from "../lib/auth-config";
 import { defaultWorkspaceData } from "../lib/db-data";
 
 const prisma = new PrismaClient();
@@ -14,7 +13,9 @@ async function main() {
   const department = process.env.HEAD_AUDIT_DEPARTMENT || "Internal Audit";
 
   const passwordHash = await bcrypt.hash(password, 12);
-  const mustChangePassword = isPasswordChangeRequired();
+  // The bootstrap Head of Audit is provisioned from HEAD_AUDIT_PASSWORD, so it is
+  // not force-changed on first login (unlike users created in-app, who must).
+  const mustChangePassword = false;
 
   await prisma.user.upsert({
     where: { email },
