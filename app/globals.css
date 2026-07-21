@@ -1576,6 +1576,10 @@ td.timeline-cell {
   background: #eaf5eb;
   color: #2e7d32;
 }
+.status-pill.withdrawn {
+  background: #f6f2fb;
+  color: #6b3fa0;
+}
 
 /* Open observations panel */
 .obs-close-card .card-head {

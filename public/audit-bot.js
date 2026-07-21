@@ -40,7 +40,12 @@ const CTRL_STRENGTH=["Strong","Moderate","Weak","None"];
 const FRAUD_STATUS=["Identified","Mitigating","Mitigated"];
 // Canonical organisation departments (used to pre-fill the "Department" picker when raising observations).
 const DEPARTMENTS=["Strategy Department","Credit Operations","Audit Department","Finance Department","Legal Department","People & Culture Department","Risk Management","Procurement Department","Operations Department","Administration Department","Office of the Managing Director"];
-function deptOptionsHTML(sel){ return `<option value="">— select department —</option>`+DEPARTMENTS.map(d=>`<option value="${esc(d)}"${sel===d?" selected":""}>${esc(d)}</option>`).join(""); }
+function deptOptionsHTML(sel){
+  let opts=`<option value="">— select department —</option>`+DEPARTMENTS.map(d=>`<option value="${esc(d)}"${sel===d?" selected":""}>${esc(d)}</option>`).join("");
+  // Preserve a pre-existing value that isn't in the canonical list so editing never drops it.
+  if(sel && !DEPARTMENTS.includes(sel)) opts+=`<option value="${esc(sel)}" selected>${esc(sel)}</option>`;
+  return opts;
+}
 const LIKE_LABEL=["","Rare","Unlikely","Possible","Likely","Almost certain"];
 const IMP_LABEL=["","Insignificant","Minor","Moderate","Major","Severe"];
 const BANDS=["Low","Medium","High","Extreme"];
@@ -86,7 +91,11 @@ function notify(userId,kind,text,link){ if(!userId)return; notifications().push(
 // In-app notification AND best-effort email to the same user (so every notification also reaches their inbox).
 function notifyBoth(userId,kind,text,link,subject,body){ if(!userId) return; notify(userId,kind,text,link); const e=ownerEmailFor(userId); if(e) emailNotify([e],subject||"AuditLens notification",body||text); }
 function headUsers(){ return (_directoryCache||[]).filter(u=>u.role==="head_of_audit"); }
-function emailNotify(to,subject,text){ const list=(Array.isArray(to)?to:[to]).filter(Boolean); if(!list.length)return; try{ fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:list,subject:subject||"AuditLens notification",text:text||""})}).catch(()=>{}); }catch(e){} }
+// A valid, deployment-agnostic link into the app. The client always knows its real origin, so email
+// CTAs point at the live host (not the server's APP_URL fallback, which may be localhost).
+function linkFor(){ try{ return location.origin+"/"; }catch(e){ return "/"; } }
+function dirEmail(userId){ return ownerEmailFor(userId); }
+function emailNotify(to,subject,text,ctaUrl){ const list=(Array.isArray(to)?to:[to]).filter(Boolean); if(!list.length)return; let cta=ctaUrl; if(!cta){ try{ cta=location.origin+"/"; }catch(e){ cta=""; } } try{ fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:list,subject:subject||"AuditLens notification",text:text||"",ctaUrl:cta})}).catch(()=>{}); }catch(e){} }
 function notifyHeadsApproval(title){ const heads=headUsers(); heads.forEach(h=>notify(h.id,"approval_needed","Approval needed: "+title,"approvals")); emailNotify(heads.map(h=>h.email),"AuditLens — approval needed",`The observation "${title}" was raised and needs your approval in AuditLens.`); }
 function ownerNameFor(userId){ if(!userId) return ""; const u=(_directoryCache||[]).find(x=>x.id===userId); if(u&&u.name) return u.name; const d=departments().find(x=>x.headUserId===userId); return (d&&d.headName)||""; }
 function notifyOwnerAssigned(o){
@@ -280,7 +289,12 @@ function uiConfirm(message,onConfirm,opts){
 }
 function audit(id){ return DB.audits.find(a=>a.id===id); }
 function report(a,id){ return a? a.reports.find(r=>r.id===id):null; }
-function allObs(){ let o=[]; DB.audits.forEach(a=>a.reports.forEach(r=>r.observations.forEach(x=>o.push({...x,_a:a,_r:r})))); return o; }
+// A withdrawn observation was deemed invalid and signed off by the Head of Audit — it is not Open
+// and not Closed. It is excluded from every working list/metric (allObs) and shown in its own section.
+function isWithdrawn(o){ return !!(o && (o.withdrawn || (o.withdrawal && o.withdrawal.stage==="withdrawn"))); }
+function allObs(){ let o=[]; DB.audits.forEach(a=>a.reports.forEach(r=>r.observations.forEach(x=>{ if(!isWithdrawn(x)) o.push({...x,_a:a,_r:r}); }))); return o; }
+function allObsRaw(){ let o=[]; DB.audits.forEach(a=>a.reports.forEach(r=>r.observations.forEach(x=>o.push({...x,_a:a,_r:r})))); return o; }
+function withdrawnObsAll(){ return allObsRaw().filter(isWithdrawn); }
 function reportObs(r){ return r.observations; }
 
 /* ============================ ROUTER ============================ */
@@ -670,6 +684,7 @@ function kpi(cls,lab,num,sub,icon){
 }
 function statusPill(s){
   const k=s||"Open";
+  if(k==="Withdrawn") return `<span class="status-pill withdrawn">Withdrawn</span>`;
   const cls=k==="Closed"?"closed":k==="In Progress"?"progress":"open";
   return `<span class="status-pill ${cls}">${esc(k)}</span>`;
 }
@@ -781,7 +796,7 @@ function viewTracker(){
       }).join("")}
       </tbody></table></div>`;
   });
-  if(!any) h+=`<div class="card"><div class="empty">No actions match the current filter.</div></div>`;
+  if(!any) h+=`<div class="card"><div class="empty"><div class="big">🔍</div>No actions match the current filter.<br>Try clearing the search or filters to see all open actions.</div></div>`;
   return h;
 }
 function updateObsStatus(aid,rid,oid,v){
@@ -1189,10 +1204,10 @@ function openNotif(id){
   const nav={observation:"audits",tracker:"tracker"}[n.link]||n.link;
   if(nav && canAccessView(nav)){ go(nav); } else { render(); }
 }
-function approvalKindLabel(k){ return k==="observation_raise"?"New observation":k==="engagement_completion"?"Plan completion":k==="observation_status_change"?"Status change":k==="observation_update"||k==="observation_update_request"?"Edit request":k==="observation_delete"?"Delete request":(k||"—"); }
+function approvalKindLabel(k){ return k==="observation_raise"?"New observation":k==="engagement_completion"?"Plan completion":k==="observation_status_change"?"Status change":k==="observation_update"||k==="observation_update_request"?"Edit request":k==="observation_delete"?"Delete request":k==="observation_withdraw"?"Withdrawal request":(k||"—"); }
 function approvalItemTitle(a){ if(a.kind==="engagement_completion"){ const e=auditUniverse().find(x=>x.id===a.unitId); return e?e.name:(a.unitName||"(removed unit)"); } return a.obsTitle||a.unitName||"(item)"; }
-function approveAny(aid){ const a=approvals().find(x=>x.id===aid); if(!a)return; if(a.kind==="engagement_completion") return approveCompletion(aid); if(a.kind==="observation_raise") return approveObservation(aid); if(a.kind==="observation_status_change") return approveStatusChange(aid); if(a.kind==="observation_update") return approveUpdate(aid); if(a.kind==="observation_delete") return approveDelete(aid); }
-function rejectAny(aid){ const a=approvals().find(x=>x.id===aid); if(!a)return; if(a.kind==="engagement_completion") return rejectCompletion(aid); if(a.kind==="observation_raise") return rejectObservation(aid); if(a.kind==="observation_status_change") return rejectStatusChange(aid); if(a.kind==="observation_update") return rejectUpdate(aid); if(a.kind==="observation_delete") return rejectDelete(aid); }
+function approveAny(aid){ const a=approvals().find(x=>x.id===aid); if(!a)return; if(a.kind==="engagement_completion") return approveCompletion(aid); if(a.kind==="observation_raise") return approveObservation(aid); if(a.kind==="observation_status_change") return approveStatusChange(aid); if(a.kind==="observation_update") return approveUpdate(aid); if(a.kind==="observation_delete") return approveDelete(aid); if(a.kind==="observation_withdraw") return modalDecideWithdraw(aid,"approve"); }
+function rejectAny(aid){ const a=approvals().find(x=>x.id===aid); if(!a)return; if(a.kind==="engagement_completion") return rejectCompletion(aid); if(a.kind==="observation_raise") return rejectObservation(aid); if(a.kind==="observation_status_change") return rejectStatusChange(aid); if(a.kind==="observation_update") return rejectUpdate(aid); if(a.kind==="observation_delete") return rejectDelete(aid); if(a.kind==="observation_withdraw") return modalDecideWithdraw(aid,"reject"); }
 function viewApprovals(){
   if(!isHeadUser()) return `<div class="card"><div class="empty">Approvals are only available to the Head of Audit.</div></div>`;
   const all=approvals().slice().sort((a,b)=>String(b.requestedAt||"").localeCompare(String(a.requestedAt||"")));
@@ -1251,6 +1266,10 @@ function modalApprovalDetails(aid){
     body=head+`<div class="note" style="border-left:3px solid var(--crit)">Deletion request — approving will permanently remove this observation.</div>`+(o?obsDetailRowsHTML(o):`<div class="hint">The observation no longer exists.</div>`);
   } else if(ap.kind==="observation_status_change"){
     body=head+`<div class="note">Status change: <b>${esc(ap.fromStatus||"—")}</b> → <b>${esc(ap.newStatus||"—")}</b></div>`+(o?obsDetailRowsHTML(o):`<div class="hint">The observation no longer exists.</div>`);
+  } else if(ap.kind==="observation_withdraw"){
+    body=head+`<div class="note" style="border-left:3px solid var(--accent)"><b>Action owner's reason for withdrawal</b><div style="margin-top:4px">${esc(ap.reason||"—")}</div></div>`+
+      (ap.forwardNote?`<div class="note" style="margin-top:8px"><b>Internal Audit note</b><div style="margin-top:4px">${esc(ap.forwardNote)}</div></div>`:"")+
+      (o?obsDetailRowsHTML(o):`<div class="hint">The observation no longer exists.</div>`);
   } else if(o){
     body=head+obsDetailRowsHTML(o);
   } else {
@@ -1514,7 +1533,7 @@ function modalFraud(id){
     <div class="f3">
       <div><label>Year</label><input id="fr_year" value="${esc(f.year||"")}"></div>
       <div><label>Scheme category (ACFE)</label><select id="fr_cat">${FRAUD_CATS.map(c=>`<option${f.category===c?" selected":""}>${c}</option>`).join("")}</select></div>
-      <div><label>Process / Department</label><input id="fr_proc" value="${esc(f.process||"")}"></div>
+      <div><label>Department</label><select id="fr_proc">${deptOptionsHTML(f.process||"")}</select></div>
     </div>
     <label>Fraud scheme / risk title *</label><input id="fr_scheme" value="${esc(f.scheme)}" placeholder="e.g. Collusive / ghost borrowers">
     <label>Description (how the fraud could occur)</label><textarea id="fr_desc">${esc(f.description)}</textarea>
@@ -1645,7 +1664,7 @@ function doImportFraudActions(raw){
 function modalFraudPrompt(){
   if(!requireHead())return;
   openModal("Generate fraud risks",`
-    <label>Process / Department</label><input id="frp_proc" placeholder="e.g. Credit Operations / Loan disbursement">
+    <label>Department</label><select id="frp_proc">${deptOptionsHTML("")}</select>
     <label>Context (optional)</label><textarea id="frp_ctx" placeholder="e.g. manual disbursement approvals; PFIs onboarded without bureau checks"></textarea>
     <div id="frImpErr" style="margin-top:10px"></div>`,
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark ai-generate-btn" onclick="generateFraudRisks()">Generate fraud risks</button>`);
@@ -1908,7 +1927,7 @@ function modalProcNew(){
   _procSopUpload=null;
   openModal("New process review",`
     <div class="f3">
-      <div><label>Business unit *</label><input id="pc_unit" placeholder="e.g. Credit Operations"></div>
+      <div><label>Department / business unit *</label><select id="pc_unit">${deptOptionsHTML("")}</select></div>
       <div><label>SOP title</label><input id="pc_sop" placeholder="Auto-filled from file name"></div>
       <div><label>Period / version</label><input id="pc_period" placeholder="e.g. 2026"></div>
     </div>
@@ -2549,7 +2568,7 @@ function extMatches(f){ const q=(extFilter.q||"").toLowerCase().trim();
 function extStatusCls(s){ return s==="Closed"?"closed":s==="In Progress"?"progress":"open"; }
 function extListBody(){
   const F=extList(); let list=F.filter(extMatches);
-  if(!list.length) return `<div class="card"><div class="empty">No findings match the filter.</div></div>`;
+  if(!list.length) return `<div class="card"><div class="empty"><div class="big">🔍</div>No findings match the filter.<br>Try clearing the search or filters.</div></div>`;
   list=list.slice().sort((a,b)=>(extOverdue(b)-extOverdue(a))||String(a.source||"").localeCompare(String(b.source||"")));
   return `<div class="card"><table><thead><tr><th>Source</th><th>Year</th><th>Ref</th><th>Finding</th><th>Theme</th><th>Severity</th><th>Owner</th><th>Target</th><th>Status</th><th></th></tr></thead><tbody>
     ${list.map(f=>{ const sv=EXT_SEV_HEX[f.severity]||"#64748b"; const od=extOverdue(f); const st=f.status||"Open"; const stCls=extStatusCls(st); const titleShort=f.title.length>72?f.title.slice(0,71)+"…":f.title; return `<tr class="ext-row-clickable" onclick="go('extfinding',{ext:'${f.id}'})">
@@ -3046,7 +3065,7 @@ function auditListHTML(){
     }));
     if(reps.length) repHtml=`<div class="audit-quarter-group"><div class="audit-quarter-head"><span class="seclabel" style="margin:0">Matching reports</span><span class="hint">${reps.length} report${reps.length!==1?"s":""}</span></div><div class="entity-card-grid">${reps.map(x=>reportCard(x.a,x.r)).join("")}</div></div>`;
   }
-  if(!list.length) return repHtml || `<div class="card"><div class="empty">No audits or reports match the current filter.</div></div>`;
+  if(!list.length) return repHtml || `<div class="card"><div class="empty"><div class="big">🔍</div>No audits or reports match the current filter.<br>Try clearing the search or filters to see everything.</div></div>`;
   const sorted=list.slice().sort((a,b)=>periodKey(b.period)-periodKey(a.period)||a.name.localeCompare(b.name));
   const groups=[]; const idx={};
   sorted.forEach(a=>{ const k=a.period||"No period set"; if(idx[k]==null){ idx[k]=groups.length; groups.push({k,items:[]}); } groups[idx[k]].items.push(a); });
@@ -3375,7 +3394,9 @@ function renderReport(C,T,A){
   A.innerHTML=`<button class="btn sec sm" onclick="modalReport('${a.id}','${r.id}')">Edit report</button>
     ${btnDownload(`exportReport('${a.id}','${r.id}')`,"Download")}`;
 
-  const obs=r.observations.slice().sort(obsSortByAdded);
+  const allR=r.observations.slice().sort(obsSortByAdded);
+  const obs=allR.filter(o=>!isWithdrawn(o));
+  const withdrawn=allR.filter(isWithdrawn);
   const filteredObs=obs.filter(o=>{
     if(reportObsFilter.crit!=="All" && o.criticality!==reportObsFilter.crit) return false;
     if(reportObsFilter.status!=="All" && (o.status||"Open")!==reportObsFilter.status) return false;
@@ -3400,27 +3421,35 @@ function renderReport(C,T,A){
   // observations
   html+=`<div class="card report-obs-section anim-fade-in">
     <div class="obs-section-top">
-      <h3 class="section-title">Observations (${r.observations.length})</h3>
+      <h3 class="section-title">Observations (${obs.length})</h3>
       <div class="spacer"></div>
-      ${r.observations.length?`<input class="field-input obs-filter-search" value="${esc(reportObsFilter.q||"")}" placeholder="Search observations…" oninput="reportObsFilter.q=this.value;render()">`:""}
+      ${obs.length?`<input class="field-input obs-filter-search" value="${esc(reportObsFilter.q||"")}" placeholder="Search observations…" oninput="reportObsFilter.q=this.value;render()">`:""}
       ${addObsDropdown(a.id,r.id)}
-      ${r.observations.length?`<button class="btn sec sm" onclick="scanRepeats('${a.id}','${r.id}')">🔁 Scan for repeats</button>`:""}
+      ${obs.length?`<button class="btn sec sm" onclick="scanRepeats('${a.id}','${r.id}')">🔁 Scan for repeats</button>`:""}
     </div>
-    ${r.observations.length?`<div class="obs-filters-row obs-filters-left">
+    ${obs.length?`<div class="obs-filters-row obs-filters-left">
       <div class="filter-group"><span class="filter-label">Criticality</span>
         <select class="field-select field-select-sm" onchange="reportObsFilter.crit=this.value;render()">${["All",...CRITS].map(x=>`<option value="${esc(x)}"${reportObsFilter.crit===x?" selected":""}>${esc(x)}</option>`).join("")}</select></div>
       <div class="filter-group"><span class="filter-label">Status</span>
         <select class="field-select field-select-sm" onchange="reportObsFilter.status=this.value;render()">${["All",...STATUSES].map(x=>`<option value="${esc(x)}"${reportObsFilter.status===x?" selected":""}>${esc(x)}</option>`).join("")}</select></div>
     </div>`:""}
   `;
-  if(!r.observations.length){
-    html+=`<div class="empty"><div class="big">✎</div>No observations yet.</div>`;
+  if(!obs.length){
+    html+=`<div class="empty"><div class="big">✎</div>No observations yet.<br>Use <b>Add observation</b> above to draft one — from a one-liner, manually, or by importing a CSV.</div>`;
   }else if(!filteredObs.length){
-    html+=`<div class="empty">No observations match the current filter.</div>`;
+    html+=`<div class="empty"><div class="big">🔍</div>No observations match the current filter.<br>Try clearing the search or criticality/status filters.</div>`;
   }else{
     html+=`<div class="obs-grid">${filteredObs.map(o=>obsGridCard(a,r,o)).join("")}</div>`;
   }
   html+=`</div>`;
+  // Withdrawn observations — deemed invalid and signed off by the Head of Audit; kept for the record.
+  if(withdrawn.length){
+    html+=`<div class="card report-obs-section anim-fade-in">
+      <div class="obs-section-top"><h3 class="section-title">Withdrawn observations (${withdrawn.length})</h3></div>
+      <p class="hint" style="margin:2px 0 10px">Deemed invalid after review and withdrawn by the Head of Audit. They do not count as open or closed.</p>
+      <div class="obs-grid">${withdrawn.map(o=>obsGridCard(a,r,o)).join("")}</div>
+    </div>`;
+  }
   // proposed SOP updates roll-up
   const sopMissing=obs.filter(o=>!(o.sopUpdate||"").trim()).length;
   html+=`<div class="card"><div class="row"><h3 style="margin:0">Proposed SOP updates</h3><div class="spacer"></div>${sopMissing?`<button class="btn sec sm ai-generate-btn" onclick="modalSopBulk('${a.id}','${r.id}')">Generate missing (${sopMissing})</button>`:""}${obs.some(o=>(o.sopUpdate||"").trim())?`<button class="btn sec sm" onclick="exportSopUpdates('${a.id}','${r.id}')">⤓ Export change-list (Word)</button>`:""}</div>`;
@@ -3986,15 +4015,40 @@ function verifyStepperHTML(o){
   ];
   return `<div class="verify-steps">${steps.map(s=>`<div class="verify-step${s.done?" done":""}"><span class="verify-dot">${s.done?"✓":""}</span><div><div class="verify-step-label">${esc(s.label)}</div>${s.done&&(s.who||s.at)?`<div class="hint">${esc(s.who||"")}${s.who&&s.at?" · ":""}${s.at?esc(fmtDate(isoToDate(s.at))||""):""}</div>`:""}</div></div>`).join("")}</div>`;
 }
+function withdrawalBannerHTML(o){
+  const w=o.withdrawal; if(!w||!w.stage) return "";
+  const reason=w.ownerReason?`<div style="margin-top:4px"><b>Owner's reason:</b> ${esc(w.ownerReason)}</div>`:"";
+  if(w.stage==="withdrawn"){
+    return `<div class="note" style="border-left:3px solid #6b3fa0;background:#f6f2fb"><b>⊘ Observation withdrawn</b>${reason}${w.headReason?`<div style="margin-top:4px"><b>Head of Audit:</b> ${esc(w.headReason)}</div>`:""}<div class="hint" style="margin-top:4px">Withdrawn by ${esc(w.headByName||"the Head of Audit")}${w.headAt?" · "+esc(fmtDateTime(w.headAt)):""} — this observation is not Open or Closed.</div></div>`;
+  }
+  if(w.stage==="owner_requested"){
+    return `<div class="note" style="border-left:3px solid #c98a00"><b>⏳ Review requested — deemed invalid by the action owner</b>${reason}<div class="hint" style="margin-top:4px">Internal Audit is reviewing this request. ${esc(w.ownerByName||"")}${w.ownerAt?" · "+esc(fmtDateTime(w.ownerAt)):""}</div></div>`;
+  }
+  if(w.stage==="forwarded"){
+    return `<div class="note" style="border-left:3px solid #c98a00"><b>⏳ Withdrawal awaiting Head of Audit sign-off</b>${reason}${w.forwardNote?`<div style="margin-top:4px"><b>Internal Audit note:</b> ${esc(w.forwardNote)}</div>`:""}<div class="hint" style="margin-top:4px">Forwarded by ${esc(w.forwardedByName||"Internal Audit")}${w.forwardedAt?" · "+esc(fmtDateTime(w.forwardedAt)):""}</div></div>`;
+  }
+  if(w.stage==="declined"){
+    return `<div class="note" style="border-left:3px solid var(--crit)"><b>Review request declined by Internal Audit</b>${w.declineReason?`<div style="margin-top:4px">${esc(w.declineReason)}</div>`:""}<div class="hint" style="margin-top:4px">The observation remains active. ${esc(w.declinedByName||"")}${w.declinedAt?" · "+esc(fmtDateTime(w.declinedAt)):""}</div></div>`;
+  }
+  if(w.stage==="rejected"){
+    return `<div class="note" style="border-left:3px solid var(--crit)"><b>Withdrawal not approved by the Head of Audit</b>${w.headReason?`<div style="margin-top:4px">${esc(w.headReason)}</div>`:""}<div class="hint" style="margin-top:4px">The observation remains active. ${esc(w.headByName||"")}${w.headAt?" · "+esc(fmtDateTime(w.headAt)):""}</div></div>`;
+  }
+  return "";
+}
 function obsRemediationHTML(o,a,r){
   const primary=isPrimaryOwner(o); const secondary=isSecondaryOwner(o);
   const canVerify=canVerifyItem(o,a); const head=isHeadUser();
   const isRaiser=!!(window.AMS_USER && o.raisedBy && o.raisedBy===window.AMS_USER.id);
   const closed=o.status==="Closed";
+  const withdrawn=isWithdrawn(o); const wStage=obsWithdrawStage(o);
   const rej=o.closureRejection; // {target:'auditor'|'owner', note, byName, at}
   const updates=obsUpdates(o).slice().sort((x,y)=>String(y.at||"").localeCompare(String(x.at||"")));
   let actions="";
-  if(!closed){
+  if(!closed && !withdrawn){
+    if((primary||secondary) && (!wStage||wStage==="declined"||wStage==="rejected")) actions+=`<button class="btn ghost sm" onclick="modalRequestReview('${a.id}','${r.id}','${o.id}')">Request review (deem invalid)</button>`;
+    if((canVerify||head) && wStage==="owner_requested"){ actions+=`<button class="btn sm" onclick="forwardWithdrawal('${a.id}','${r.id}','${o.id}')">Forward for withdrawal</button><button class="btn sec sm" onclick="declineReview('${a.id}','${r.id}','${o.id}')">Decline request</button>`; }
+  }
+  if(!closed && !withdrawn){
     if(primary && !o.ownerRectifiedAt) actions+=`<button class="btn sm" onclick="modalReadyForClosure('${a.id}','${r.id}','${o.id}')">✓ Ready for Closure</button>`;
     if(canVerify && o.ownerRectifiedAt && !o.reportVerifiedAt) actions+=`<button class="btn sm" onclick="modalCloseObservation('${a.id}','${r.id}','${o.id}')">${(rej&&rej.target==="auditor")?"Resend for closure verification":"Verify remediation"}</button>`;
     if(head && o.reportVerifiedAt && !o.headVerifiedAt){
@@ -4008,7 +4062,7 @@ function obsRemediationHTML(o,a,r){
   }
   // Only the action owners (primary/secondary) post free-form comments here; auditors/head act via the buttons + modals.
   const isOwnerViewer=primary||secondary;
-  const canPost=isOwnerViewer&&!closed;
+  const canPost=isOwnerViewer&&!closed&&!withdrawn;
   const coOwnerExists=!!(o.ownerUserId&&o.secondaryOwnerUserId);
   // Private owner-to-owner notes (audience "owner") are hidden from Internal Audit / the Head.
   const visibleUpdates=updates.filter(u=> u.audience!=="owner" || isOwnerViewer);
@@ -4033,7 +4087,8 @@ function obsRemediationHTML(o,a,r){
   if(o.headComment && closed) pkg.push(`<div class="obs-field"><div class="ttl">Head of Audit comment</div><div class="txt">${richText(o.headComment)}${o.headVerifiedByName?`<div class="hint" style="margin-top:4px">${esc(o.headVerifiedByName)}${o.headVerifiedAt?" · "+esc(fmtDateTime(o.headVerifiedAt)):""}</div>`:""}</div></div>`);
   return `<div class="obs-notes">
     <div class="obs-notes-label">Remediation &amp; verification</div>
-    ${verifyStepperHTML(o)}
+    ${withdrawalBannerHTML(o)}
+    ${withdrawn?"":verifyStepperHTML(o)}
     ${rej&&!closed?`<div class="note" style="border-left:3px solid var(--crit)"><b>${rej.target==="auditor"?"Returned by the Head of Audit to Internal Audit":"Escalated by the Head of Audit to the action owner"}</b>${rej.note?`<div style="margin-top:4px">${esc(rej.note)}</div>`:""}<div class="hint" style="margin-top:4px">${esc(rej.byName||"Head of Audit")}${rej.at?" · "+esc(fmtDateTime(rej.at)):""}</div></div>`:""}
     ${o.progressReport&&!o.ownerRectifiedAt&&!closed?`<div class="note" style="border-left:3px solid #c98a00"><b>📋 Progress report requested by Internal Audit</b><div class="hint" style="margin-top:4px">${isOwnerViewer?"Post a progress update below — it stays requested until you mark this Ready for Closure.":"Awaiting a progress update from the action owner."} · ${esc(o.progressReport.byName||"Internal Audit")}${o.progressReport.at?" · "+esc(fmtDateTime(o.progressReport.at)):""}</div></div>`:""}
     ${pkg.join("")}
@@ -4369,7 +4424,7 @@ function viewSettings(){
 }
 function departmentsTableHTML(){
   const D=departments();
-  if(!D.length) return `<div class="empty">No departments yet. Add one to create its head as an action owner.</div>`;
+  if(!D.length) return `<div class="empty"><div class="big">🏢</div>No departments yet.<br>Add a department to create its head as an action owner who can respond to and close observations.</div>`;
   return `<table><thead><tr><th>Department</th><th>Name</th><th>Email</th><th>Login</th><th></th></tr></thead><tbody>
     ${D.map(d=>`<tr>
       <td><b>${esc(d.name)}</b></td>
@@ -4384,7 +4439,7 @@ function refreshDepartmentsTable(){ const el=document.getElementById("deptTableW
 function modalDepartment(id){
   const d=id?deptById(id):null;
   openModal(id?"Edit department":"Add Action Owner",`
-    <label>Department name *</label><input id="dp_name" value="${esc(d?d.name:"")}" placeholder="e.g. Credit Operations">
+    <label>Department name *</label><select id="dp_name">${deptOptionsHTML(d?d.name:"")}</select>
     <div class="f2">
       <div><label>Name *</label><input id="dp_head" value="${esc(d?d.headName:"")}" placeholder="e.g. Jane Doe"></div>
       <div><label>Email *</label><input id="dp_email" type="email" value="${esc(d?d.headEmail:"")}" ${d&&d.headUserId?"disabled title='Linked to a login account — email cannot be changed here'":""}></div>
@@ -4461,9 +4516,11 @@ function myObsSectionsHTML(items0,filterHTML,totalLabel){
   const section=(title,arr)=>`<div class="seclabel" style="margin:20px 0 12px">${title} <span class="hint" style="font-weight:400">(${arr.length})</span></div>${arr.length?`<div class="myobs-grid">${arr.map(myObsCard).join("")}</div>`:`<div class="hint" style="margin-bottom:8px">Nothing here.</div>`}`;
   return filterHTML+section(totalLabel[0],open)+section(totalLabel[1],closed);
 }
+function myWithdrawnObs(){ const me=window.AMS_USER||{}; return withdrawnObsAll().filter(o=>(o.ownerUserId&&o.ownerUserId===me.id)||(o.secondaryOwnerUserId&&o.secondaryOwnerUserId===me.id)); }
 function viewMyObs(){
   const items0=myObsList().map(o=>({o,type:"Internal"}));
-  if(!items0.length){ return ownerAnnounceHTML()+`<div class="card"><div class="empty"><div class="big">✦</div>No internal observations assigned to you yet.<br><br>When Internal Audit raises an observation against your department, it appears here for you to respond, add updates and evidence.</div></div>`; }
+  const withdrawn=myWithdrawnObs().map(o=>({o,type:"Internal"}));
+  if(!items0.length && !withdrawn.length){ return ownerAnnounceHTML()+`<div class="card"><div class="empty"><div class="big">✦</div>No internal observations assigned to you yet.<br><br>When Internal Audit raises an observation against your department, it appears here for you to respond, add updates and evidence.</div></div>`; }
   let items=items0.slice();
   if(myObsFilter.crit!=="All") items=items.filter(x=>x.o.criticality===myObsFilter.crit);
   const filterHTML=`<div class="card" style="padding:12px 16px;margin-bottom:4px"><div class="row" style="gap:10px;flex-wrap:wrap;align-items:center">
@@ -4472,7 +4529,13 @@ function viewMyObs(){
       ${myObsFilter.crit!=="All"?`<button class="btn ghost sm" onclick="myObsFilter={type:'All',crit:'All'};render()">Clear</button>`:""}
       <div class="spacer" style="flex:1"></div><span class="hint">${items0.length} total</span>
     </div></div>`;
-  return ownerAnnounceHTML()+myObsSectionsHTML(items,filterHTML,["Open observations","Closed observations"]);
+  let out=ownerAnnounceHTML()+myObsSectionsHTML(items,filterHTML,["Open observations","Closed observations"]);
+  if(withdrawn.length){
+    out+=`<div class="seclabel" style="margin:20px 0 12px">Withdrawn observations <span class="hint" style="font-weight:400">(${withdrawn.length})</span></div>
+      <p class="hint" style="margin:-6px 0 10px">These were reviewed and withdrawn — no further action is needed.</p>
+      <div class="myobs-grid">${withdrawn.map(myObsCard).join("")}</div>`;
+  }
+  return out;
 }
 let myExtFilter={sev:"All"};
 function myExtSet(k,v){ myExtFilter[k]=v; render(); }
@@ -4566,7 +4629,7 @@ async function refreshUsersTable(){
   }catch(e){}
 }
 function usersTableHTML(){
-  if(!_usersCache.length) return `<div class="empty">No users yet.</div>`;
+  if(!_usersCache.length) return `<div class="empty"><div class="big">👥</div>No users yet.<br>Use <b>Add user</b> to invite audit staff — they receive a welcome email and set their own password on first sign-in.</div>`;
   return `<table><thead><tr><th>Name</th><th>Department</th><th>Email</th><th>Role</th><th>Sidebar access</th><th></th></tr></thead><tbody>
     ${_usersCache.map(u=>`<tr>
       <td><b>${esc(u.name)}</b></td>
@@ -4587,7 +4650,7 @@ function modalUser(id){
   openModal(isEdit?"Edit user":"Add user",`
     <div class="f2">
       <div><label>Name *</label><input id="ua_name" value="${esc(u?u.name:"")}"></div>
-      <div><label>Department</label><input id="ua_dept" value="${esc(u?u.department:"Internal Audit")}"></div>
+      <div><label>Department</label><select id="ua_dept">${deptOptionsHTML(u?u.department:"Audit Department")}</select></div>
     </div>
     <div class="f2">
       <div><label>Email *</label><input id="ua_email" type="email" value="${esc(u?u.email:"")}"></div>
@@ -4624,6 +4687,18 @@ async function saveUser(id){
     if(err) err.textContent="Name and email are required.";
     return;
   }
+  const emailLc=payload.email.trim().toLowerCase();
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailLc)){
+    if(err) err.textContent="Enter a valid email address.";
+    return;
+  }
+  // Prevent creating/assigning an email that is already registered (also enforced server-side).
+  const clash=(_usersCache||[]).find(x=>x.email && x.email.toLowerCase()===emailLc && x.id!==id)
+    || (_directoryCache||[]).find(x=>x.email && x.email.toLowerCase()===emailLc && x.id!==id);
+  if(clash){
+    if(err) err.textContent="A user with this email already exists.";
+    return;
+  }
   const btn=event&&event.currentTarget;
   const done=btnBusy(btn,"");
   let res,data;
@@ -4647,15 +4722,27 @@ async function saveUser(id){
   if(view==="settings") render();
 }
 function deleteUser(id){
-  uiConfirm("Delete this user? Their login account will be removed.",async()=>{
-    let res,data;
-    try{ res=await fetch(`/api/users/${id}`,{ method:"DELETE" }); data=await res.json().catch(()=>({})); }
-    catch(e){ toast("Network error — could not delete user.","error"); return; }
-    if(!res.ok){ toast(data.error||"Could not delete user.","error"); return; }
-    await refreshUsersTable();
-    if(view==="settings") render();
-    toast("User deleted.","success");
-  },{danger:true,confirmLabel:"Delete"});
+  const u=_usersCache.find(x=>x.id===id);
+  if(!u){ toast("User not found.","error"); return; }
+  openModal("Delete user",`
+    <div class="note" style="border-left:3px solid var(--crit)">This permanently removes the login account. It cannot be undone. Observations they raised or own are kept, but they will no longer be able to sign in.</div>
+    <div class="obs-field" style="margin-top:10px"><div class="ttl">Name</div><div class="txt">${esc(u.name)}</div></div>
+    <div class="obs-field"><div class="ttl">Email</div><div class="txt">${esc(u.email)}</div></div>
+    <div class="obs-field"><div class="ttl">Role</div><div class="txt">${esc(roleLabel(u.role))}${u.department?" · "+esc(u.department):""}</div></div>
+    <div id="del_user_err" style="margin-top:10px"></div>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn danger" onclick="doDeleteUser('${id}')">Delete user</button>`);
+}
+async function doDeleteUser(id){
+  const errEl=document.getElementById("del_user_err");
+  const btn=event&&event.currentTarget; const done=btnBusy(btn,"Deleting…");
+  let res,data;
+  try{ res=await fetch(`/api/users/${id}`,{ method:"DELETE" }); data=await res.json().catch(()=>({})); }
+  catch(e){ done(); if(errEl) errEl.innerHTML=`<div class="ai-err">Network error — could not delete user. Please try again.</div>`; return; }
+  if(!res.ok){ done(); if(errEl) errEl.innerHTML=`<div class="ai-err">${esc(data.error||"Could not delete user.")}</div>`; return; }
+  done(); closeModal();
+  await refreshUsersTable();
+  if(view==="settings") render();
+  toast("User deleted.","success");
 }
 function resetAllData(){
   uiConfirm("Delete ALL content — audits, reports, observations, audit universe, fraud risks/plan and process reviews? Your org name and report author are kept. This cannot be undone.",()=>{
@@ -5298,6 +5385,113 @@ function rejectDelete(aid){
   if(ap.requestedBy) notifyBoth(ap.requestedBy,"obs_delete_rejected","Deletion not approved: "+(ap.obsTitle||""),"audits","AuditLens — deletion not approved",`Your request to delete "${ap.obsTitle||"an observation"}" was not approved by the Head of Audit.`);
   logAudit("obs.delete_rejected","Rejected deletion of observation: "+(ap.obsTitle||""),{observationId:ap.obsId});
   save(); render();
+}
+
+/* ============================ OBSERVATION WITHDRAWAL ============================ */
+/* Flow: the action owner deems an observation invalid and clicks "Request review" with a reason →
+   Internal Audit (the auditor/head) reviews and forwards it to the Head of Audit for sign-off →
+   the Head approves (observation becomes "Withdrawn", not Closed) or rejects, each with a reason
+   that is sent back to the action owner. */
+function obsWithdrawStage(o){ return (o&&o.withdrawal&&o.withdrawal.stage)||""; }
+function modalRequestReview(aid,rid,oid){
+  const o=findObs(aid,rid,oid); if(!o) return;
+  if(!isPrimaryOwner(o)&&!isSecondaryOwner(o)&&!isHeadUser()){ toast("Only the action owner can request a review.","error"); return; }
+  openModal("Request review of this observation",`
+    <div class="hint" style="margin-bottom:8px">If your department believes this observation is not valid, explain why. Internal Audit will review it and, if appropriate, forward it to the Head of Audit to withdraw it. It will <b>not</b> be closed.</div>
+    <label>Reason this observation should be withdrawn *</label>
+    <textarea id="rvw_reason" style="min-height:110px" placeholder="e.g. The control cited does exist and operated during the period — evidence attached in comments; the finding is based on an outdated SOP version…"></textarea>
+    <div id="rvw_err" style="margin-top:8px"></div>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="submitReviewRequest('${aid}','${rid}','${oid}')">Send review request</button>`);
+}
+function submitReviewRequest(aid,rid,oid){
+  const o=findObs(aid,rid,oid); if(!o) return;
+  const reason=val("rvw_reason").trim();
+  if(!reason){ const e=document.getElementById("rvw_err"); if(e) e.innerHTML=`<div class="ai-err">Please give a reason.</div>`; return; }
+  const u=window.AMS_USER||{};
+  o.withdrawal={stage:"owner_requested",ownerReason:reason,ownerBy:u.id||"",ownerByName:u.name||"",ownerAt:new Date().toISOString()};
+  // Notify the auditor who raised it, the lead auditor and the Head(s) of Audit.
+  const a=audit(aid); const ids=[]; if(o.raisedBy) ids.push(o.raisedBy); if(a&&a.leadAuditorId) ids.push(a.leadAuditorId); headUsers().forEach(h=>ids.push(h.id));
+  uniq(ids).forEach(id=>notify(id,"review_requested","Review requested (deemed invalid): "+o.title,"observation"));
+  const emails=uniq([...headUsers().map(h=>h.email), ...(a&&a.leadAuditorId?[dirEmail(a.leadAuditorId)]:[]), dirEmail(o.raisedBy)].filter(Boolean));
+  emailNotify(emails,"AuditLens — observation review requested",`The action owner${u.name?" ("+u.name+")":""} has requested a review of the observation "${o.title}", stating it may not be valid.\n\nReason: ${reason}\n\nSign in to AuditLens to review and, if appropriate, forward it to the Head of Audit.`,linkFor("observation"));
+  logAudit("obs.review_requested","Owner requested review of observation: "+o.title,{auditId:aid,reportId:rid,observationId:oid});
+  save(); closeModal(); render();
+  toast("Review request sent to Internal Audit.","success");
+}
+function forwardWithdrawal(aid,rid,oid){
+  const o=findObs(aid,rid,oid); if(!o) return;
+  if(!canVerifyItem(o,audit(aid)) && !isHeadUser()){ toast("Only Internal Audit can forward this for withdrawal.","error"); return; }
+  openModal("Forward for withdrawal",`
+    <div class="hint" style="margin-bottom:8px">Forward this observation to the Head of Audit to be withdrawn. The owner's reason is included; add your own note for the Head if you wish.</div>
+    ${o.withdrawal&&o.withdrawal.ownerReason?`<div class="note" style="border-left:3px solid var(--accent)"><b>Action owner's reason</b><div style="margin-top:4px">${esc(o.withdrawal.ownerReason)}</div></div>`:""}
+    <label style="margin-top:8px">Note for the Head of Audit (optional)</label>
+    <textarea id="fw_note" style="min-height:80px" placeholder="e.g. I reviewed the evidence — the owner is correct, the SOP version cited was superseded."></textarea>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="doForwardWithdrawal('${aid}','${rid}','${oid}')">Forward to Head of Audit</button>`);
+}
+function doForwardWithdrawal(aid,rid,oid){
+  const o=findObs(aid,rid,oid); if(!o) return;
+  const u=window.AMS_USER||{}; const note=val("fw_note").trim();
+  o.withdrawal=Object.assign({stage:"owner_requested"},o.withdrawal,{stage:"forwarded",forwardedBy:u.id||"",forwardedByName:u.name||"",forwardedAt:new Date().toISOString(),forwardNote:note});
+  if(!approvals().find(a=>a.kind==="observation_withdraw"&&a.obsId===oid&&a.status==="pending")){
+    approvals().push({id:uid(),kind:"observation_withdraw",obsId:oid,auditId:aid,reportId:rid,obsTitle:o.title,reason:o.withdrawal.ownerReason||"",forwardNote:note,requestedBy:u.id||"",requestedByName:u.name||"",requestedAt:new Date().toISOString(),status:"pending"});
+  }
+  notifyHeadsApproval(o.title+" (withdrawal request)");
+  logAudit("obs.withdraw_forwarded","Forwarded observation for withdrawal: "+o.title,{auditId:aid,reportId:rid,observationId:oid});
+  save(); closeModal(); render();
+  toast("Forwarded to the Head of Audit for sign-off.","success");
+}
+function declineReview(aid,rid,oid){
+  const o=findObs(aid,rid,oid); if(!o) return;
+  if(!canVerifyItem(o,audit(aid)) && !isHeadUser()){ toast("Only Internal Audit can decline this request.","error"); return; }
+  openModal("Decline review request",`
+    <div class="hint" style="margin-bottom:8px">Decline the owner's request — the observation stays active. Give a short reason for the action owner.</div>
+    <label>Reason (sent to the action owner)</label>
+    <textarea id="dcl_reason" style="min-height:90px" placeholder="e.g. The finding stands — the evidence provided does not cover the sampled transactions."></textarea>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="doDeclineReview('${aid}','${rid}','${oid}')">Decline request</button>`);
+}
+function doDeclineReview(aid,rid,oid){
+  const o=findObs(aid,rid,oid); if(!o) return;
+  const u=window.AMS_USER||{}; const reason=val("dcl_reason").trim();
+  const ownerId=o.ownerUserId;
+  o.withdrawal=Object.assign({},o.withdrawal,{stage:"declined",declinedBy:u.id||"",declinedByName:u.name||"",declinedAt:new Date().toISOString(),declineReason:reason});
+  if(ownerId) notifyBoth(ownerId,"review_declined","Review request declined: "+o.title,"myobs","AuditLens — review request declined",`Your request to review the observation "${o.title}" was declined by Internal Audit.${reason?"\n\nReason: "+reason:""}\n\nThe observation remains active — please continue remediation.`);
+  logAudit("obs.review_declined","Declined review request: "+o.title,{auditId:aid,reportId:rid,observationId:oid});
+  save(); closeModal(); render();
+  toast("Request declined and the owner notified.","success");
+}
+function modalDecideWithdraw(aid,decision){
+  const ap=approvals().find(x=>x.id===aid); if(!ap){ toast("Request not found.","error"); return; }
+  if(!isHeadUser()){ toast("Only the Head of Audit can decide this.","error"); return; }
+  const approve=decision==="approve";
+  openModal(approve?"Approve withdrawal":"Reject withdrawal",`
+    <div class="hint" style="margin-bottom:8px">${approve?"Approving marks this observation <b>Withdrawn</b> — it will not be Open or Closed. The action owner is notified.":"Rejecting keeps the observation active. The action owner is notified with your reason."}</div>
+    ${ap.reason?`<div class="note" style="border-left:3px solid var(--accent)"><b>Action owner's reason</b><div style="margin-top:4px">${esc(ap.reason)}</div></div>`:""}
+    <label style="margin-top:8px">Reason for the action owner ${approve?"(optional)":"*"}</label>
+    <textarea id="wd_reason" style="min-height:90px" placeholder="${approve?"e.g. Agreed — the finding was based on a superseded SOP; withdrawn.":"e.g. The finding stands; the evidence does not address the exception noted."}"></textarea>
+    <div id="wd_err" style="margin-top:8px"></div>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn${approve?"":" danger"}" onclick="finalizeWithdraw('${aid}','${decision}')">${approve?"Approve withdrawal":"Reject request"}</button>`);
+}
+function finalizeWithdraw(aid,decision){
+  const ap=approvals().find(x=>x.id===aid); if(!ap||ap.status!=="pending") return;
+  if(!isHeadUser()){ toast("Only the Head of Audit can decide this.","error"); return; }
+  const approve=decision==="approve"; const reason=val("wd_reason").trim();
+  if(!approve && !reason){ const e=document.getElementById("wd_err"); if(e) e.innerHTML=`<div class="ai-err">Please give a reason for the owner.</div>`; return; }
+  const u=window.AMS_USER||{};
+  const r=report(audit(ap.auditId),ap.reportId); const o=r&&r.observations.find(x=>x.id===ap.obsId);
+  ap.status=approve?"approved":"rejected"; ap.decidedBy=u.id||""; ap.decidedByName=u.name||""; ap.decidedAt=new Date().toISOString(); ap.headReason=reason;
+  if(o){
+    o.withdrawal=Object.assign({},o.withdrawal,{stage:approve?"withdrawn":"rejected",headBy:u.id||"",headByName:u.name||"",headAt:new Date().toISOString(),headReason:reason});
+    if(approve){ o.withdrawn=true; o.status="Withdrawn"; o.withdrawnAt=new Date().toISOString(); }
+    const ownerId=o.ownerUserId;
+    if(ownerId){
+      if(approve) notifyBoth(ownerId,"withdrawn","Observation withdrawn: "+o.title,"myobs","AuditLens — observation withdrawn",`Following your review request, the Head of Audit has withdrawn the observation "${o.title}". It is no longer active.${reason?"\n\nNote: "+reason:""}`);
+      else notifyBoth(ownerId,"withdraw_rejected","Withdrawal not approved: "+o.title,"myobs","AuditLens — observation still stands",`The Head of Audit did not approve withdrawing the observation "${o.title}". It remains active.\n\nReason: ${reason}\n\nSign in to AuditLens to continue remediation.`);
+    }
+    if(o.withdrawal.forwardedBy && o.withdrawal.forwardedBy!==u.id) notify(o.withdrawal.forwardedBy,approve?"withdrawn":"withdraw_rejected",(approve?"Withdrawal approved: ":"Withdrawal rejected: ")+o.title,"observation");
+  }
+  logAudit(approve?"obs.withdrawn":"obs.withdraw_rejected",(approve?"Withdrew observation: ":"Rejected withdrawal: ")+(ap.obsTitle||""),{observationId:ap.obsId});
+  save(); closeModal(); render();
+  toast(approve?"Observation withdrawn.":"Withdrawal rejected and the owner notified.","success");
 }
 
 /* ============================ AI (Gemini) ============================ */

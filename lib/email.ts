@@ -202,6 +202,9 @@ export async function sendNotificationEmail(params: {
   const loginUrl = `${appUrl}/login`;
   const ctaUrl = params.ctaUrl?.trim() || loginUrl;
   const ctaLabel = params.ctaLabel?.trim() || "Sign in to AuditLens";
+  // Prefer the caller-supplied link (the client passes its real origin) so email links stay valid
+  // even when APP_URL is unset in the environment.
+  const signInLink = params.ctaUrl?.trim() || loginUrl;
   // Preserve line breaks in the notification text as HTML paragraphs.
   const html = params.bodyHtml
     ? params.bodyHtml
@@ -226,7 +229,7 @@ export async function sendNotificationEmail(params: {
       from: { email: from, name: "AuditLens" },
       subject: params.subject,
       content: [
-        { type: "text/plain", value: `${params.text}\n\nSign in to AuditLens: ${loginUrl}` },
+        { type: "text/plain", value: `${params.text}\n\nSign in to AuditLens: ${signInLink}` },
         { type: "text/html", value: html },
       ],
     }),
