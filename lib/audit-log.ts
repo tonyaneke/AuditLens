@@ -7,6 +7,7 @@ export const AUDIT_CATEGORIES = [
   "user",
   "data",
   "workspace",
+  "security",
 ] as const;
 
 export type AuditCategory = (typeof AUDIT_CATEGORIES)[number];

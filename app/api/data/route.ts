@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { requireActiveSession } from "@/lib/auth";
+import { writeAuditLog } from "@/lib/audit-log";
 import { defaultWorkspaceData, type WorkspaceDb } from "@/lib/db-data";
 import { prisma } from "@/lib/prisma";
+import { authorizeWorkspaceWrite } from "@/lib/workspace-authz";
 
 const WORKSPACE_ID = "default";
 
@@ -23,8 +25,9 @@ export async function GET() {
 }
 
 export async function PUT(request: Request) {
+  let session;
   try {
-    await requireActiveSession();
+    session = await requireActiveSession();
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unauthorized";
     if (message === "PasswordChangeRequired") {
@@ -47,13 +50,37 @@ export async function PUT(request: Request) {
     );
   }
 
-  const payload = body.data as Prisma.InputJsonValue;
+  // Authorize the write against the stored workspace: non-head users may only make the changes their
+  // role permits (raise observations, request approvals, comment, remediate). Anything else — editing/
+  // deleting/withdrawing/closing observations directly, deciding approvals, touching head-only
+  // sections — is reconciled away server-side so the client cannot bypass the approval workflow.
+  const existing = await prisma.workspaceData.findUnique({ where: { id: WORKSPACE_ID } });
+  const current = (existing?.data as WorkspaceDb) || defaultWorkspaceData();
+  const { data: authorized, violations } = authorizeWorkspaceWrite(
+    session.role,
+    session.id,
+    current,
+    body.data,
+  );
+
+  const payload = authorized as Prisma.InputJsonValue;
 
   const row = await prisma.workspaceData.upsert({
     where: { id: WORKSPACE_ID },
     update: { data: payload },
     create: { id: WORKSPACE_ID, data: payload },
   });
+
+  if (violations.length) {
+    // Persisted the sanitized document; record what was filtered for the security trail.
+    await writeAuditLog({
+      user: session,
+      action: "security.workspace_write_filtered",
+      category: "security",
+      summary: `Reconciled ${violations.length} disallowed change(s) from a ${session.role} workspace write`,
+      metadata: { violations: violations.slice(0, 50), count: violations.length },
+    }).catch(() => {});
+  }
 
   return NextResponse.json({
     data: row.data as WorkspaceDb,
