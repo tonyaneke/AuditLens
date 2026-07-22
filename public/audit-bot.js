@@ -4506,7 +4506,7 @@ async function saveDepartment(id){
   // New department → provision the head as an action_owner login user.
   if(errEl) errEl.innerHTML="";
   const done=btnBusy(btn,"");
-  let userId="", emailSent=false, tempPw="";
+  let userId="", emailSent=false;
   try{
     const res=await fetch("/api/users",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({name:headName,email:headEmail,department:name,role:"action_owner"})});
@@ -4517,12 +4517,12 @@ async function saveDepartment(id){
       const existing=_directoryCache.find(u=>(u.email||"").toLowerCase()===headEmail);
       if(existing) userId=existing.id; else { done(); showErr("That email already has an account that couldn't be linked."); return; }
     } else if(!res.ok){ done(); showErr(data.error||"Could not create the action-owner login."); return; }
-    else { userId=data.user&&data.user.id; emailSent=!!data.emailSent; tempPw=data.tempPassword||""; }
+    else { userId=data.user&&data.user.id; emailSent=!!data.emailSent; }
   }catch(e){ done(); showErr("Network error creating the login."); return; }
   D.push({id:uid(),name,headName,headEmail,headUserId:userId||"",createdAt:new Date().toISOString()});
   save(); await refreshUsersTable(); await loadDirectory(); done(); closeModal(); render();
   if(emailSent) toast(`Action owner added. A welcome email was sent to ${headEmail}.`,"success");
-  else modalCredentials(headName,headEmail,tempPw,"");
+  else modalCredentials(headName,headEmail,"");
 }
 function delDepartment(id){
   uiConfirm("Remove this department? The head's login account is kept (delete it from User access management if needed).",()=>{
@@ -4690,11 +4690,13 @@ async function refreshUsersTable(){
     if(el) el.innerHTML=usersTableHTML();
   }catch(e){}
 }
+function avatarInitials(name){ return String(name||"").trim().split(/\s+/).slice(0,2).map(w=>w[0]||"").join("").toUpperCase()||"?"; }
+function avatarHTML(u,size){ size=size||28; const s=+size; if(u&&u.photo) return `<img src="${esc(u.photo)}" alt="" class="al-avatar" style="width:${s}px;height:${s}px">`; return `<span class="al-avatar al-avatar-initials" style="width:${s}px;height:${s}px;font-size:${Math.round(s*0.4)}px">${esc(avatarInitials(u&&u.name))}</span>`; }
 function usersTableHTML(){
-  if(!_usersCache.length) return `<div class="empty"><div class="big">👥</div>No users yet.<br>Use <b>Add user</b> to invite audit staff — they receive a welcome email and set their own password on first sign-in.</div>`;
+  if(!_usersCache.length) return `<div class="empty"><div class="big">👥</div>No users yet.<br>Use <b>Add user</b> to invite audit staff — they sign in with their Microsoft account.</div>`;
   return `<table><thead><tr><th>Name</th><th>Department</th><th>Email</th><th>Role</th><th>Sidebar access</th><th></th></tr></thead><tbody>
     ${_usersCache.map(u=>`<tr>
-      <td><b>${esc(u.name)}</b></td>
+      <td><div class="row" style="gap:8px;align-items:center">${avatarHTML(u,28)}<b>${esc(u.name)}</b></div></td>
       <td>${esc(u.department||"—")}</td>
       <td>${esc(u.email)}</td>
       <td>${esc(roleLabel(u.role))}</td>
@@ -4775,8 +4777,8 @@ async function saveUser(id){
   if(!res.ok){ done(); if(err) err.textContent=data.error||"Could not save user."; return; }
   done();
   if(!id){
-    if(data.emailSent) modalSuccess("User created successfully. A welcome email with sign-in details was sent to "+payload.email+".","User created");
-    else modalCredentials(payload.name,payload.email,data.tempPassword,data.emailError);
+    if(data.emailSent) modalSuccess("User created. A welcome email with Microsoft sign-in instructions was sent to "+payload.email+".","User created");
+    else modalCredentials(payload.name,payload.email,data.emailError);
   } else {
     closeModal(); toast("Changes saved.","success");
   }
@@ -4844,12 +4846,11 @@ function modalSuccess(msg,title){
     `<button class="btn" onclick="closeModal()">Done</button>`);
 }
 // Shown when the welcome email couldn't be delivered — the Head can share the temp password manually.
-function modalCredentials(name,email,tempPassword,emailError){
-  openModal("User created — share sign-in details",`
+function modalCredentials(name,email,emailError){
+  openModal("User created",`
     <div style="display:flex;flex-direction:column;gap:12px">
-      <div class="hint">The welcome email could not be delivered${emailError?" ("+esc(emailError)+")":""}. Share these sign-in details with <b>${esc(name)}</b> so they can log in and set their own password:</div>
-      <div class="note"><b>Email:</b> ${esc(email)}<br><b>Temporary password:</b> <code style="background:var(--bg);padding:3px 8px;border-radius:6px;font-weight:700">${esc(tempPassword||"(unavailable — reset from User access management)")}</code></div>
-      <div class="hint" style="color:var(--muted)">Tip: emails to external providers (e.g. Gmail) need SendGrid sender/domain authentication, or they land in spam.</div>
+      <div class="hint">We couldn't send the welcome email${emailError?" ("+esc(emailError)+")":""}. Let <b>${esc(name)}</b> know their AuditLens account is ready.</div>
+      <div class="note"><b>Account email:</b> ${esc(email)}<br>They sign in on the login page with <b>Sign in with Microsoft</b> using their work account — there is no password to share.</div>
     </div>`,
     `<button class="btn" onclick="closeModal()">Done</button>`);
 }

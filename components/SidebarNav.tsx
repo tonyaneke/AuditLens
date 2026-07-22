@@ -158,7 +158,11 @@ export default function SidebarNav({ user }: SidebarNavProps) {
       <div className="sidebar-profile">
         <div className="sidebar-profile-head">
           <div className="sidebar-profile-avatar" aria-hidden="true">
-            {initials(user.name)}
+            {user.photo ? (
+              <img src={user.photo} alt="" className="sidebar-profile-avatar-img" />
+            ) : (
+              initials(user.name)
+            )}
           </div>
           <div className="sidebar-profile-meta">
             <div className="sidebar-profile-name">{user.name}</div>

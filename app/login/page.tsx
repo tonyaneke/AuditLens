@@ -1,16 +1,20 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+
+const ERROR_MESSAGES: Record<string, string> = {
+  not_provisioned:
+    "Your Microsoft account isn't set up in AuditLens yet. Ask your Head of Audit to add you, then try again.",
+  sso_failed: "Microsoft sign-in didn't complete. Please try again.",
+  sso_state: "Your sign-in session expired. Please try again.",
+  sso_no_email: "Your Microsoft account didn't return an email address. Contact your administrator.",
+  sso_unconfigured: "Single sign-on isn't configured yet. Contact your administrator.",
+};
 
 export default function LoginPage() {
-  const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
   const [logo, setLogo] = useState("/org-logo.png");
   const [org, setOrg] = useState("Audit Management System");
+  const [error, setError] = useState("");
 
   useEffect(() => {
     fetch("/api/branding")
@@ -20,32 +24,13 @@ export default function LoginPage() {
         if (data?.org) setOrg(data.org);
       })
       .catch(() => {});
-  }, []);
-
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
     try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-   
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Login failed.");
-        return;
-      }
-      router.push("/");
-      router.refresh();
+      const code = new URLSearchParams(window.location.search).get("error");
+      if (code) setError(ERROR_MESSAGES[code] || "Sign-in failed. Please try again.");
     } catch {
-      setError("Unable to sign in. Please try again.");
-    } finally {
-      setLoading(false);
+      /* ignore */
     }
-  }
+  }, []);
 
   return (
     <div className="login-page">
@@ -58,34 +43,23 @@ export default function LoginPage() {
           <div className="login-brand-tag">{org}</div>
         </div>
         <h1 className="login-title">Sign in</h1>
-        <p className="login-sub">
-          Access AuditLens with your assigned account.
+        <p className="login-sub">Use your organisation&apos;s Microsoft account to access AuditLens.</p>
+
+        {error ? <div className="login-error">{error}</div> : null}
+
+        <a className="btn login-submit login-ms" href="/api/auth/azure/start">
+          <svg width="18" height="18" viewBox="0 0 21 21" aria-hidden="true" style={{ flexShrink: 0 }}>
+            <rect x="1" y="1" width="9" height="9" fill="#f25022" />
+            <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
+            <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
+            <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
+          </svg>
+          Sign in with Microsoft
+        </a>
+
+        <p className="login-sub" style={{ marginTop: 16, fontSize: 12.5 }}>
+          Access is limited to accounts your Head of Audit has added to AuditLens.
         </p>
-        <form className="login-form" onSubmit={onSubmit}>
-          <label htmlFor="email">Email</label>
-          <input
-            id="email"
-            type="email"
-            autoComplete="username"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="audit@credicorp.ng"
-            required
-          />
-          <label htmlFor="password">Password</label>
-          <input
-            id="password"
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-          {error ? <div className="login-error">{error}</div> : null}
-          <button className="btn login-submit" type="submit" disabled={loading}>
-            {loading ? "Signing in…" : "Sign in"}
-          </button>
-        </form>
       </div>
     </div>
   );

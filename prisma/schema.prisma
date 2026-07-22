@@ -16,6 +16,7 @@ model User {
   role               String
   sidebarAccess      Json     @default("[]")
   mustChangePassword Boolean  @default(true)
+  photo              String?  // Microsoft profile picture as a data URL (fetched on SSO sign-in)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 }

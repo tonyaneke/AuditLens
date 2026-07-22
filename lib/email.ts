@@ -1,7 +1,6 @@
 type WelcomeEmailParams = {
   to: string;
   name: string;
-  tempPassword: string;
   loginUrl: string;
 };
 
@@ -74,11 +73,10 @@ export async function sendWelcomeEmail(params: WelcomeEmailParams) {
     "",
     "An account has been created for you on AuditLens.",
     "",
-    `Sign in: ${params.loginUrl}`,
-    `Email: ${params.to}`,
-    `Temporary password: ${params.tempPassword}`,
+    `Sign in with your Microsoft (organisation) account at: ${params.loginUrl}`,
+    `Account email: ${params.to}`,
     "",
-    "On your first sign-in you will be asked to choose your own password.",
+    "Choose \"Sign in with Microsoft\" and use your work account — there is no separate password.",
     "",
     "If you did not expect this email, please contact your Head of Audit.",
   ].join("\n");
@@ -87,14 +85,13 @@ export async function sendWelcomeEmail(params: WelcomeEmailParams) {
     heading: "Your account is ready",
     bodyHtml: `
       <p>Hello ${escapeHtml(params.name)},</p>
-      <p>An account has been created for you on <strong>AuditLens</strong>. Use the temporary password below to sign in.</p>
+      <p>An account has been created for you on <strong>AuditLens</strong>. Sign in with your Microsoft (organisation) account — there is no separate password to set.</p>
       <table style="width:100%;border-collapse:collapse;margin:14px 0">
-        <tr><td style="padding:6px 0;color:#64807a">Email</td><td style="padding:6px 0;font-weight:600">${escapeHtml(params.to)}</td></tr>
-        <tr><td style="padding:6px 0;color:#64807a">Temporary password</td><td style="padding:6px 0"><code style="background:#f2f7f5;padding:3px 8px;border-radius:6px;font-weight:700">${escapeHtml(params.tempPassword)}</code></td></tr>
+        <tr><td style="padding:6px 0;color:#64807a">Account email</td><td style="padding:6px 0;font-weight:600">${escapeHtml(params.to)}</td></tr>
       </table>
-      <p style="color:#64807a;font-size:13px">On your first sign-in you'll be asked to choose your own password.</p>
+      <p style="color:#64807a;font-size:13px">On the sign-in page choose <strong>Sign in with Microsoft</strong> and use your work account.</p>
       <p style="color:#64807a;font-size:13px">If you did not expect this email, please contact your Head of Audit.</p>`,
-    ctaLabel: "Sign in to AuditLens",
+    ctaLabel: "Sign in with Microsoft",
     ctaUrl: params.loginUrl,
   });
 

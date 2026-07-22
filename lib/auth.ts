@@ -25,8 +25,10 @@ export async function verifyPassword(password: string, hash: string) {
   return bcrypt.compare(password, hash);
 }
 
-export async function createSession(user: SessionUser) {
-  const token = await new SignJWT({
+// Signs a session JWT for the user. Use this when you need to set the cookie yourself
+// (e.g. on a NextResponse redirect from the SSO callback); createSession sets it via next/headers.
+export async function signSessionToken(user: SessionUser): Promise<string> {
+  return new SignJWT({
     sub: user.id,
     name: user.name,
     email: user.email,
@@ -39,7 +41,10 @@ export async function createSession(user: SessionUser) {
     .setIssuedAt()
     .setExpirationTime(`${SESSION_MAX_AGE}s`)
     .sign(authSecret());
+}
 
+export async function createSession(user: SessionUser) {
+  const token = await signSessionToken(user);
   const cookieStore = await cookies();
   cookieStore.set(SESSION_COOKIE, token, {
     httpOnly: true,
@@ -123,6 +128,7 @@ export function userToSession(user: {
   role: string;
   sidebarAccess: unknown;
   mustChangePassword: boolean;
+  photo?: string | null;
 }): SessionUser {
   return {
     id: user.id,
@@ -132,6 +138,7 @@ export function userToSession(user: {
     role: user.role,
     sidebarAccess: normalizeSidebarAccess(user.sidebarAccess),
     mustChangePassword: effectiveMustChangePassword(user.mustChangePassword),
+    photo: user.photo ?? null,
   };
 }
 

@@ -42,6 +42,9 @@ export type SessionUser = {
   role: string;
   sidebarAccess: string[];
   mustChangePassword: boolean;
+  // Microsoft profile photo (data URL). Present on DB-sourced sessions (/api/auth/me, directory),
+  // not carried in the session cookie/JWT to keep it small.
+  photo?: string | null;
 };
 
 export function normalizeSidebarAccess(raw: unknown): string[] {

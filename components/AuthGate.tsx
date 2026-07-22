@@ -2,7 +2,6 @@
 
 import { ReactNode, useEffect, useState } from "react";
 import type { SessionUser } from "@/lib/permissions";
-import ChangePasswordModal from "./ChangePasswordModal";
 
 type AuthGateProps = {
   children: (user: SessionUser) => ReactNode;
@@ -37,11 +36,6 @@ export default function AuthGate({ children }: AuthGateProps) {
     };
   }, []);
 
-  function handlePasswordChanged(nextUser: SessionUser) {
-    (window as Window & { AMS_USER?: SessionUser }).AMS_USER = nextUser;
-    setUser(nextUser);
-  }
-
   if (loading || !user) {
     return (
       <div className="auth-loading">
@@ -51,14 +45,5 @@ export default function AuthGate({ children }: AuthGateProps) {
     );
   }
 
-  return (
-    <>
-      {user.mustChangePassword ? (
-        <ChangePasswordModal user={user} onSuccess={handlePasswordChanged} />
-      ) : null}
-      <div className={user.mustChangePassword ? "app-blocked" : undefined}>
-        {children(user)}
-      </div>
-    </>
-  );
+  return <>{children(user)}</>;
 }

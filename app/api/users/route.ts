@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { hashPassword, requireHeadOfAudit, userToSession } from "@/lib/auth";
 import { writeAuditLog } from "@/lib/audit-log";
+import { randomToken } from "@/lib/azure-sso";
 import { loginUrlFromRequest, sendWelcomeEmail } from "@/lib/email";
-import { generateTempPassword } from "@/lib/password-utils";
 import { prisma } from "@/lib/prisma";
 import { ASSESSMENT_VIEWS, normalizeRole, normalizeSidebarAccess } from "@/lib/permissions";
 
@@ -22,6 +22,7 @@ export async function GET() {
       department: true,
       role: true,
       sidebarAccess: true,
+      photo: true,
       createdAt: true,
     },
   });
@@ -74,8 +75,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const tempPassword = generateTempPassword();
-
   const user = await prisma.user.create({
     data: {
       name,
@@ -88,15 +87,16 @@ export async function POST(request: Request) {
               (ASSESSMENT_VIEWS as readonly string[]).includes(v),
             )
           : [],
-      passwordHash: await hashPassword(tempPassword),
-      mustChangePassword: true,
+      // SSO-only: there is no local password. Store an unusable random placeholder hash so the
+      // non-null column is satisfied; it is never used for authentication.
+      passwordHash: await hashPassword(randomToken()),
+      mustChangePassword: false,
     },
   });
 
   const emailResult = await sendWelcomeEmail({
     to: email,
     name,
-    tempPassword,
     loginUrl: loginUrlFromRequest(request),
   });
 
@@ -118,9 +118,6 @@ export async function POST(request: Request) {
       user: userToSession(user),
       emailSent: emailResult.sent,
       emailError: emailResult.sent ? undefined : emailResult.error,
-      // If the welcome email could not be delivered, hand the temp password back to the
-      // Head of Audit so they can share it manually and the new user can still sign in.
-      tempPassword: emailResult.sent ? undefined : tempPassword,
     },
     { status: 201 },
   );
