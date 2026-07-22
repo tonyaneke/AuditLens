@@ -1249,26 +1249,25 @@ function viewApprovals(){
   if(!pend.length){ h+=`<div class="empty">Nothing awaiting approval. Observations raised by staff, plan completions and status changes appear here for your sign-off.</div>`; }
   else {
     h+=`<table style="margin-top:6px"><thead><tr><th>Type</th><th>Item</th><th>Requested by</th><th>Requested</th><th style="text-align:right">Decision</th></tr></thead><tbody>`+
-      pend.map(a=>`<tr>
+      pend.map(a=>`<tr class="tracker-row" onclick="modalApprovalDetails('${a.id}')" title="View details">
         <td><span class="tag">${esc(approvalKindLabel(a.kind))}</span></td>
-        <td><b><a href="#" onclick="modalApprovalDetails('${a.id}');return false" title="View details">${esc(approvalItemTitle(a))}</a></b>${a.newStatus?`<div class="hint">→ ${esc(a.newStatus)}</div>`:""}</td>
+        <td><b>${esc(approvalItemTitle(a))}</b>${a.newStatus?`<div class="hint">→ ${esc(a.newStatus)}</div>`:""}</td>
         <td>${esc(a.requestedByName||"—")}</td>
         <td>${a.requestedAt?esc(fmtDateTime(a.requestedAt)):"—"}</td>
-        <td style="text-align:right;white-space:nowrap"><button class="btn sec sm" onclick="modalApprovalDetails('${a.id}')">View</button> <button class="btn sm" onclick="approveAny('${a.id}')">Approve</button> <button class="btn ghost sm danger" onclick="rejectAny('${a.id}')">Reject</button></td>
+        <td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()"><button class="btn sm" onclick="approveAny('${a.id}')">Approve</button> <button class="btn ghost sm danger" onclick="rejectAny('${a.id}')">Reject</button></td>
       </tr>`).join("")+`</tbody></table>`;
   }
   h+=`</div>`;
   if(decided.length){
     h+=`<div class="card"><div class="seclabel">Recent decisions</div>
-      <table style="margin-top:6px"><thead><tr><th>Type</th><th>Item</th><th>Requested by</th><th>Decision</th><th>Decided by</th><th>When</th><th style="text-align:right">Details</th></tr></thead><tbody>`+
-      decided.map(a=>`<tr>
+      <table style="margin-top:6px"><thead><tr><th>Type</th><th>Item</th><th>Requested by</th><th>Decision</th><th>Decided by</th><th>When</th></tr></thead><tbody>`+
+      decided.map(a=>`<tr class="tracker-row" onclick="modalApprovalDetails('${a.id}')" title="View details">
         <td><span class="tag">${esc(approvalKindLabel(a.kind))}</span></td>
-        <td><a href="#" onclick="modalApprovalDetails('${a.id}');return false" title="View details">${esc(approvalItemTitle(a))}</a></td>
+        <td><b>${esc(approvalItemTitle(a))}</b></td>
         <td>${esc(a.requestedByName||"—")}</td>
         <td>${a.status==="approved"?`<span class="pill c-Low">Approved</span>`:`<span class="pill c-Critical">Rejected</span>`}</td>
         <td>${esc(a.decidedByName||"—")}</td>
         <td>${a.decidedAt?esc(fmtDateTime(a.decidedAt)):"—"}</td>
-        <td style="text-align:right;white-space:nowrap"><button class="btn sec sm" onclick="modalApprovalDetails('${a.id}')">View</button></td>
       </tr>`).join("")+`</tbody></table></div>`;
   }
   return h;
@@ -4613,30 +4612,49 @@ function showSimStep(){
     <div class="onboard-dots" style="margin-top:14px">${SIM_STEPS.map((_,i)=>`<span class="onboard-dot${i===_simIdx?" on":""}"></span>`).join("")}</div>`,
     `${_simIdx>0?`<button class="btn sec" onclick="_simIdx--;showSimStep()">Back</button>`:`<button class="btn sec" onclick="closeModal()">Skip</button>`}<button class="btn" onclick="${_simIdx>=SIM_STEPS.length-1?"dismissOwnerAnnounce();closeModal()":"_simIdx++;showSimStep()"}">${_simIdx>=SIM_STEPS.length-1?"Got it":"Next →"}</button>`);
 }
+function extDueSoon(f){ if(f.status==="Closed")return false; const d=looseDate(f.targetDate); if(!d)return false; const days=daysBetween(today0(),d); return days>=0 && days<=14; }
 function viewOwnerDashboard(){
   const me=window.AMS_USER||{};
-  const mine=myObsList();
-  const open=mine.filter(o=>o.status!=="Closed");
-  const overdue=open.filter(o=>isOverdueObs(o,o._r));
-  const dueSoon=open.filter(o=>{ const d=daysToClose(o,o._r); return d!=null && d>=0 && d<=14; });
-  const closed=mine.filter(o=>o.status==="Closed");
-  const attention=[...overdue,...dueSoon.filter(o=>!overdue.includes(o))];
+  // The action owner remediates both internal observations and external/regulatory findings.
+  const intMine=myObsList(), extMine=myExtList();
+  const intOpen=intMine.filter(o=>o.status!=="Closed"), extOpen=extMine.filter(f=>f.status!=="Closed");
+  const intOverdue=intOpen.filter(o=>isOverdueObs(o,o._r)), extOverdueL=extOpen.filter(extOverdue);
+  const intSoon=intOpen.filter(o=>{ const d=daysToClose(o,o._r); return d!=null && d>=0 && d<=14; });
+  const extSoon=extOpen.filter(extDueSoon);
+  const totalMine=intMine.length+extMine.length;
+  const totalOpen=intOpen.length+extOpen.length;
+  const totalOverdue=intOverdue.length+extOverdueL.length;
+  const totalClosed=totalMine-totalOpen;
+  const attention=[
+    ...intOverdue.map(o=>({kind:"Internal",o})),
+    ...intSoon.filter(o=>!intOverdue.includes(o)).map(o=>({kind:"Internal",o})),
+    ...extOverdueL.map(o=>({kind:"External",o})),
+    ...extSoon.filter(o=>!extOverdueL.includes(o)).map(o=>({kind:"External",o})),
+  ];
   let h=`<div class="dash-welcome anim-fade-in"><div class="dash-welcome-text"><h1>Welcome, ${esc((me.name||"there").split(/\s+/)[0])}</h1><p class="dash-welcome-role">${esc(me.department||"Action Owner")}</p></div><div class="spacer"></div><button class="btn" onclick="go('myobs')">My observations →</button></div>
   <div class="dash-kpis" style="grid-template-columns:repeat(4,1fr)">
-    ${kpi("accent","Assigned to me",mine.length,"remediation actions")}
-    ${kpi("warn","Open",open.length,"awaiting your action")}
-    ${kpi("warn","Overdue",overdue.length,"past expected close")}
-    ${kpi("good","Closed",closed.length,"resolved")}
+    ${kpi("accent","Assigned to me",totalMine,"internal + external")}
+    ${kpi("warn","Open",totalOpen,"awaiting your action")}
+    ${kpi("warn","Overdue",totalOverdue,"past expected close")}
+    ${kpi("good","Closed",totalClosed,"resolved")}
   </div>`;
   h+=`<div class="card"><div class="seclabel">Needs your attention</div>`;
-  if(!attention.length){ const onTrack=mine.length>0; h+=`<div class="empty"><div class="big">${onTrack?"✅":"📭"}</div>${onTrack?"Nothing overdue or due within 2 weeks — you're on track.":"No observations have been assigned to you yet.<br><br>They'll appear here once Internal Audit approves them."}</div>`; }
+  if(!attention.length){ const onTrack=totalMine>0; h+=`<div class="empty"><div class="big">${onTrack?"✅":"📭"}</div>${onTrack?"Nothing overdue or due within 2 weeks — you're on track.":"Nothing has been assigned to you yet.<br><br>Observations and external findings appear here once Internal Audit assigns them to your department."}</div>`; }
   else {
-    h+=`<table><thead><tr><th>Criticality</th><th>Observation</th><th>Audit / Area</th><th>Expected close</th><th>Status</th></tr></thead><tbody>`+
-      attention.map(o=>{ const ec=effectiveClose(o,o._r); const od=isOverdueObs(o,o._r); return `<tr class="tracker-row" onclick="go('observation',{audit:'${o._a.id}',report:'${o._r.id}',obs:'${o.id}'})" title="Open observation">
-        <td><span class="pill c-${ck(o.criticality)}">${o.criticality}</span></td>
+    h+=`<table><thead><tr><th>Type</th><th>Priority</th><th>Item</th><th>Source / Audit</th><th>Expected close</th><th>Status</th></tr></thead><tbody>`+
+      attention.map(x=>{ const o=x.o; const ext=x.kind==="External";
+        const nav=ext?`go('extfinding',{ext:'${o.id}'})`:`go('observation',{audit:'${o._a.id}',report:'${o._r.id}',obs:'${o.id}'})`;
+        const sv=EXT_SEV_HEX[o.severity]||"#64748b";
+        const prio=ext?`<span class="pill" style="background:${hx2rgba(sv,.16)};color:${sv}">${esc(o.severity||"—")}</span>`:`<span class="pill c-${ck(o.criticality)}">${esc(o.criticality)}</span>`;
+        const ctx=ext?`${esc(o.source||"—")}${o.year?" · "+esc(o.year):""}`:`${esc(o._a.name)}<div class="hint">${esc(o._a.area||"")}</div>`;
+        const ec=ext?(looseDate(o.targetDate)):(effectiveClose(o,o._r)); const od=ext?extOverdue(o):isOverdueObs(o,o._r);
+        const ecStr=ext?(o.targetDate?esc(o.targetDate):"—"):(ec?fmtDate(ec):"—");
+        return `<tr class="tracker-row" onclick="${nav}" title="Open">
+        <td><span class="tag">${x.kind}</span></td>
+        <td>${prio}</td>
         <td><b>${esc(o.title)}</b></td>
-        <td>${esc(o._a.name)}<div class="hint">${esc(o._a.area||"")}</div></td>
-        <td>${ec?fmtDate(ec):"—"}${od?` <span class="pill c-Critical">overdue</span>`:""}</td>
+        <td>${ctx}</td>
+        <td>${ecStr}${od?` <span class="pill c-Critical">overdue</span>`:""}</td>
         <td>${statusPill(o.status)}</td>
       </tr>`; }).join("")+`</tbody></table>`;
   }

@@ -910,11 +910,11 @@ textarea:focus {
   background: var(--card);
 }
 
-.obs-block.lc-Critical { background: #fdf5f6; border-color: #e8c4ca; }
-.obs-block.lc-High { background: #fef6f6; border-color: #f5c4c4; }
-.obs-block.lc-Moderate { background: #fff8f3; border-color: #f5d4b8; }
-.obs-block.lc-Low { background: #f4faf4; border-color: #c8e0c9; }
-.obs-block.lc-Improve { background: #f4f7fa; border-color: #c4d4e4; }
+.obs-block.lc-Critical { border-left: 3px solid #b00020; }
+.obs-block.lc-High { border-left: 3px solid #e8590c; }
+.obs-block.lc-Moderate { border-left: 3px solid #c9a300; }
+.obs-block.lc-Low { border-left: 3px solid #2e7d32; }
+.obs-block.lc-Improve { border-left: 3px solid #2c5f8a; }
 
 .obs-block h4 {
   margin: 0 0 4px;
@@ -3030,11 +3030,12 @@ td.timeline-cell {
   transform: translateY(-2px);
 }
 
-.obs-grid-card.lc-Critical { background: #fdf5f6; border-color: #e8c4ca; }
-.obs-grid-card.lc-High { background: #fef6f6; border-color: #f5c4c4; }
-.obs-grid-card.lc-Moderate { background: #fff8f3; border-color: #f5d4b8; }
-.obs-grid-card.lc-Low { background: #f4faf4; border-color: #c8e0c9; }
-.obs-grid-card.lc-Improve { background: #f4f7fa; border-color: #c4d4e4; }
+/* Criticality is shown by a left-border stripe only — no tinted card background. */
+.obs-grid-card.lc-Critical { border-left: 3px solid #b00020; }
+.obs-grid-card.lc-High { border-left: 3px solid #e8590c; }
+.obs-grid-card.lc-Moderate { border-left: 3px solid #c9a300; }
+.obs-grid-card.lc-Low { border-left: 3px solid #2e7d32; }
+.obs-grid-card.lc-Improve { border-left: 3px solid #2c5f8a; }
 
 .obs-grid-head {
   display: flex;
@@ -3372,11 +3373,11 @@ td.timeline-cell {
   box-shadow: var(--shadow-sm);
 }
 
-.obs-card.lc-Critical { background: #fdf5f6; border-color: #e8c4ca; }
-.obs-card.lc-High { background: #fef6f6; border-color: #f5c4c4; }
-.obs-card.lc-Moderate { background: #fff8f3; border-color: #f5d4b8; }
-.obs-card.lc-Low { background: #f4faf4; border-color: #c8e0c9; }
-.obs-card.lc-Improve { background: #f4f7fa; border-color: #c4d4e4; }
+.obs-card.lc-Critical { border-left: 3px solid #b00020; }
+.obs-card.lc-High { border-left: 3px solid #e8590c; }
+.obs-card.lc-Moderate { border-left: 3px solid #c9a300; }
+.obs-card.lc-Low { border-left: 3px solid #2e7d32; }
+.obs-card.lc-Improve { border-left: 3px solid #2c5f8a; }
 
 .obs-card-head {
   display: flex;
