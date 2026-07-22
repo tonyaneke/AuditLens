@@ -6,6 +6,7 @@ const PUBLIC_PATHS = [
   "/login",
   "/api/auth/azure",
   "/api/auth/callback",
+  "/api/auth/dev-login",
   "/api/branding",
   "/brief",
   "/api/cron",
