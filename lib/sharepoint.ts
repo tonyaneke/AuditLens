@@ -5,16 +5,30 @@
 
 const GRAPH = "https://graph.microsoft.com/v1.0";
 
+// Trim whitespace and strip a single pair of surrounding quotes so quoted .env values
+// (e.g. AZURE_AD_TENANT_ID="<guid>") don't leak quote characters into request URLs.
+function cleanEnv(v?: string): string | undefined {
+  if (v == null) return v;
+  let s = v.trim();
+  if (
+    s.length >= 2 &&
+    ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'")))
+  ) {
+    s = s.slice(1, -1).trim();
+  }
+  return s;
+}
+
 function cfg() {
   return {
-    tenant: process.env.AZURE_AD_TENANT_ID?.trim(),
-    clientId: process.env.AZURE_AD_CLIENT_ID?.trim(),
-    clientSecret: process.env.AZURE_AD_CLIENT_SECRET?.trim(),
-    host: process.env.SHAREPOINT_SITE?.trim() || "credicorpng.sharepoint.com",
-    sitePath: process.env.SHAREPOINT_SITE_PATH?.trim() || "/sites/auditlens",
+    tenant: cleanEnv(process.env.AZURE_AD_TENANT_ID),
+    clientId: cleanEnv(process.env.AZURE_AD_CLIENT_ID),
+    clientSecret: cleanEnv(process.env.AZURE_AD_CLIENT_SECRET),
+    host: cleanEnv(process.env.SHAREPOINT_SITE) || "credicorpng.sharepoint.com",
+    sitePath: cleanEnv(process.env.SHAREPOINT_SITE_PATH) || "/sites/auditlens",
     // Optional pins — skip the site/drive lookups when provided.
-    siteId: process.env.SHAREPOINT_SITE_ID?.trim(),
-    driveId: process.env.SHAREPOINT_DRIVE_ID?.trim(),
+    siteId: cleanEnv(process.env.SHAREPOINT_SITE_ID),
+    driveId: cleanEnv(process.env.SHAREPOINT_DRIVE_ID),
   };
 }
 

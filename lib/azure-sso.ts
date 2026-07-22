@@ -12,11 +12,25 @@ import type { NextRequest } from "next/server";
 // User.Read lets us read the signed-in user's own profile photo from Microsoft Graph.
 const SCOPE = "openid profile email User.Read";
 
+// Trim whitespace and strip a single pair of surrounding quotes, so values like
+// AZURE_AD_TENANT_ID="<guid>" in .env don't leak the quote characters into request URLs.
+function cleanEnv(v?: string): string | undefined {
+  if (v == null) return v;
+  let s = v.trim();
+  if (
+    s.length >= 2 &&
+    ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'")))
+  ) {
+    s = s.slice(1, -1).trim();
+  }
+  return s;
+}
+
 function cfg() {
   return {
-    tenant: process.env.AZURE_AD_TENANT_ID?.trim(),
-    clientId: process.env.AZURE_AD_CLIENT_ID?.trim(),
-    clientSecret: process.env.AZURE_AD_CLIENT_SECRET?.trim(),
+    tenant: cleanEnv(process.env.AZURE_AD_TENANT_ID),
+    clientId: cleanEnv(process.env.AZURE_AD_CLIENT_ID),
+    clientSecret: cleanEnv(process.env.AZURE_AD_CLIENT_SECRET),
   };
 }
 
