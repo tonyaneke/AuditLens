@@ -87,9 +87,10 @@ function pendingApprovalCount(){ return approvals().filter(x=>x.status==="pendin
 /* ---- Notifications + observation approval ---- */
 function notifications(){ DB.notifications=DB.notifications||[]; return DB.notifications; }
 function myNotifications(){ const me=window.AMS_USER; if(!me) return []; return notifications().filter(n=>n.userId===me.id).sort((a,b)=>String(b.at||"").localeCompare(String(a.at||""))); }
-function notify(userId,kind,text,link){ if(!userId)return; notifications().push({id:uid(),userId,kind:kind||"info",text:text||"",link:link||"",read:false,at:new Date().toISOString()}); }
+// obsId (optional) deep-links the notification to the exact observation / external finding.
+function notify(userId,kind,text,link,obsId){ if(!userId)return; notifications().push({id:uid(),userId,kind:kind||"info",text:text||"",link:link||"",obsId:obsId||"",read:false,at:new Date().toISOString()}); }
 // In-app notification AND best-effort email to the same user (so every notification also reaches their inbox).
-function notifyBoth(userId,kind,text,link,subject,body){ if(!userId) return; notify(userId,kind,text,link); const e=ownerEmailFor(userId); if(e) emailNotify([e],subject||"AuditLens notification",body||text); }
+function notifyBoth(userId,kind,text,link,subject,body,obsId){ if(!userId) return; notify(userId,kind,text,link,obsId); const e=ownerEmailFor(userId); if(e) emailNotify([e],subject||"AuditLens notification",body||text); }
 function headUsers(){ return (_directoryCache||[]).filter(u=>u.role==="head_of_audit"); }
 // A valid, deployment-agnostic link into the app. The client always knows its real origin, so email
 // CTAs point at the live host (not the server's APP_URL fallback, which may be localhost).
@@ -102,12 +103,12 @@ function notifyOwnerAssigned(o){
   if(!o) return;
   const primaryName=ownerNameFor(o.ownerUserId)||o.owner||"the primary action owner";
   if(o.ownerUserId){
-    notify(o.ownerUserId,"assigned","New action assigned to you: "+o.title,"myobs");
+    notify(o.ownerUserId,"assigned","New action assigned to you: "+o.title,"myobs",o.id);
     const e=ownerEmailFor(o.ownerUserId);
     if(e) emailNotify([e],"AuditLens — An Observation was raised against your department",`An audit observation "${o.title}" has been raised against your department and assigned to you as the primary action owner. Sign in to AuditLens to view the details, respond and close the observation.`);
   }
   if(o.secondaryOwnerUserId&&o.secondaryOwnerUserId!==o.ownerUserId){
-    notify(o.secondaryOwnerUserId,"assigned","You have oversight on: "+o.title,"myobs");
+    notify(o.secondaryOwnerUserId,"assigned","You have oversight on: "+o.title,"myobs",o.id);
     const e2=ownerEmailFor(o.secondaryOwnerUserId);
     if(e2) emailNotify([e2],"AuditLens — observation raised (oversight)",`An audit observation "${o.title}" has been raised against your department and assigned to ${primaryName}. You have oversight of the remediation — sign in to AuditLens to follow progress and add comments.`);
   }
@@ -217,9 +218,19 @@ function saveNow(){
 /* ---- Near-real-time polling: refresh when another user changes the shared workspace ---- */
 let _pollTimer=null;
 function startPolling(){ if(_pollTimer) return; _pollTimer=setInterval(pollData, 4000); }
+// True while the user is mid-input anywhere on the page (focused text field, or an inline
+// composer holding unposted text). Background refreshes must never re-render then — a
+// re-render rebuilds the DOM and silently wipes what they typed.
+function userIsComposing(){
+  const ae=document.activeElement;
+  if(ae && (ae.tagName==="TEXTAREA" || ae.tagName==="INPUT" || ae.isContentEditable)) return true;
+  const c=document.getElementById("upd_text");
+  return !!(c && c.value.trim());
+}
 async function pollData(){
   if(!_dataReady || _pendingSave) return;
   if(typeof _aiBusy!=="undefined" && _aiBusy) return;
+  if(userIsComposing()) return; // don't clobber half-typed comments/fields
   const ovEl=document.getElementById("overlay"); if(ovEl && ovEl.classList.contains("show")) return; // a modal is open — don't clobber
   try{
     const res=await fetch("/api/data"); if(!res.ok) return;
@@ -740,12 +751,58 @@ function toggleObsExpand(aid,rid,oid,ev){
   expandedObs[k]=!expandedObs[k];
   render();
 }
+let trackerRecentOpen=false;
 function trackerTabs(){
   return `<div class="row" style="margin-bottom:14px"><div class="row" style="gap:6px">
     <button class="btn ${trackerMode==="actions"?"":"sec"} sm" onclick="trackerMode='actions';render()">Open Actions</button>
-    <button class="btn ${trackerMode==="insights"?"":"sec"} sm" onclick="trackerMode='insights';render()">Insights</button></div></div>`;
+    <button class="btn ${trackerMode==="insights"?"":"sec"} sm" onclick="trackerMode='insights';render()">Insights</button></div>
+    <div class="spacer"></div>
+    ${trackerMode==="actions"?`<button class="btn ${trackerRecentOpen?"":"sec"} sm" onclick="trackerRecentOpen=!trackerRecentOpen;render()">${trackerRecentOpen?"Hide Recent Observations":"View Recent Observations"}</button>`:""}
+  </div>`;
 }
 function trackerSet(k,v){ trackerFilter[k]=v; render(); }
+function timeAgo(iso){
+  const d=new Date(iso); if(isNaN(d)) return "";
+  const s=(Date.now()-d.getTime())/1000;
+  if(s<60) return "just now";
+  const m=s/60; if(m<60) return Math.floor(m)+"m ago";
+  const hh=m/60; if(hh<24) return Math.floor(hh)+"h ago";
+  const dd=hh/24; if(dd<7) return Math.floor(dd)+"d ago";
+  return fmtDate(d);
+}
+// The latest happenings across approved observations — newly opened, action-owner responses,
+// the viewer's own posts, ready-for-closure and closures — newest first.
+function trackerRecentEvents(){
+  const me=window.AMS_USER||{};
+  const evs=[];
+  allObs().filter(obsIsApproved).forEach(o=>{
+    const ref={aid:o._a.id,rid:o._r.id,oid:o.id,title:o.title,crit:o.criticality};
+    if(o.createdAt) evs.push({at:o.createdAt,type:"opened",label:"New observation opened",...ref});
+    (o.updates||[]).forEach(u=>{
+      // Private co-owner notes stay private — only show to the people involved.
+      if(u.audience==="owner" && !(me.id&&(u.by===me.id||o.ownerUserId===me.id||o.secondaryOwnerUserId===me.id))) return;
+      const mine=!!me.id&&u.by===me.id;
+      const owner=u.role==="action_owner";
+      const label=mine?(u.kind==="progress"?"You posted a progress report":"You commented")
+        :owner?(u.kind==="progress"?"Progress report from "+(u.byName||"the action owner"):"Action owner responded")
+        :(u.byName||"A colleague")+" commented";
+      evs.push({at:u.at,type:mine?"you":owner?"owner":"comment",label,...ref});
+    });
+    if(o.ownerRectifiedAt) evs.push({at:o.ownerRectifiedAt,type:"ready",label:"Marked Ready for Closure",...ref});
+    if((o.status||"Open")==="Closed"&&o.closedDateISO) evs.push({at:o.closedDateISO,type:"closed",label:"Observation closed",...ref});
+  });
+  return evs.filter(e=>e.at).sort((a,b)=>String(b.at).localeCompare(String(a.at))).slice(0,8);
+}
+function trackerRecentHTML(){
+  const evs=trackerRecentEvents();
+  if(!evs.length) return `<div class="card" style="margin-bottom:14px"><div class="seclabel">Recent observations</div><div class="hint">No recent activity yet.</div></div>`;
+  return `<div class="card" style="margin-bottom:14px"><div class="seclabel">Recent observations</div>
+    <div class="tracker-recent">${evs.map(e=>`<div class="tracker-recent-row" onclick="go('observation',{audit:'${e.aid}',report:'${e.rid}',obs:'${e.oid}'})" title="Open observation">
+      <div class="tracker-recent-main"><b>${esc(e.label)}</b><div class="hint">${esc(e.title)}</div></div>
+      <span class="pill c-${ck(e.crit)}">${esc(e.crit||"")}</span>
+      <span class="hint" style="white-space:nowrap">${esc(timeAgo(e.at))}</span>
+    </div>`).join("")}</div></div>`;
+}
 function parseDate(s){ if(!s)return null; const d=new Date(s); return isNaN(d.getTime())?null:d; }
 function trackerBucketOf(o){ const d=daysToClose(o,o._r); return d==null?"No date":closeBucket(d); }
 function viewTracker(){
@@ -785,6 +842,7 @@ function viewTracker(){
     ${kc("overdue",kpi("warn","Overdue",overdue,"past expected close"))}
     ${kc("repeat",kpi("accent","Repeat findings",repeats,"recur from prior audits"))}
   </div>
+  ${trackerRecentOpen?trackerRecentHTML():""}
   <div class="card tracker-filters"><div class="filter-row filter-row-right">
     <div class="filter-group"><span class="filter-label">Expected close</span>
       <select class="field-select field-select-sm" onchange="trackerSet('tl',this.value)"><option value="All"${tlF==="All"?" selected":""}>All</option>${CLOSE_GROUPS.map(x=>`<option value="${esc(x)}"${tlF===x?" selected":""}>${esc(groupLabel(x))}</option>`).join("")}</select></div>
@@ -859,7 +917,7 @@ function requestStatusChange(aid,rid,oid,v){
   const o=findObs(aid,rid,oid); if(!o)return;
   if(!STATUSES.includes(v)) return;
   if((o.status||"Open")===v) return;
-  if(isHeadUser()){ applyStatusChange(o,v); cancelPendingStatusChange(oid); logAudit("obs.status_changed","Status → "+v+": "+o.title,{observationId:oid}); if(o.ownerUserId) notifyBoth(o.ownerUserId,"status",o.title+" status is now "+v,"myobs","AuditLens — status updated",`The status of "${o.title}" is now ${v}.`); save(); render(); return; }
+  if(isHeadUser()){ applyStatusChange(o,v); cancelPendingStatusChange(oid); logAudit("obs.status_changed","Status → "+v+": "+o.title,{observationId:oid}); if(o.ownerUserId) notifyBoth(o.ownerUserId,"status",o.title+" status is now "+v,"myobs","AuditLens — status updated",`The status of "${o.title}" is now ${v}.`,o.id); save(); render(); return; }
   if(pendingStatusChange(oid)){ toast("A status change for this observation is already awaiting approval."); return; }
   const u=window.AMS_USER||{};
   approvals().push({id:uid(),kind:"observation_status_change",obsId:oid,auditId:aid,reportId:rid,obsTitle:o.title,fromStatus:o.status||"Open",newStatus:v,requestedBy:u.id||"",requestedByName:u.name||"",requestedAt:new Date().toISOString(),status:"pending"});
@@ -872,7 +930,7 @@ function approveStatusChange(aid){
   const ap=approvals().find(x=>x.id===aid); if(!ap||ap.status!=="pending")return;
   const o=findObs(ap.auditId,ap.reportId,ap.obsId);
   const u=window.AMS_USER||{}; ap.status="approved"; ap.decidedBy=u.id||""; ap.decidedByName=u.name||""; ap.decidedAt=new Date().toISOString();
-  if(o){ applyStatusChange(o,ap.newStatus); if(o.raisedBy) notifyBoth(o.raisedBy,"status_approved","Status change approved: "+o.title,"tracker","AuditLens — status change approved",`Your status change for "${o.title}" was approved — it is now ${ap.newStatus}.`); if(o.ownerUserId) notifyBoth(o.ownerUserId,"status",o.title+" status is now "+ap.newStatus,"myobs","AuditLens — status updated",`The status of "${o.title}" is now ${ap.newStatus}.`); }
+  if(o){ applyStatusChange(o,ap.newStatus); if(o.raisedBy) notifyBoth(o.raisedBy,"status_approved","Status change approved: "+o.title,"tracker","AuditLens — status change approved",`Your status change for "${o.title}" was approved — it is now ${ap.newStatus}.`,o.id); if(o.ownerUserId) notifyBoth(o.ownerUserId,"status",o.title+" status is now "+ap.newStatus,"myobs","AuditLens — status updated",`The status of "${o.title}" is now ${ap.newStatus}.`,o.id); }
   logAudit("obs.status_change_approved","Approved status → "+ap.newStatus+": "+(ap.obsTitle||""),{observationId:ap.obsId});
   save(); render();
 }
@@ -880,7 +938,7 @@ function rejectStatusChange(aid){
   if(!isHeadUser()){ toast("Only the Head of Audit can reject.","error"); return; }
   const ap=approvals().find(x=>x.id===aid); if(!ap||ap.status!=="pending")return;
   const u=window.AMS_USER||{}; ap.status="rejected"; ap.decidedBy=u.id||""; ap.decidedByName=u.name||""; ap.decidedAt=new Date().toISOString();
-  const o=findObs(ap.auditId,ap.reportId,ap.obsId); if(o&&o.raisedBy) notifyBoth(o.raisedBy,"status_rejected","Status change rejected: "+o.title,"tracker","AuditLens — status change rejected",`Your status change for "${o.title}" was not approved by the Head of Audit.`);
+  const o=findObs(ap.auditId,ap.reportId,ap.obsId); if(o&&o.raisedBy) notifyBoth(o.raisedBy,"status_rejected","Status change rejected: "+o.title,"tracker","AuditLens — status change rejected",`Your status change for "${o.title}" was not approved by the Head of Audit.`,o.id);
   logAudit("obs.status_change_rejected","Rejected status change: "+(ap.obsTitle||""),{observationId:ap.obsId});
   save(); render();
 }
@@ -890,7 +948,7 @@ function requestOwnerUpdate(aid,rid,oid){
   const u=window.AMS_USER||{};
   o.updateRequestedAt=new Date().toISOString(); o.updateRequestedBy=u.name||"";
   _reqSession.add("upd:"+oid);
-  notify(o.ownerUserId,"update_request","Update requested on: "+o.title,"myobs");
+  notify(o.ownerUserId,"update_request","Update requested on: "+o.title,"myobs",o.id);
   const dept=deptById(o.departmentId); if(dept&&dept.headEmail) emailNotify([dept.headEmail],"AuditLens — update requested",`The audit team requested an update on "${o.title}". Sign in to AuditLens to respond.`);
   logAudit("obs.update_requested","Requested owner update: "+o.title,{observationId:oid});
   save(); render(); toast("Update requested from the action owner.","success");
@@ -1240,6 +1298,12 @@ function openNotif(id){
   const n=notifications().find(x=>x.id===id); if(!n) return;
   if(!n.read){ n.read=true; save(); }
   closeNotifPanel();
+  // Deep-link straight to the exact observation / external finding when the notification
+  // carries one (falls back to the generic view if it has since been deleted).
+  if(n.obsId){
+    for(const a of DB.audits){ for(const r of (a.reports||[])){ if((r.observations||[]).some(x=>x.id===n.obsId)){ go("observation",{audit:a.id,report:r.id,obs:n.obsId}); return; } } }
+    if(extList().some(f=>f.id===n.obsId)){ go("extfinding",{ext:n.obsId}); return; }
+  }
   const nav={observation:"audits",tracker:"tracker"}[n.link]||n.link;
   if(nav && canAccessView(nav)){ go(nav); } else { render(); }
 }
@@ -2897,8 +2961,8 @@ function saveExtAssign(fid){
   o.updates=o.updates||[];
   if(!o.raisedBy){ o.raisedBy=u.id||""; o.raisedByName=u.name||""; }
   if(!o.raisedAt) o.raisedAt=new Date().toISOString();
-  if(o.ownerUserId && o.ownerUserId!==prevOwner){ notify(o.ownerUserId,"assigned","New finding assigned to you: "+o.title,"myobs"); const e=ownerEmailFor(o.ownerUserId); if(e) emailNotify([e],"AuditLens — a finding was assigned to your department",`An external finding "${o.title}" has been assigned to your department. Sign in to AuditLens to respond and close.`); }
-  if(o.secondaryOwnerUserId && o.secondaryOwnerUserId!==prevSec){ notify(o.secondaryOwnerUserId,"assigned","You have oversight on: "+o.title,"myobs"); const e2=ownerEmailFor(o.secondaryOwnerUserId); if(e2) emailNotify([e2],"AuditLens — finding oversight",`You have oversight of the external finding "${o.title}".`); }
+  if(o.ownerUserId && o.ownerUserId!==prevOwner){ notify(o.ownerUserId,"assigned","New finding assigned to you: "+o.title,"myobs",o.id); const e=ownerEmailFor(o.ownerUserId); if(e) emailNotify([e],"AuditLens — a finding was assigned to your department",`An external finding "${o.title}" has been assigned to your department. Sign in to AuditLens to respond and close.`); }
+  if(o.secondaryOwnerUserId && o.secondaryOwnerUserId!==prevSec){ notify(o.secondaryOwnerUserId,"assigned","You have oversight on: "+o.title,"myobs",o.id); const e2=ownerEmailFor(o.secondaryOwnerUserId); if(e2) emailNotify([e2],"AuditLens — finding oversight",`You have oversight of the external finding "${o.title}".`); }
   logAudit("ext.assigned","Assigned owner for finding: "+o.title,{findingId:fid});
   save(); closeModal(); render(); modalSuccess(o.ownerUserId?"Owner assigned. The action owner has been notified.":"Owner cleared.");
 }
@@ -3810,20 +3874,20 @@ async function addObsUpdate(aid,rid,oid){
   if(audience==="owner"){
     // Private note between the primary and secondary owners — notify only the co-owner.
     const meId=u.id; const coId=(o.ownerUserId===meId)?o.secondaryOwnerUserId:(o.secondaryOwnerUserId===meId?o.ownerUserId:(o.ownerUserId||o.secondaryOwnerUserId));
-    if(coId && coId!==meId){ notify(coId,"update","Private note on: "+o.title,"myobs"); const e=ownerEmailFor(coId); if(e) emailNotify([e],"AuditLens — note from your co-owner",`Your co-owner posted a private note on "${o.title}".${snippet?" Note:"+snippet+".":""} Sign in to AuditLens to view.`); }
+    if(coId && coId!==meId){ notify(coId,"update","Private note on: "+o.title,"myobs",oid); const e=ownerEmailFor(coId); if(e) emailNotify([e],"AuditLens — note from your co-owner",`Your co-owner posted a private note on "${o.title}".${snippet?" Note:"+snippet+".":""} Sign in to AuditLens to view.`); }
   } else if(isActionOwner()){
     // Owner responded to Internal Audit → notify the auditor who raised it and the Head of Audit.
     o.updateRequestedAt="";
     const ids=[]; if(a&&a.leadAuditorId) ids.push(a.leadAuditorId); if(o.raisedBy) ids.push(o.raisedBy); headUsers().forEach(h=>ids.push(h.id));
-    uniq(ids).forEach(id=>notify(id,"update","Response from the action owner on: "+o.title,"observation"));
+    uniq(ids).forEach(id=>notify(id,"update","Response from the action owner on: "+o.title,"observation",oid));
     const emails=headUsers().map(h=>h.email);
     const lead=(_directoryCache||[]).find(x=>x.id===(a&&a.leadAuditorId)); if(lead&&lead.email) emails.push(lead.email);
     const raiser=(_directoryCache||[]).find(x=>x.id===o.raisedBy); if(raiser&&raiser.email) emails.push(raiser.email);
     emailNotify(uniq(emails),"AuditLens — response from the action owner",`The action owner${u.name?" ("+u.name+")":""} responded on the observation "${o.title}".${snippet?" Comment:"+snippet+".":""} Sign in to AuditLens to review and respond.`);
   } else if(o.ownerUserId){
     // Auditor / Head commented → notify the primary (and secondary) action owner.
-    notify(o.ownerUserId,"update","New comment on: "+o.title,"myobs");
-    if(o.secondaryOwnerUserId) notify(o.secondaryOwnerUserId,"update","New comment on: "+o.title,"myobs");
+    notify(o.ownerUserId,"update","New comment on: "+o.title,"myobs",oid);
+    if(o.secondaryOwnerUserId) notify(o.secondaryOwnerUserId,"update","New comment on: "+o.title,"myobs",oid);
     const emails=[]; const pe=ownerEmailFor(o.ownerUserId); if(pe) emails.push(pe); const se=ownerEmailFor(o.secondaryOwnerUserId); if(se) emails.push(se);
     emailNotify(uniq(emails),"AuditLens — new comment on your observation",`Internal Audit${u.name?" ("+u.name+")":""} posted a comment on the observation "${o.title}" raised against your department.${snippet?" Comment:"+snippet+".":""} Sign in to AuditLens to respond.`);
   }
@@ -3854,8 +3918,8 @@ function saveReassignObs(aid,rid,oid){
   o.secondaryOwnerUserId=(owner2Id&&owner2Id!==ownerId)?owner2Id:"";
   const dept2=departments().find(d=>d.headUserId===o.secondaryOwnerUserId); o.secondaryOwner=dept2?dept2.headName:"";
   if(dueEl&&dueEl.value) o.dueDate=dueEl.value;
-  if(o.ownerUserId && o.ownerUserId!==prevOwner) notifyBoth(o.ownerUserId,"assigned","Observation reassigned to you: "+o.title,"myobs","AuditLens — An Observation was assigned to your department",`The audit observation "${o.title}" has been assigned to your department as the primary action owner. Sign in to AuditLens to respond and close it.`);
-  if(o.secondaryOwnerUserId && o.secondaryOwnerUserId!==prevSec) notifyBoth(o.secondaryOwnerUserId,"assigned","You have oversight on: "+o.title,"myobs","AuditLens — observation oversight",`You now have oversight of the observation "${o.title}". Sign in to AuditLens to follow progress and add comments.`);
+  if(o.ownerUserId && o.ownerUserId!==prevOwner) notifyBoth(o.ownerUserId,"assigned","Observation reassigned to you: "+o.title,"myobs","AuditLens — An Observation was assigned to your department",`The audit observation "${o.title}" has been assigned to your department as the primary action owner. Sign in to AuditLens to respond and close it.`,o.id);
+  if(o.secondaryOwnerUserId && o.secondaryOwnerUserId!==prevSec) notifyBoth(o.secondaryOwnerUserId,"assigned","You have oversight on: "+o.title,"myobs","AuditLens — observation oversight",`You now have oversight of the observation "${o.title}". Sign in to AuditLens to follow progress and add comments.`,o.id);
   logAudit("obs.reassigned","Reassigned owner: "+o.title,{observationId:oid});
   save(); closeModal(); render(); modalSuccess("Owner reassigned. The action owner has been notified.");
 }
@@ -3889,8 +3953,8 @@ function requestProgressReport(aid,rid,oid){
   const u=window.AMS_USER||{};
   o.progressReport={by:u.id||"",byName:u.name||"",at:new Date().toISOString()};
   _reqSession.add("prog:"+oid);
-  if(o.ownerUserId) notifyBoth(o.ownerUserId,"progress","Progress report requested: "+o.title,"myobs","AuditLens — progress report requested",`Internal Audit requested a progress report on "${o.title}". Sign in to AuditLens and post your progress. This stays requested until you mark it Ready for Closure.`);
-  if(o.secondaryOwnerUserId) notify(o.secondaryOwnerUserId,"progress","Progress report requested: "+o.title,"myobs");
+  if(o.ownerUserId) notifyBoth(o.ownerUserId,"progress","Progress report requested: "+o.title,"myobs","AuditLens — progress report requested",`Internal Audit requested a progress report on "${o.title}". Sign in to AuditLens and post your progress. This stays requested until you mark it Ready for Closure.`,o.id);
+  if(o.secondaryOwnerUserId) notify(o.secondaryOwnerUserId,"progress","Progress report requested: "+o.title,"myobs",o.id);
   logAudit("obs.progress_requested","Requested progress report: "+o.title,{observationId:oid});
   save(); render(); toast("Progress report requested from the action owner.","success");
 }
@@ -3966,7 +4030,7 @@ async function finalizeReadyForClosure(aid,rid,oid,text){
   const a=audit(aid);
   // Route back to the auditor who raised it, plus the lead auditor and the Head.
   const ids=[]; if(o.raisedBy) ids.push(o.raisedBy); if(a&&a.leadAuditorId) ids.push(a.leadAuditorId); headUsers().forEach(h=>ids.push(h.id));
-  uniq(ids).forEach(id=>notify(id,"rectified",o.title+" is Ready for Closure — please verify","observation"));
+  uniq(ids).forEach(id=>notify(id,"rectified",o.title+" is Ready for Closure — please verify","observation",o.id));
   const emails=[]; const raiser=(_directoryCache||[]).find(x=>x.id===o.raisedBy); if(raiser&&raiser.email) emails.push(raiser.email);
   const lead=(_directoryCache||[]).find(x=>x.id===(a&&a.leadAuditorId)); if(lead&&lead.email) emails.push(lead.email);
   headUsers().forEach(h=>emails.push(h.email));
@@ -4022,7 +4086,7 @@ async function submitCloseObservation(aid,rid,oid){
   o.reportVerifiedBy=u.id||""; o.reportVerifiedByName=val("co_by")||u.name||""; o.reportVerifiedAt=new Date().toISOString();
   o.closureNote=val("co_note"); const cd=val("co_date"); if(cd) o.closedDateISO=cd;
   if(o.closureRejection && o.closureRejection.target==="auditor") o.closureRejection=null;
-  headUsers().forEach(h=>notify(h.id,"verify",o.title+" verified — ready for Head closure","observation"));
+  headUsers().forEach(h=>notify(h.id,"verify",o.title+" verified — ready for Head closure","observation",o.id));
   emailNotify(headUsers().map(h=>h.email),"AuditLens — ready for closure sign-off",`"${o.title}" was verified by Internal Audit and is ready for your closure sign-off.`);
   logAudit("obs.report_verified","Auditor verified & sent to Head: "+o.title,{observationId:oid});
   done(); save(); closeModal(); render(); modalSuccess("Verified and sent to Internal Audit for closure sign-off.");
@@ -4051,11 +4115,11 @@ function submitClosureReject(aid,rid,oid,target){
   const a=audit(aid);
   if(toAuditor){
     const ids=[]; if(o.raisedBy) ids.push(o.raisedBy); if(a&&a.leadAuditorId) ids.push(a.leadAuditorId);
-    uniq(ids).forEach(id=>notify(id,"rejected","Closure returned by Head: "+o.title,"observation"));
+    uniq(ids).forEach(id=>notify(id,"rejected","Closure returned by Head: "+o.title,"observation",o.id));
     const emails=[]; const raiser=(_directoryCache||[]).find(x=>x.id===o.raisedBy); if(raiser&&raiser.email) emails.push(raiser.email); const lead=(_directoryCache||[]).find(x=>x.id===(a&&a.leadAuditorId)); if(lead&&lead.email) emails.push(lead.email);
     emailNotify(uniq(emails),"AuditLens — closure returned by the Head of Audit",`The Head of Audit returned "${o.title}" for further work before closure. Note: ${note}`);
   } else {
-    if(o.ownerUserId) notify(o.ownerUserId,"escalated","Sent back for more work: "+o.title,"myobs");
+    if(o.ownerUserId) notify(o.ownerUserId,"escalated","Sent back for more work: "+o.title,"myobs",o.id);
     const e=ownerEmailFor(o.ownerUserId); if(e) emailNotify([e],"AuditLens — observation returned to your department",`The Head of Audit sent "${o.title}" back to your department for further work. Note: ${note} Sign in to respond and mark it Ready for Closure again.`);
   }
   logAudit("obs.closure_"+(toAuditor?"rejected":"escalated"),(toAuditor?"Rejected to auditor: ":"Escalated to owner: ")+o.title,{observationId:oid});
@@ -4088,9 +4152,9 @@ async function headVerifyClose(aid,rid,oid){
   o.verifiedBy=o.verifiedBy||o.reportVerifiedByName||u.name||"";
   o.closedDateISO=o.closedDateISO||isoNow(); o.closureDate=o.closedDateISO;
   o.status="Closed"; o.closureRejection=null;
-  if(o.ownerUserId) notify(o.ownerUserId,"closed",o.title+" has been closed","myobs");
-  if(o.secondaryOwnerUserId) notify(o.secondaryOwnerUserId,"closed",o.title+" has been closed","myobs");
-  if(o.raisedBy) notify(o.raisedBy,"closed",o.title+" has been closed","audits");
+  if(o.ownerUserId) notify(o.ownerUserId,"closed",o.title+" has been closed","myobs",o.id);
+  if(o.secondaryOwnerUserId) notify(o.secondaryOwnerUserId,"closed",o.title+" has been closed","myobs",o.id);
+  if(o.raisedBy) notify(o.raisedBy,"closed",o.title+" has been closed","audits",o.id);
   const emails=[]; const pe=ownerEmailFor(o.ownerUserId); if(pe) emails.push(pe); const se=ownerEmailFor(o.secondaryOwnerUserId); if(se) emails.push(se); const raiser=(_directoryCache||[]).find(x=>x.id===o.raisedBy); if(raiser&&raiser.email) emails.push(raiser.email);
   emailNotify(uniq(emails),"AuditLens — observation closed",`The observation "${o.title}" has been verified and closed by the Head of Audit.`);
   logAudit("obs.closed","Head verified & closed: "+o.title,{observationId:oid});
@@ -4135,7 +4199,7 @@ function obsRemediationHTML(o,a,r){
   const updates=obsUpdates(o).slice().sort((x,y)=>String(y.at||"").localeCompare(String(x.at||"")));
   let actions="";
   if(!closed && !withdrawn){
-    if((primary||secondary) && (!wStage||wStage==="declined"||wStage==="rejected")) actions+=`<button class="btn ghost sm" onclick="modalRequestReview('${a.id}','${r.id}','${o.id}')">Request review (deem invalid)</button>`;
+    if((primary||secondary) && (!wStage||wStage==="declined"||wStage==="rejected")) actions+=`<button class="btn sm" onclick="modalRequestReview('${a.id}','${r.id}','${o.id}')">Request review</button>`;
     if((canVerify||head) && wStage==="owner_requested"){ actions+=`<button class="btn sm" onclick="forwardWithdrawal('${a.id}','${r.id}','${o.id}')">Forward for withdrawal</button><button class="btn sec sm" onclick="declineReview('${a.id}','${r.id}','${o.id}')">Decline request</button>`; }
   }
   if(!closed && !withdrawn){
@@ -5619,7 +5683,7 @@ function approveObservation(aid){
   const ap=approvals().find(x=>x.id===aid); if(!ap||ap.status!=="pending")return;
   const r=report(audit(ap.auditId),ap.reportId); const o=r&&r.observations.find(x=>x.id===ap.obsId);
   const u=window.AMS_USER||{}; ap.status="approved"; ap.decidedBy=u.id||""; ap.decidedByName=u.name||""; ap.decidedAt=new Date().toISOString();
-  if(o){ o.obsApproval="approved"; notifyOwnerAssigned(o); if(o.raisedBy) notifyBoth(o.raisedBy,"obs_approved","Approved: "+o.title,"audits","AuditLens — observation approved",`Your observation "${o.title}" was approved by the Head of Audit and the action owner has been notified.`); }
+  if(o){ o.obsApproval="approved"; notifyOwnerAssigned(o); if(o.raisedBy) notifyBoth(o.raisedBy,"obs_approved","Approved: "+o.title,"audits","AuditLens — observation approved",`Your observation "${o.title}" was approved by the Head of Audit and the action owner has been notified.`,o.id); }
   logAudit("obs.approved","Approved observation: "+(ap.obsTitle||""),{observationId:ap.obsId});
   save(); render();
 }
@@ -5628,7 +5692,7 @@ function rejectObservation(aid){
   const ap=approvals().find(x=>x.id===aid); if(!ap||ap.status!=="pending")return;
   const r=report(audit(ap.auditId),ap.reportId); const o=r&&r.observations.find(x=>x.id===ap.obsId);
   const u=window.AMS_USER||{}; ap.status="rejected"; ap.decidedBy=u.id||""; ap.decidedByName=u.name||""; ap.decidedAt=new Date().toISOString();
-  if(o){ o.obsApproval="rejected"; if(o.raisedBy) notifyBoth(o.raisedBy,"obs_rejected","Rejected: "+o.title,"audits","AuditLens — observation not approved",`Your observation "${o.title}" was not approved by the Head of Audit.`); }
+  if(o){ o.obsApproval="rejected"; if(o.raisedBy) notifyBoth(o.raisedBy,"obs_rejected","Rejected: "+o.title,"audits","AuditLens — observation not approved",`Your observation "${o.title}" was not approved by the Head of Audit.`,o.id); }
   logAudit("obs.rejected","Rejected observation: "+(ap.obsTitle||""),{observationId:ap.obsId});
   save(); render();
 }
@@ -5638,7 +5702,7 @@ function approveUpdate(aid){
   const r=report(audit(ap.auditId),ap.reportId); const o=r&&r.observations.find(x=>x.id===ap.obsId);
   const u=window.AMS_USER||{}; ap.status="approved"; ap.decidedBy=u.id||""; ap.decidedByName=u.name||""; ap.decidedAt=new Date().toISOString();
   if(o && ap.changes){ const nb=ap.changes; stampClosed(o,nb.status||o.status); Object.assign(o,nb); if((nb.status||o.status)==="Closed" && nb.closedDateISO) o.closedDateISO=nb.closedDateISO; }
-  if(ap.requestedBy) notifyBoth(ap.requestedBy,"obs_update_approved","Edit approved: "+(ap.obsTitle||""),"audits","AuditLens — edit approved",`Your proposed edit to "${ap.obsTitle||"an observation"}" was approved by the Head of Audit and applied.`);
+  if(ap.requestedBy) notifyBoth(ap.requestedBy,"obs_update_approved","Edit approved: "+(ap.obsTitle||""),"audits","AuditLens — edit approved",`Your proposed edit to "${ap.obsTitle||"an observation"}" was approved by the Head of Audit and applied.`,ap.obsId);
   logAudit("obs.update_approved","Approved edit to observation: "+(ap.obsTitle||""),{observationId:ap.obsId});
   save(); render();
 }
@@ -5646,7 +5710,7 @@ function rejectUpdate(aid){
   if(!isHeadUser()){ toast("Only the Head of Audit can reject.","error"); return; }
   const ap=approvals().find(x=>x.id===aid); if(!ap||ap.status!=="pending")return;
   const u=window.AMS_USER||{}; ap.status="rejected"; ap.decidedBy=u.id||""; ap.decidedByName=u.name||""; ap.decidedAt=new Date().toISOString();
-  if(ap.requestedBy) notifyBoth(ap.requestedBy,"obs_update_rejected","Edit not approved: "+(ap.obsTitle||""),"audits","AuditLens — edit not approved",`Your proposed edit to "${ap.obsTitle||"an observation"}" was not approved by the Head of Audit.`);
+  if(ap.requestedBy) notifyBoth(ap.requestedBy,"obs_update_rejected","Edit not approved: "+(ap.obsTitle||""),"audits","AuditLens — edit not approved",`Your proposed edit to "${ap.obsTitle||"an observation"}" was not approved by the Head of Audit.`,ap.obsId);
   logAudit("obs.update_rejected","Rejected edit to observation: "+(ap.obsTitle||""),{observationId:ap.obsId});
   save(); render();
 }
@@ -5664,7 +5728,7 @@ function rejectDelete(aid){
   if(!isHeadUser()){ toast("Only the Head of Audit can reject.","error"); return; }
   const ap=approvals().find(x=>x.id===aid); if(!ap||ap.status!=="pending")return;
   const u=window.AMS_USER||{}; ap.status="rejected"; ap.decidedBy=u.id||""; ap.decidedByName=u.name||""; ap.decidedAt=new Date().toISOString();
-  if(ap.requestedBy) notifyBoth(ap.requestedBy,"obs_delete_rejected","Deletion not approved: "+(ap.obsTitle||""),"audits","AuditLens — deletion not approved",`Your request to delete "${ap.obsTitle||"an observation"}" was not approved by the Head of Audit.`);
+  if(ap.requestedBy) notifyBoth(ap.requestedBy,"obs_delete_rejected","Deletion not approved: "+(ap.obsTitle||""),"audits","AuditLens — deletion not approved",`Your request to delete "${ap.obsTitle||"an observation"}" was not approved by the Head of Audit.`,ap.obsId);
   logAudit("obs.delete_rejected","Rejected deletion of observation: "+(ap.obsTitle||""),{observationId:ap.obsId});
   save(); render();
 }
@@ -5693,7 +5757,7 @@ function submitReviewRequest(aid,rid,oid){
   o.withdrawal={stage:"owner_requested",ownerReason:reason,ownerBy:u.id||"",ownerByName:u.name||"",ownerAt:new Date().toISOString()};
   // Notify the auditor who raised it, the lead auditor and the Head(s) of Audit.
   const a=audit(aid); const ids=[]; if(o.raisedBy) ids.push(o.raisedBy); if(a&&a.leadAuditorId) ids.push(a.leadAuditorId); headUsers().forEach(h=>ids.push(h.id));
-  uniq(ids).forEach(id=>notify(id,"review_requested","Review requested (deemed invalid): "+o.title,"observation"));
+  uniq(ids).forEach(id=>notify(id,"review_requested","Review requested (deemed invalid): "+o.title,"observation",o.id));
   const emails=uniq([...headUsers().map(h=>h.email), ...(a&&a.leadAuditorId?[dirEmail(a.leadAuditorId)]:[]), dirEmail(o.raisedBy)].filter(Boolean));
   emailNotify(emails,"AuditLens — observation review requested",`The action owner${u.name?" ("+u.name+")":""} has requested a review of the observation "${o.title}", stating it may not be valid.\n\nReason: ${reason}\n\nSign in to AuditLens to review and, if appropriate, forward it to the Head of Audit.`,linkFor("observation"));
   logAudit("obs.review_requested","Owner requested review of observation: "+o.title,{auditId:aid,reportId:rid,observationId:oid});
@@ -5736,7 +5800,7 @@ function doDeclineReview(aid,rid,oid){
   const u=window.AMS_USER||{}; const reason=val("dcl_reason").trim();
   const ownerId=o.ownerUserId;
   o.withdrawal=Object.assign({},o.withdrawal,{stage:"declined",declinedBy:u.id||"",declinedByName:u.name||"",declinedAt:new Date().toISOString(),declineReason:reason});
-  if(ownerId) notifyBoth(ownerId,"review_declined","Review request declined: "+o.title,"myobs","AuditLens — review request declined",`Your request to review the observation "${o.title}" was declined by Internal Audit.${reason?"\n\nReason: "+reason:""}\n\nThe observation remains active — please continue remediation.`);
+  if(ownerId) notifyBoth(ownerId,"review_declined","Review request declined: "+o.title,"myobs","AuditLens — review request declined",`Your request to review the observation "${o.title}" was declined by Internal Audit.${reason?"\n\nReason: "+reason:""}\n\nThe observation remains active — please continue remediation.`,o.id);
   logAudit("obs.review_declined","Declined review request: "+o.title,{auditId:aid,reportId:rid,observationId:oid});
   save(); closeModal(); render();
   toast("Request declined and the owner notified.","success");
@@ -5766,10 +5830,10 @@ function finalizeWithdraw(aid,decision){
     if(approve){ o.withdrawn=true; o.status="Withdrawn"; o.withdrawnAt=new Date().toISOString(); }
     const ownerId=o.ownerUserId;
     if(ownerId){
-      if(approve) notifyBoth(ownerId,"withdrawn","Observation withdrawn: "+o.title,"myobs","AuditLens — observation withdrawn",`Following your review request, the Head of Audit has withdrawn the observation "${o.title}". It is no longer active.${reason?"\n\nNote: "+reason:""}`);
-      else notifyBoth(ownerId,"withdraw_rejected","Withdrawal not approved: "+o.title,"myobs","AuditLens — observation still stands",`The Head of Audit did not approve withdrawing the observation "${o.title}". It remains active.\n\nReason: ${reason}\n\nSign in to AuditLens to continue remediation.`);
+      if(approve) notifyBoth(ownerId,"withdrawn","Observation withdrawn: "+o.title,"myobs","AuditLens — observation withdrawn",`Following your review request, the Head of Audit has withdrawn the observation "${o.title}". It is no longer active.${reason?"\n\nNote: "+reason:""}`,o.id);
+      else notifyBoth(ownerId,"withdraw_rejected","Withdrawal not approved: "+o.title,"myobs","AuditLens — observation still stands",`The Head of Audit did not approve withdrawing the observation "${o.title}". It remains active.\n\nReason: ${reason}\n\nSign in to AuditLens to continue remediation.`,o.id);
     }
-    if(o.withdrawal.forwardedBy && o.withdrawal.forwardedBy!==u.id) notify(o.withdrawal.forwardedBy,approve?"withdrawn":"withdraw_rejected",(approve?"Withdrawal approved: ":"Withdrawal rejected: ")+o.title,"observation");
+    if(o.withdrawal.forwardedBy && o.withdrawal.forwardedBy!==u.id) notify(o.withdrawal.forwardedBy,approve?"withdrawn":"withdraw_rejected",(approve?"Withdrawal approved: ":"Withdrawal rejected: ")+o.title,"observation",o.id);
   }
   logAudit(approve?"obs.withdrawn":"obs.withdraw_rejected",(approve?"Withdrew observation: ":"Rejected withdrawal: ")+(ap.obsTitle||""),{observationId:ap.obsId});
   save(); closeModal(); render();

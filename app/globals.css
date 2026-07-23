@@ -4392,6 +4392,24 @@ body.ai-busy .ai-generate-btn:not(:disabled) {
 ol.rt-list { margin: 6px 0; padding-left: 22px; }
 ol.rt-list li { margin: 4px 0; }
 
+/* ---- Remediation tracker: recent activity strip ---- */
+.tracker-recent { display: flex; flex-direction: column; margin-top: 6px; }
+.tracker-recent-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 9px 8px; border-top: 1px solid var(--line);
+  cursor: pointer; border-radius: 8px;
+  transition: background 0.12s ease-out;
+}
+.tracker-recent-row:first-child { border-top: none; }
+.tracker-recent-row:hover { background: #f4f8f6; }
+.tracker-recent-ico {
+  width: 28px; height: 28px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 13px; flex-shrink: 0;
+}
+.tracker-recent-main { flex: 1; min-width: 0; }
+.tracker-recent-main b { font-size: 13px; }
+
 /* ---- File upload progress bar ---- */
 .upload-progress { margin-top: 10px; }
 .upload-progress-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 12.5px; color: var(--muted, #64748b); margin-bottom: 4px; gap: 8px; }

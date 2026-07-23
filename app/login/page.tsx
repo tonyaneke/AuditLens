@@ -109,9 +109,7 @@ export default function LoginPage() {
               </svg>
               Sign in with Microsoft
             </a>
-            <p className="login-sub" style={{ marginTop: 16, fontSize: 12.5 }}>
-              Access is limited to accounts your Head of Audit has added to AuditLens.
-            </p>
+            
           </>
         )}
       </div>
