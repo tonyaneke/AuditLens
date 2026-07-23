@@ -172,13 +172,12 @@ a {
   flex: 1;
 }
 
+/* Never truncate — long names wrap onto a second line. */
 .sidebar-profile-name {
   font-size: 13px;
   font-weight: 600;
   color: #fff;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: break-word;
 }
 
 .sidebar-profile-role {
@@ -361,7 +360,7 @@ a {
   border-bottom: 1px solid var(--line);
   padding: 18px 28px;
   display: grid;
-  grid-template-columns: 1fr minmax(200px, 420px) auto;
+  grid-template-columns: minmax(170px, 1fr) minmax(200px, 420px) auto;
   align-items: center;
   gap: 16px;
   position: sticky;
@@ -385,10 +384,11 @@ a {
   min-width: 0;
 }
 
+/* Titles must always be fully readable — wrap onto a second line instead of
+   ellipsis-truncating (which could squeeze "Fraud Risk Assessment" down to "F…"). */
 .topbar-title-wrap h2 {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: break-word;
 }
 
 .topbar-center {

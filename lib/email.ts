@@ -173,7 +173,7 @@ export function buildBriefEmailHtml(s: BriefSnapshot, link: string) {
         <div style="font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#0d5a47;margin-bottom:8px">Matters requiring EXCO attention</div>
         <ol style="margin:0;padding-left:20px;color:#19302a;font-size:13.5px;line-height:1.55">${matters.map((t) => `<li style="margin:7px 0">${escapeHtml(t)}</li>`).join("")}</ol>
       </div>
-      <p style="font-size:13px;color:#334155;margin:16px 4px 4px">The full Executive Assurance Brief — critical &amp; high-risk issues, emerging risk themes, unmitigated fraud risks and regulatory exposure — is available at the link below. Open it in your web browser to view the complete brief.</p>
+      <p style="font-size:13px;color:#334155;margin:16px 4px 4px">The full Executive Assurance Brief — critical &amp; high-risk issues, recurring risk themes, unmitigated fraud risks and regulatory exposure — is available at the link below. Open it in your web browser to view the complete brief.</p>
       <div style="margin:10px 4px 4px"><a href="${escapeHtml(link)}" style="display:inline-block;background:#1f8a5b;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600;font-size:14px">Open the Executive Assurance Brief</a></div>
       <p style="font-size:11px;color:#94a3b8;margin:16px 4px 0;border-top:1px solid #e2e8f0;padding-top:10px">Prepared by Internal Audit, ${escapeHtml(org)} · ${escapeHtml(period)} · Strictly confidential — for the Managing Director &amp; Executive Committee.</p>
     </div>

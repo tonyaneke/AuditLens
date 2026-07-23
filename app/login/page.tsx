@@ -12,7 +12,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   sso_no_email: "Your Microsoft account didn't return an email address. Contact your administrator.",
   sso_unconfigured: "Single sign-on isn't configured yet. Contact your administrator.",
   deactivated:
-    "Your AuditLens account has been deactivated. Contact the Head of Audit if you believe this is a mistake.",
+    "Your AuditLens account is inactive. Contact the Head of Audit if you believe this is a mistake.",
 };
 
 export default function LoginPage() {

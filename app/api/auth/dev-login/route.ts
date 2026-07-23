@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
   }
   if (user.active === false) {
     return NextResponse.json(
-      { error: "This account has been deactivated. Contact the Head of Audit." },
+      { error: "This account is inactive. Contact the Head of Audit." },
       { status: 403 },
     );
   }

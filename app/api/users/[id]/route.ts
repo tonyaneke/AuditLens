@@ -120,7 +120,7 @@ export async function PATCH(request: Request, { params }: Params) {
   }
   if (id === session.id && !body.active) {
     return NextResponse.json(
-      { error: "You cannot deactivate your own account." },
+      { error: "You cannot make your own account inactive." },
       { status: 400 },
     );
   }
@@ -134,7 +134,7 @@ export async function PATCH(request: Request, { params }: Params) {
     user: session,
     action: body.active ? "user.reactivated" : "user.deactivated",
     category: "user",
-    summary: `${body.active ? "Reactivated" : "Deactivated"} user ${user.name} (${user.email})`,
+    summary: `Marked user ${user.name} (${user.email}) as ${body.active ? "active" : "inactive"}`,
     metadata: { targetUserId: user.id, targetEmail: user.email, role: user.role },
   });
 

@@ -283,9 +283,21 @@ function updFilePicked(inp){ const el=document.getElementById("upd_fileName"); i
 function uiConfirm(message,onConfirm,opts){
   opts=opts||{};
   openModal(opts.title||"Please confirm",`<div style="font-size:14px;color:var(--ink);line-height:1.55">${esc(message)}</div>`,
-    `<button class="btn sec" onclick="closeModal()">${esc(opts.cancelLabel||"Cancel")}</button><button class="btn ${opts.danger?"danger":""}" id="uiConfirmBtn">${esc(opts.confirmLabel||"Confirm")}</button>`);
+    `<button class="btn sec" id="uiCancelBtn" onclick="closeModal()">${esc(opts.cancelLabel||"Cancel")}</button><button class="btn ${opts.danger?"danger":""}" id="uiConfirmBtn">${esc(opts.confirmLabel||"Confirm")}</button>`);
   const b=document.getElementById("uiConfirmBtn");
-  if(b) b.onclick=()=>{ closeModal(); try{ onConfirm&&onConfirm(); }catch(e){} };
+  // The dialog stays open with a button loader until the operation — including the server
+  // write — has actually finished; only then does it close.
+  if(b) b.onclick=async ()=>{
+    const done=btnBusy(b,opts.busyLabel!==undefined?opts.busyLabel:"Please wait…");
+    const cancel=document.getElementById("uiCancelBtn"); if(cancel) cancel.disabled=true;
+    try{
+      await (onConfirm&&onConfirm());
+      // Flush the debounced workspace save so the change is confirmed on the server.
+      if(typeof _pendingSave!=="undefined" && _pendingSave){ clearTimeout(_saveTimer); await saveNow().catch(()=>{}); }
+    }catch(e){}
+    done(); if(cancel) cancel.disabled=false;
+    closeModal();
+  };
 }
 function audit(id){ return DB.audits.find(a=>a.id===id); }
 function report(a,id){ return a? a.reports.find(r=>r.id===id):null; }
@@ -321,7 +333,7 @@ const ICON_TRASH=`<svg viewBox="0 0 24 24" width="14" height="14" fill="none" st
 function iconBtn(fn,icon,title,danger){ return `<button type="button" class="btn-icon-action${danger?" danger":""}" title="${esc(title)}" onclick="${fn}">${icon}</button>`; }
 function delBtn(fn,title){ return iconBtn(fn,ICON_TRASH,title||"Delete",true); }
 function pageTitleFor(v){
-  const map={dashboard:"Dashboard",audits:"Audits & Reports",tracker:"Remediation Tracker",auditra:"Audit Risk Assessment",fraud:"Fraud Risk",process:"Process Review",external:"External Findings",iasa:"IA Self-Assessment",approvals:"Approvals",exco:"Executive Assurance Brief",myobs:"Internal Observations",myext:"External Observations",guide:"How to use AuditLens",settings:"Settings",auditlog:"Audit log"};
+  const map={dashboard:"Dashboard",audits:"Audits & Reports",tracker:"Remediation Tracker",auditra:"Audit Risk Assessment",fraud:"Fraud Risk Assessment",process:"Process Review",external:"External Findings",iasa:"IA Self-Assessment",approvals:"Approvals",exco:"Executive Assurance Brief",myobs:"Internal Observations",myext:"External Observations",guide:"How to use AuditLens",settings:"Settings",auditlog:"Audit log"};
   return map[v]||"AuditLens";
 }
 function planYearOptions(selected){
@@ -412,7 +424,7 @@ function render(){
   else if(view==="settings"){
     if(!canAccessView("settings")){ go("dashboard"); return; }
     T.textContent=pageTitleFor("settings");
-    A.innerHTML=`<button class="btn sec sm" onclick="exportData()">⤓ Download backup</button><label class="btn sec sm" style="display:inline-block;margin:0">⤒ Import backup<input type="file" accept="application/json" style="display:none" onchange="importData(event)"></label>`;
+    A.innerHTML="";
     C.innerHTML=viewSettings();
   }
   else if(view==="auditlog"){
@@ -2035,7 +2047,7 @@ function modalProcMeta(id){
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveProcMeta('${id}')">Save</button>`);
 }
 function saveProcMeta(id){ const p=procList().find(x=>x.id===id); if(!p)return; p.unit=val("pm_unit"); p.sopTitle=val("pm_sop"); p.period=val("pm_period"); p.overallRating=val("pm_rating"); p.summary=val("pm_sum"); p.keyRecommendations=val("pm_recs").split("\n").map(s=>s.trim()).filter(Boolean); save(); closeModal(); render(); }
-function delProc(id){ uiConfirm("Delete this process review?",()=>{ const p=procList().find(x=>x.id===id); DB.processReviews=procList().filter(x=>x.id!==id); curProc=null; logAudit("process.review_deleted","Deleted process review: "+((p&&(p.name||p.title))||""),{processReviewId:id}); save(); closeModal(); render(); },{danger:true,confirmLabel:"Delete"}); }
+function delProc(id){ uiConfirm("Delete this process review?",()=>{ const p=procList().find(x=>x.id===id); DB.processReviews=procList().filter(x=>x.id!==id); curProc=null; logAudit("process.review_deleted","Deleted process review: "+((p&&(p.name||p.title))||""),{processReviewId:id}); save(); render(); },{danger:true,confirmLabel:"Delete"}); }
 function modalProcFinding(pid,fid){
   const p=procList().find(x=>x.id===pid); if(!p)return; p.findings=p.findings||[];
   const x=fid?p.findings.find(y=>y.id===fid):{category:"Control gap",title:"",detail:"",recommendation:"",severity:"Medium"};
@@ -2251,15 +2263,16 @@ function iasaNextDue(){
 }
 function iasaTopActions(){
   if(iasaMode==="overview"){
-    return `<button class="btn sec sm" onclick="startIASA(false)">+ New assessment</button><button class="btn sm dark ai-generate-btn" onclick="startIASA(true)">Generate assessment</button>`;
+    return `<button class="btn sm" onclick="startIASA()">+ New assessment</button>`;
   }
   const cur=iaSACurrent();
   return `<button class="btn ghost sm" onclick="iasaMode='overview';render()">← All assessments</button>`+
     `<button class="btn sec sm" onclick="exportIASA()">⤓ Word</button>`+
-    (cur&&cur.status!=="completed"?`<button class="btn sm dark ai-generate-btn" onclick="modalIASAPrompt()">Generate</button><button class="btn sm" onclick="completeIASA()">✓ Mark complete</button>`:(cur?`<button class="btn sec sm" onclick="reopenIASA('${cur.id}')">Reopen</button>`:""));
+    (cur&&cur.status!=="completed"?`<button class="btn sm dark ai-generate-btn" onclick="generateIASA()">Generate</button><button class="btn sm" onclick="completeIASA()">✓ Mark complete</button>`:(cur?`<button class="btn sec sm" onclick="reopenIASA('${cur.id}')">Reopen</button>`:""));
 }
-// Start a fresh assessment for the next due period, then optionally open the AI generator.
-function startIASA(ai){ newIASA(iasaPeriodForDate(new Date())); iasaMode="assessment"; save(); render(); if(ai) modalIASAPrompt(); }
+// Start a fresh, blank assessment for the current period — never auto-filled; the user
+// runs Generate from inside the assessment if they want AI documentation.
+function startIASA(){ newIASA(iasaPeriodForDate(new Date())); iasaMode="assessment"; save(); render(); }
 function allPrinc(){ return GIAS.flatMap(g=>g.ps.map(p=>({n:p.n,t:p.t,d:g.d,dt:g.dt,s:p.s}))); }
 function allPrinciples(){ return allPrinc().map(p=>({n:p.n,t:p.t,d:p.d+" · "+p.dt})); } // legacy
 function allStandards(){ return GIAS.flatMap(g=>g.ps.flatMap(p=>p.s.map(([num,title])=>({num,title,pn:p.n,pt:p.t,d:g.d,dt:g.dt})))); }
@@ -2286,12 +2299,15 @@ function overallOpinion(){
   if(prs.filter(c=>c==="Does Not Conform").length>=3) return "Does Not Conform";
   return "Partially Conforms";
 }
+// External quality assessment cycle: the NCCG requires an EQA at least every 3 years
+// (stricter than IIA Std 8.4's 5-year minimum) — the 3-year rule governs readiness here.
+const EQA_CYCLE_YEARS=3;
 function eqaDue(){
   const sa=iaSA(); const m=sa.lastEQA&&String(sa.lastEQA).match(/\d{4}/); const yr=m?+m[0]:null;
   const now=(DB.planYear&&+DB.planYear)||(new Date()).getFullYear();
-  if(!yr) return {txt:"Not on record",sub:"5-yearly EQA required (Std 8.4)",tone:"mid"};
-  const due=yr+5, left=due-now;
-  if(left<=0) return {txt:"Due / overdue",sub:"Last EQA "+yr+" · 5-yr cycle reached",tone:"bad"};
+  if(!yr) return {txt:"Not on record",sub:EQA_CYCLE_YEARS+"-yearly EQA required (NCCG)",tone:"mid"};
+  const due=yr+EQA_CYCLE_YEARS, left=due-now;
+  if(left<=0) return {txt:"Due / overdue",sub:"Last EQA "+yr+" · "+EQA_CYCLE_YEARS+"-yr cycle reached",tone:"bad"};
   return {txt:"Due "+due,sub:left+" yr(s) left · last EQA "+yr,tone:left<=1?"mid":"good"};
 }
 function iasaStats(){
@@ -2332,24 +2348,10 @@ function iasaOverview(){
     ${iasaKpi("base","In progress",inprog.length,"awaiting completion")}
     ${iasaKpi(dueTone==="bad"?"bad":"good","Next assessment",nd.overdue?"Due now":(nd.due?fmtDate(nd.due):"Due now"),"6-monthly cadence")}
   </div>`;
-  // Due / to-be-done card
-  h+=`<div class="card iasa-due-card anim-fade-in" style="border-left:4px solid ${nd.overdue?"var(--crit)":"var(--accent)"}">
-    <div class="row" style="align-items:center;gap:12px;flex-wrap:wrap">
-      <div style="flex:1;min-width:200px">
-        <div class="seclabel" style="margin:0">${nd.overdue?"Self-assessment due":"Next self-assessment"}</div>
-        <div style="font-size:16px;font-weight:700;margin-top:2px">${esc(nd.txt)}</div>
-        <div class="hint">${esc(nd.sub)}</div>
-      </div>
-      <div class="row" style="gap:8px">
-        <button class="btn sec sm" onclick="startIASA(false)">Start blank</button>
-        <button class="btn dark sm ai-generate-btn" onclick="startIASA(true)">Generate assessment</button>
-      </div>
-    </div>
-  </div>`;
   // Assessment cards
   h+=`<div class="seclabel" style="margin:16px 0 8px">Assessments</div>`;
   if(!all.length){
-    h+=`<div class="card"><div class="empty"><div class="big">⚖</div>No self-assessments yet.<br>Run one every 6 months to track conformance with the Global Internal Audit Standards.<br><br><button class="btn dark" onclick="startIASA(true)">Generate first assessment</button></div></div>`;
+    h+=`<div class="card"><div class="empty"><div class="big">⚖</div>No self-assessments yet.<br>Run one every 6 months to track conformance with the Global Internal Audit Standards.<br><br><button class="btn dark" onclick="startIASA()">Start first assessment</button></div></div>`;
     return h;
   }
   h+=`<div class="iasa-card-grid">`+all.map(s=>{
@@ -2393,33 +2395,45 @@ function iasaAssessment(){
     ${iasaKpi("base","Avg maturity",st.avgMat?st.avgMat.toFixed(1)+" / 5":"—","Across principles")}
     ${iasaKpi(eq.tone,"External QA",eq.txt,eq.sub)}
   </div>`;
+  // ---- Section 1: standard-level assessment (all 52 standards, grouped by domain & principle).
+  // Rows are clickable → the standard modal; the conformance select stops propagation. ----
+  h+=`<div class="seclabel anim-fade-in" style="margin:18px 0 10px;font-size:15px">Assessment by Standard</div>`;
   GIAS.forEach(g=>{
     h+=`<div class="card iasa-domain-card anim-fade-in"><div class="iasa-domain-head"><span class="iasa-domain-num">Domain ${g.d}</span><span class="iasa-domain-title">${esc(g.dt)}</span></div>`;
     g.ps.forEach(p=>{
-      const roll=rollupPrinc(p.n); const rc=CONF_HEX[roll]||"#94a3b8"; const mat=princMaturity(p.n); const it=iaSA().items[p.n]||{};
+      const roll=rollupPrinc(p.n); const rc=CONF_HEX[roll]||"#94a3b8";
       h+=`<div class="iasa-principle">
         <div class="iasa-principle-head">
           <div class="iasa-principle-title"><span class="iasa-principle-num">P${p.n}</span><span>${esc(p.t)}</span></div>
           <span class="pill iasa-roll-pill" style="background:${rc}22;color:${rc}">${roll}</span>
-          <div class="spacer"></div>
-          <label class="iasa-maturity-label">Maturity
-            <select class="field-select field-select-sm" onchange="iasaSet(${p.n},'maturity',this.value)">${MATURITY.map((m,i)=>`<option value="${i}"${mat===i?" selected":""}>${m}</option>`).join("")}</select>
-          </label>
-          <button class="btn ghost sm" type="button" onclick="modalPrinc(${p.n})">Note</button>
         </div>
-        ${it.notes?`<div class="iasa-principle-note">${esc(sclip(it.notes,160))}</div>`:""}
         <table class="iasa-std-table"><thead><tr><th class="iasa-std-num">Std</th><th>Standard</th><th class="iasa-std-conf">Conformance</th><th>Evidence / gap / action</th><th class="iasa-std-act"></th></tr></thead><tbody>
-        ${p.s.map(([num,title])=>{ const iu=stdItem(num); const c=iu.conf||"Not rated"; const ch=CONF_HEX[c]||"#94a3b8"; return `<tr>
+        ${p.s.map(([num,title])=>{ const iu=stdItem(num); const c=iu.conf||"Not rated"; const ch=CONF_HEX[c]||"#94a3b8"; return `<tr class="tracker-row" onclick="modalStd('${num}')" title="Open standard">
           <td class="iasa-std-num"><b>${num}</b></td>
           <td>${esc(title)}</td>
-          <td><select class="field-select field-select-sm iasa-conf-select" style="color:${ch}" onchange="stdSet('${num}','conf',this.value);this.style.color=''">${STD_CONF.map(o=>`<option${c===o?" selected":""}>${o}</option>`).join("")}</select></td>
-          <td class="iasa-std-evidence">${iu.evidence?esc(sclip(iu.evidence,80)):(c==="Not rated"?"—":"")}${iu.gap?`<div class="iasa-gap">△ ${esc(sclip(iu.gap,80))}</div>`:""}${iu.action?`<div class="iasa-action">↳ ${esc(sclip(iu.action,80))}${iu.owner?" · "+esc(iu.owner):""}</div>`:""}</td>
-          <td class="iasa-std-act">${iconBtn(`modalStd('${num}')`,"✎","Edit standard")}</td>
+          <td onclick="event.stopPropagation()"><select class="field-select field-select-sm iasa-conf-select" style="color:${ch}" onchange="stdSet('${num}','conf',this.value);this.style.color=''">${STD_CONF.map(o=>`<option${c===o?" selected":""}>${o}</option>`).join("")}</select></td>
+          <td class="iasa-std-evidence">${iu.evidence?esc(iu.evidence):(c==="Not rated"?"—":"")}${iu.gap?`<div class="iasa-gap">△ ${esc(iu.gap)}</div>`:""}${iu.action?`<div class="iasa-action">↳ ${esc(iu.action)}</div>`:""}</td>
+          <td class="iasa-std-act" onclick="event.stopPropagation()">${iconBtn(`modalStd('${num}')`,"✎","Edit standard")}</td>
         </tr>`; }).join("")}
         </tbody></table></div>`;
     });
     h+=`</div>`;
   });
+  // ---- Section 2: principle-level assessment (rolled-up conformance, maturity, commentary) ----
+  h+=`<div class="seclabel anim-fade-in" style="margin:18px 0 10px;font-size:15px">Assessment by Principle</div>
+  <div class="card anim-fade-in">
+    <table class="iasa-std-table"><thead><tr><th class="iasa-std-num">#</th><th>Principle</th><th>Domain</th><th class="iasa-std-conf">Conformance (rollup)</th><th>Maturity</th><th class="iasa-std-act"></th></tr></thead><tbody>
+    ${allPrinc().map(p=>{ const roll=rollupPrinc(p.n); const rc=CONF_HEX[roll]||"#94a3b8"; const mat=princMaturity(p.n); const it=iaSA().items[p.n]||{}; return `<tr class="tracker-row" onclick="modalPrinc(${p.n})" title="Open principle">
+      <td class="iasa-std-num"><b>P${p.n}</b></td>
+      <td><b>${esc(p.t)}</b>${it.notes?`<div class="hint" style="margin-top:3px">${esc(it.notes)}</div>`:""}${it.action?`<div class="iasa-action">↳ ${esc(it.action)}</div>`:""}</td>
+      <td class="hint">${p.d} · ${esc(p.dt)}</td>
+      <td><span class="pill iasa-roll-pill" style="background:${rc}22;color:${rc}">${roll}</span></td>
+      <td onclick="event.stopPropagation()"><select class="field-select field-select-sm" onchange="iasaSet(${p.n},'maturity',this.value)">${MATURITY.map((m,i)=>`<option value="${i}"${mat===i?" selected":""}>${m}</option>`).join("")}</select></td>
+      <td class="iasa-std-act" onclick="event.stopPropagation()">${iconBtn(`modalPrinc(${p.n})`,"✎","Principle commentary")}</td>
+    </tr>`; }).join("")}
+    </tbody></table>
+    <div class="hint" style="margin-top:8px">Principle conformance rolls up automatically from the standard-level ratings above.</div>
+  </div>`;
   h+=`<div class="card iasa-conclusion anim-fade-in"><div class="row"><div class="seclabel" style="margin:0">Overall conclusion</div><div class="spacer"></div><button class="btn ghost sm ai-generate-btn" type="button" onclick="modalIASACommentary()">Generate conclusion</button></div>
     <textarea class="iasa-conclusion-input" placeholder="EQA opinion statement…" onchange="iaSA().commentary=this.value;save()">${esc(sa.commentary||"")}</textarea></div>`;
   return h;
@@ -2462,12 +2476,12 @@ function iasaInsights(){
     </div>`).join("") : `<div class="hint">No partial or non-conforming standards — all rated standards conform.</div>`}
   </div>
   <div class="card"><div class="seclabel">Remediation roadmap</div>
-    <table><thead><tr><th style="width:48px">Std</th><th>Standard</th><th style="width:150px">Conformance</th><th>Action</th><th>Owner</th><th>Target</th></tr></thead><tbody>
-    ${actions.length? actions.map(x=>`<tr><td><b>${x.num}</b></td><td>${esc(x.title)}</td><td style="color:${CONF_HEX[x.c]};font-weight:600">${x.c}</td><td>${esc(x.it.action)}</td><td>${esc(x.it.owner||"—")}</td><td>${esc(x.it.target||"—")}</td></tr>`).join("") : `<tr><td colspan="6" class="hint">No improvement actions recorded yet.</td></tr>`}
+    <table><thead><tr><th style="width:48px">Std</th><th>Standard</th><th style="width:150px">Conformance</th><th>Action</th><th>Target</th></tr></thead><tbody>
+    ${actions.length? actions.map(x=>`<tr><td><b>${x.num}</b></td><td>${esc(x.title)}</td><td style="color:${CONF_HEX[x.c]};font-weight:600">${x.c}</td><td>${esc(x.it.action)}</td><td>${esc(x.it.target||"—")}</td></tr>`).join("") : `<tr><td colspan="5" class="hint">No improvement actions recorded yet.</td></tr>`}
     </tbody></table>
   </div>
-  <div class="card"><div class="seclabel">External Quality Assessment readiness — Standard 8.4</div>
-    <p class="hint" style="margin-top:-6px">The Standards require an external assessment at least once every five years by a qualified, independent assessor, alongside ongoing internal quality assessment (Std 12.1) and periodic self-assessment.</p>
+  <div class="card"><div class="seclabel">External Quality Assessment readiness — NCCG 3-year rule</div>
+    <p class="hint" style="margin-top:-6px">The Nigerian Code of Corporate Governance (NCCG) requires an external assessment at least once every three years by a qualified, independent assessor (stricter than IIA Standard 8.4's five-year minimum), alongside ongoing internal quality assessment (Std 12.1) and periodic self-assessment.</p>
     <div class="row" style="gap:26px;flex-wrap:wrap">
       <div><div class="hint">Last external assessment</div><b style="font-size:15px">${iaSA().lastEQA?esc(iaSA().lastEQA):"Not on record"}</b></div>
       <div><div class="hint">Status</div><b style="font-size:15px;color:${eq.tone==='bad'?'#b00020':eq.tone==='mid'?'#c9a300':'#2e7d32'}">${esc(eq.txt)}</b></div>
@@ -2484,10 +2498,10 @@ function modalStd(num){
     <label>Evidence of conformance</label><textarea id="st_ev" placeholder="Policies, procedures, working papers or practices demonstrating conformance with this standard...">${esc(it.evidence||"")}</textarea>
     <label>Gap / non-conformance</label><textarea id="st_gap" placeholder="What is missing or only partially met against this standard's requirements...">${esc(it.gap||"")}</textarea>
     <label>Improvement action</label><textarea id="st_act" placeholder="Action to close the gap...">${esc(it.action||"")}</textarea>
-    <div class="f2"><div><label>Action owner</label><input id="st_own" value="${esc(it.owner||"")}"></div><div><label>Target date</label><input id="st_tgt" type="date" value="${esc(it.target||"")}"></div></div>`,
+    <label>Target date</label><input id="st_tgt" type="date" value="${esc(it.target||"")}">`,
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveStd('${num}')">Save</button>`);
 }
-function saveStd(num){ const s=iaSA(); s.std[num]={conf:val("st_conf"),evidence:val("st_ev"),gap:val("st_gap"),action:val("st_act"),owner:val("st_own"),target:val("st_tgt")}; save(); closeModal(); render(); }
+function saveStd(num){ const s=iaSA(); const prev=s.std[num]||{}; s.std[num]={conf:val("st_conf"),evidence:val("st_ev"),gap:val("st_gap"),action:val("st_act"),owner:prev.owner||"",target:val("st_tgt")}; save(); closeModal(); render(); }
 function modalPrinc(n){
   const p=findPrinc(n); if(!p)return; const it=iaSA().items[n]||{};
   openModal("Principle "+n+" — "+p.t,`
@@ -2498,35 +2512,64 @@ function modalPrinc(n){
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="savePrinc(${n})">Save</button>`);
 }
 function savePrinc(n){ const s=iaSA(); s.items[n]=s.items[n]||{}; s.items[n].maturity=+val("pr_mat")||0; s.items[n].notes=val("pr_notes"); s.items[n].action=val("pr_action"); save(); closeModal(); render(); }
-function modalIASAPrompt(){
-  openModal("Generate IA self-assessment",`
-    <label>Context about the IA function</label><textarea id="iap_ctx" style="min-height:120px" placeholder="e.g. one-person in-house function (Head of Internal Audit); board-approved IA charter; functionally reports to the Board Audit Committee, administratively to the MD/CEO; risk-based annual plan approved; uses IIA methodology; whistleblowing programme; no external quality assessment yet; recruitment of 2 staff underway; ..."></textarea>
-    <div id="iapErr" style="margin-top:10px"></div>`,
-    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn dark ai-generate-btn" onclick="generateIASA()">Generate assessment</button>`);
-}
-function buildIASAPrompt(ctx){
-  const list=allPrinciples().map(p=>`P${p.n}: ${p.t}`).join("; ");
-  return `Act as an internal audit quality assessor for ${DB.org}. Assess the Internal Audit function's conformance and maturity against the IIA Global Internal Audit Standards (2024) — the 15 principles below. For each principle give: a conformance rating (Conforms / Partially Conforms / Does Not Conform), a maturity level 1–5 (1 Initial, 2 Developing, 3 Established, 4 Managed, 5 Optimised), brief assessment notes, and an improvement action where conformance is not full.
+const IASA_DEFAULT_CTX="(infer for a small in-house internal audit function at a Nigerian consumer-credit corporation regulated by the CBN)";
+// One prompt per GIAS domain — 5 small parallel requests finish far faster than a single
+// 52-standard response, and one slow/failed domain no longer sinks the whole generation.
+function buildIASADomainPrompt(g,ctx){
+  const stdList=g.ps.map(p=>`P${p.n} ${p.t}: ${p.s.map(([num,t])=>num+" "+t).join("; ")}`).join("\n");
+  return `Act as an internal audit quality assessor for ${DB.org}. Assess the Internal Audit function against the IIA Global Internal Audit Standards (2024) — Domain ${g.d} (${g.dt}) ONLY:
+1. Every STANDARD listed below: a conformance rating (Conforms / Partially Conforms / Does Not Conform), brief evidence supporting the rating, the gap where conformance is not full, and an improvement action for any gap.
+2. Every PRINCIPLE listed below: a maturity level 1–5 (1 Initial, 2 Developing, 3 Established, 4 Managed, 5 Optimised), short principle-level commentary, and a key improvement action where relevant.
 
 IA function context:
-${ctx||"(infer for a small in-house internal audit function at a Nigerian consumer-credit corporation regulated by the CBN)"}
+${ctx||IASA_DEFAULT_CTX}
 
-Principles: ${list}
+Principles and standards in this domain:
+${stdList}
 
-Return ONLY a JSON array (no commentary):
-[ { "principle": 1, "conformance": "Conforms | Partially Conforms | Does Not Conform", "maturity": 3, "notes": "...", "action": "..." } ]`;
+Return ONLY a JSON object (no commentary):
+{ "standards": [ { "standard": "1.1", "conformance": "Conforms | Partially Conforms | Does Not Conform", "evidence": "...", "gap": "...", "action": "..." } ],
+  "principles": [ { "principle": 1, "maturity": 3, "notes": "...", "action": "..." } ] }
+Include every standard and principle listed above. Keep evidence, gap and action to one short sentence each; use "" where not applicable.`;
 }
+// Merges one AI response (or a legacy array of principles) into the current assessment.
+function applyIASAData(d){
+  const sa=iaSA(); let nStd=0,nPr=0;
+  const valid=new Set(allStandards().map(s=>s.num));
+  const stds=Array.isArray(d)?[]:((d&&d.standards)||(d&&d.stds)||[]);
+  stds.forEach(x=>{
+    const num=String(x.standard||x.std||x.num||"").trim(); if(!valid.has(num)) return;
+    const conf=STD_CONF.find(c=>c.toLowerCase()===String(x.conformance||x.conf||"").toLowerCase())||"Not rated";
+    const prev=sa.std[num]||{};
+    sa.std[num]={conf,evidence:x.evidence||"",gap:x.gap||"",action:x.action||"",owner:prev.owner||"",target:prev.target||""}; nStd++;
+  });
+  const prs=Array.isArray(d)?d:((d&&d.principles)||[]);
+  prs.forEach(x=>{
+    const pn=+x.principle||+x.n||+x.p; if(!pn||pn<1||pn>15)return;
+    const conf=IASA_CONF.find(c=>c.toLowerCase()===String(x.conformance||"").toLowerCase())||"Not rated";
+    sa.items[pn]={conformance:conf,maturity:Math.min(5,Math.max(0,Math.round(+x.maturity||0))),notes:x.notes||"",action:x.action||""}; nPr++;
+  });
+  return {nStd,nPr};
+}
+// Runs directly (no context modal): fires all 5 domain requests in parallel and merges
+// whatever succeeds, so wall time ≈ the slowest single domain rather than the sum.
 async function generateIASA(){
-  await runAiJson(buildIASAPrompt(val("iap_ctx")),"iapErr",d=>{ doImportIASA(d); });
-}
-function doImportIASA(raw){
-  const sa=iaSA(); raw=importRaw(raw);
-  if(!raw){ showAiErr("iapErr","Nothing to import."); return false; }
-  let d; try{ d=parseAiJson(raw); }catch(e){ showAiErr("iapErr",e.message); return false; }
-  const arr=Array.isArray(d)?d:[d]; let n=0;
-  arr.forEach(x=>{ const pn=+x.principle||+x.n||+x.p; if(!pn||pn<1||pn>15)return; const conf=IASA_CONF.find(c=>c.toLowerCase()===String(x.conformance||"").toLowerCase())||"Not rated"; sa.items[pn]={conformance:conf,maturity:Math.min(5,Math.max(0,Math.round(+x.maturity||0))),notes:x.notes||"",action:x.action||""}; n++; });
-  if(!n){ showAiErr("iapErr","No principle assessments found (need a \"principle\" number 1–15)."); return false; }
-  save(); closeModal(); render(); return true;
+  if(_aiBusy) return;
+  aiBusy(true);
+  try{
+    const results=await Promise.allSettled(
+      GIAS.map(g=>aiGenerate(buildIASADomainPrompt(g,""),"json").then(parseAiJson))
+    );
+    let nStd=0,nPr=0; const failed=[];
+    results.forEach((r,i)=>{
+      if(r.status==="fulfilled"){ const c=applyIASAData(r.value); nStd+=c.nStd; nPr+=c.nPr; }
+      else failed.push("Domain "+GIAS[i].d);
+    });
+    if(nStd||nPr){ save(); render(); }
+    if(failed.length) toast(`Generated ${nStd} standard(s) and ${nPr} principle(s), but ${failed.join(", ")} failed — click Generate again to fill the gaps (existing ratings are kept).`,"error");
+    else if(nStd||nPr) toast(`Assessment generated: ${nStd} standards and ${nPr} principles documented.`,"success");
+    else toast("The AI returned no usable assessments. Please try again.","error");
+  } finally { aiBusy(false); }
 }
 function modalIASACommentary(){
   openModal("Generate overall conclusion",`<div id="iacErr"></div>`,
@@ -2557,7 +2600,11 @@ function exportIASA(){
     ${sa.commentary?`<h2>Overall Conclusion</h2><div>${esc(sa.commentary).replace(/\n/g,"<br>")}</div>`:""}
     <h2>Assessment by Principle</h2>`;
   GIAS_DOMAINS.forEach(g=>{ inner+=`<h3>Domain ${esc(g.d)}</h3><table><tr><th>#</th><th>Principle</th><th>Conformance</th><th>Maturity</th><th>Notes / evidence</th><th>Improvement action</th></tr>`+
-    g.ps.map(([n,t])=>{ const it=items[n]||{}; return `<tr><td>${n}</td><td><b>${esc(t)}</b></td><td>${esc(it.conformance||"Not rated")}</td><td>${it.maturity?esc(MATURITY[it.maturity]):"—"}</td><td>${esc(it.notes||"")}</td><td>${esc(it.action||"")}</td></tr>`; }).join("")+`</table>`; });
+    g.ps.map(([n,t])=>{ const it=items[n]||{}; return `<tr><td>${n}</td><td><b>${esc(t)}</b></td><td>${esc(rollupPrinc(n))}</td><td>${it.maturity?esc(MATURITY[it.maturity]):"—"}</td><td>${esc(it.notes||"")}</td><td>${esc(it.action||"")}</td></tr>`; }).join("")+`</table>`; });
+  // Standard-level documentation — one table per domain covering all 52 standards.
+  inner+=`<h2>Assessment by Standard</h2>`;
+  GIAS.forEach(g=>{ inner+=`<h3>Domain ${esc(g.d)} — ${esc(g.dt)}</h3><table><tr><th>Std</th><th>Standard</th><th>Conformance</th><th>Evidence</th><th>Gap</th><th>Improvement action</th></tr>`+
+    g.ps.flatMap(p=>p.s.map(([num,t])=>{ const iu=sa.std[num]||{}; return `<tr><td><b>${esc(num)}</b></td><td>${esc(t)}</td><td>${esc(iu.conf||"Not rated")}</td><td>${esc(iu.evidence||"")}</td><td>${esc(iu.gap||"")}</td><td>${esc(iu.action||"")}${iu.target?" · due "+esc(iu.target):""}</td></tr>`; })).join("")+`</table>`; });
   wordDoc("IA Self-Assessment"+(sa.period?" - "+String(sa.period).replace(/[^\w \-]/g,""):""),inner);
 }
 
@@ -2614,7 +2661,7 @@ function extListBody(){
   if(!list.length) return `<div class="card"><div class="empty"><div class="big">🔍</div>No findings match the filter.<br>Try clearing the search or filters.</div></div>`;
   list=list.slice().sort((a,b)=>(extOverdue(b)-extOverdue(a))||String(a.source||"").localeCompare(String(b.source||"")));
   return `<div class="card"><table><thead><tr><th>Source</th><th>Year</th><th>Ref</th><th>Finding</th><th>Theme</th><th>Severity</th><th>Owner</th><th>Target</th><th>Status</th><th></th></tr></thead><tbody>
-    ${list.map(f=>{ const sv=EXT_SEV_HEX[f.severity]||"#64748b"; const od=extOverdue(f); const st=f.status||"Open"; const stCls=extStatusCls(st); const titleShort=f.title.length>72?f.title.slice(0,71)+"…":f.title; return `<tr class="ext-row-clickable" onclick="go('extfinding',{ext:'${f.id}'})">
+    ${list.map(f=>{ const sv=EXT_SEV_HEX[f.severity]||"#64748b"; const od=extOverdue(f); const st=f.status||"Open"; const stCls=extStatusCls(st); const titleShort=f.title; return `<tr class="ext-row-clickable" onclick="go('extfinding',{ext:'${f.id}'})">
       <td>${esc(f.source||"—")}${f.sourceRef?`<div class="hint">${esc(f.sourceRef)}</div>`:""}${f.isRepeat?`<div style="margin-top:3px"><span class="pill" style="background:#efe3f7;color:#6b3fa0">↻ REPEAT</span></div>`:""}</td>
       <td>${esc(f.year||"—")}</td>
       <td>${esc(f.ref||"")}</td>
@@ -2682,7 +2729,7 @@ function extInsights(){
     ${themeRows.map(([t,v])=>`<div class="rcrow"><div class="nm">${esc(t)}</div><div class="track"><div class="fill" style="width:${v/maxTheme*100}%"></div></div><div class="vv">${v}</div></div>`).join("")}
   </div>
   <div class="card"><div class="seclabel">Theme × source heat map</div>
-    <table class="hm"><thead><tr><th class="axis">Theme</th>${topSrc.map(s=>`<th title="${esc(s)}">${esc(s.length>14?s.slice(0,13)+"…":s)}</th>`).join("")}<th>Total</th></tr></thead><tbody>
+    <table class="hm"><thead><tr><th class="axis">Theme</th>${topSrc.map(s=>`<th>${esc(s)}</th>`).join("")}<th>Total</th></tr></thead><tbody>
       ${themeRows.map(([t,tot])=>`<tr><td class="axis">${esc(t)}</td>${topSrc.map(s=>{ const n=(heat[t]&&heat[t][s])||0; const bg=n?hx2rgba("#b00020",0.14+0.8*(n/maxHeat)):"#f7f9fb"; return `<td class="cell" style="background:${bg};color:${n&&(n/maxHeat)>0.55?"#fff":"#1c2733"}">${n||""}</td>`; }).join("")}<td class="cell" style="background:#f1f5f9"><b>${tot}</b></td></tr>`).join("")}
     </tbody></table>
   </div>
@@ -4370,8 +4417,8 @@ const AUDIT_LOG_ACTIONS=[
   ["auth.password_changed","Password changed"],
   ["user.created","User created"],
   ["user.updated","User updated"],
-  ["user.deactivated","User deactivated"],
-  ["user.reactivated","User reactivated"],
+  ["user.deactivated","User made inactive"],
+  ["user.reactivated","User made active"],
   ["user.deleted","User deleted"],
   ["data.backup_export","Backup exported"],
   ["data.backup_import","Backup imported"],
@@ -4461,13 +4508,6 @@ function deptById(id){ return departments().find(d=>d.id===id); }
 function viewSettings(){
   const isHead=window.AMS_USER&&window.AMS_USER.role==="head_of_audit";
   return `
-  <div class="card"><h3>Backup &amp; restore</h3>
-    <p class="hint">Last backup: <b>${DB.lastBackup?esc(fmtDate(isoToDate(DB.lastBackup))):"never"}</b></p>
-    <div class="row">
-      <button class="btn" onclick="exportData()">⤓ Download backup (.json)</button>
-      <label class="btn sec" style="display:inline-block;margin:0">⤒ Import backup<input type="file" accept="application/json" style="display:none" onchange="importData(event)"></label>
-    </div>
-  </div>
   ${isHead?`<div class="card"><div class="row"><h3 style="margin:0">Departments &amp; action owners</h3><div class="spacer"></div><button class="btn sm" onclick="modalDepartment()">+ Add Action Owner</button></div>
     <div class="hint" style="margin-top:4px">Each department's head becomes an <b>Action Owner</b> login (welcome email with a temporary password) and can be assigned remediation actions.</div>
     <div id="deptTableWrap" style="margin-top:12px">${departmentsTableHTML()}</div>
@@ -4494,12 +4534,24 @@ function departmentsTableHTML(){
   </tbody></table>`;
 }
 function refreshDepartmentsTable(){ const el=document.getElementById("deptTableWrap"); if(el) el.innerHTML=departmentsTableHTML(); }
+// Name → staff autocomplete for the Action Owner modal: fills the email and the
+// person's mapped department (same STAFF_DIRECTORY as the Add user modal).
+function applyStaffPickDept(inp){
+  const name=String((inp&&inp.value)||"").trim().toLowerCase();
+  const hit=STAFF_DIRECTORY.find(([n])=>n.toLowerCase()===name);
+  if(!hit) return;
+  const emailEl=document.getElementById("dp_email");
+  if(emailEl&&!emailEl.disabled) emailEl.value=staffEmail(hit[0]);
+  const deptEl=document.getElementById("dp_name");
+  if(deptEl&&hit[2]) deptEl.value=hit[2];
+}
 function modalDepartment(id){
   const d=id?deptById(id):null;
   openModal(id?"Edit department":"Add Action Owner",`
     <label>Department name *</label><select id="dp_name">${deptOptionsHTML(d?d.name:"")}</select>
     <div class="f2">
-      <div><label>Name *</label><input id="dp_head" value="${esc(d?d.headName:"")}" placeholder="e.g. Jane Doe"></div>
+      <div><label>Name *</label><input id="dp_head" value="${esc(d?d.headName:"")}"${id?` placeholder="e.g. Jane Doe"`:` list="staffNames" autocomplete="off" placeholder="Start typing a staff name…" oninput="applyStaffPickDept(this)" onchange="applyStaffPickDept(this)"`}>${id?"":staffNamesDatalist()}
+        ${id?"":``}</div>
       <div><label>Email *</label><input id="dp_email" type="email" value="${esc(d?d.headEmail:"")}" ${d&&d.headUserId?"disabled title='Linked to a login account — email cannot be changed here'":""}></div>
     </div>
     ${id?"":`<p class="hint" style="margin:10px 0 0">On save, an <b>Action Owner</b> login is created for this person and a welcome email (temporary password) is sent.</p>`}
@@ -4544,7 +4596,7 @@ function delDepartment(id){
   // Only deactivate the head's login if no OTHER department still points at the same user.
   const linked=!!d.headUserId && !departments().some(x=>x.id!==id && x.headUserId===d.headUserId);
   const msg=linked
-    ?`Remove ${d.name}? ${d.headName||"The head"}'s Action Owner login will be deactivated (sign-in blocked, history kept). You can reactivate or permanently delete it from User access management.`
+    ?`Remove ${d.name}? ${d.headName||"The head"}'s Action Owner login will be made inactive (sign-in blocked, history kept). You can make it active again or permanently delete it from User access management.`
     :"Remove this department?";
   uiConfirm(msg,async ()=>{
     DB.departments=departments().filter(x=>x.id!==id);
@@ -4553,9 +4605,9 @@ function delDepartment(id){
     if(linked){
       try{
         const res=await fetch(`/api/users/${d.headUserId}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({active:false})});
-        if(!res.ok){ const data=await res.json().catch(()=>({})); toast(data.error||"Department removed, but the login could not be deactivated.","error"); }
-        else toast(`Department removed. ${d.headName||"The head"}'s login was deactivated — both recorded in the audit trail.`,"success");
-      }catch(e){ toast("Department removed, but the login could not be deactivated (network error).","error"); }
+        if(!res.ok){ const data=await res.json().catch(()=>({})); toast(data.error||"Department removed, but the login could not be made inactive.","error"); }
+        else toast(`Department removed. ${d.headName||"The head"}'s login is now inactive — both recorded in the audit trail.`,"success");
+      }catch(e){ toast("Department removed, but the login could not be made inactive (network error).","error"); }
       await refreshUsersTable(); await loadDirectory();
     } else {
       toast("Department removed — recorded in the audit trail.","success");
@@ -4697,71 +4749,72 @@ function viewOwnerDashboard(){
 }
 let _usersCache=[];
 let _directoryCache=[];
-// Credicorp staff list — used by the Add user modal so the Head of Audit can pick a person
-// instead of typing. Emails follow the convention first-initial + surname @credicorp.ng.
+// Credicorp staff list — powers the Name field's autocomplete in the Add user modal.
+// [name, job title, AuditLens department]. Emails follow first-initial + surname @credicorp.ng.
+// Department placements confirmed by the Head of Audit.
 const STAFF_DIRECTORY=[
-  ["Olanike Kolawole","Executive Director – Operations"],
-  ["Terry Akpata","Professional - Risk & Compliance"],
-  ["Halima Ahmed","Intern"],
-  ["Alexander Ehanire","Head, Strategy & Innovation"],
-  ["Tubolayefa George","Specialist - Finance"],
-  ["Boluwatife Inaolaji","Intern - People Experience"],
-  ["Uzoma Nwagba","Managing Director"],
-  ["Adanu Ayegba","Professional - Protocol"],
-  ["Ziga Paago","Management Trainee"],
-  ["Obiageli Ohakim","Head, Legal & Company Secretary"],
-  ["Fatima Bello","Professional - Credit Operations"],
-  ["Elizabeth Adu","E.A to the E.D Operations"],
-  ["Jonathan Aderibigbe","Chief Financial Officer"],
-  ["Eniola Anishe","Intern - Strategy & Innovation"],
-  ["Solomon Aladegolu","Professional - IT"],
-  ["Peter Esemuede","Technical Adviser to the MD/CEO & Lead, External Relations"],
-  ["Emmanuel Okechukwu","Professional - IT Risk & Compliance"],
-  ["Aisha Abdullahi","Executive Director – Credit & Portfolio Management"],
-  ["Chiamaka Ogoh","Management Trainee"],
-  ["Wuraola Odubiyi","Head, Admin, People & Culture"],
-  ["Imoh Usoro","Head, Procurement"],
-  ["Diekololaoluwa Adewale","Intern - Legal"],
-  ["Olusola Adetiba","Professional - People & Culture"],
-  ["Dorcas Okolo","Management Trainee"],
-  ["Oluwatoyosi Ibinaiye","Intern - Customer Experience"],
-  ["Asari Etuk","Head, Risk and Compliance"],
-  ["Opeyemi Ayediran","Professional - Procurement"],
-  ["Elizabeth Faboyo","Technical Adviser to the MD/CEO & Lead, Fundraising"],
-  ["Emmanuel Nwaka","Lead, Impact & Sustainability"],
-  ["Sadiq Mohammed","Head, Credit Operations"],
-  ["Saadatu Alkali","EA to the ED Credit and Portfolio Mgmt."],
-  ["Toyin Olaiya","Professional - Admin"],
-  ["Najma Goni","Management Trainee"],
-  ["Beulah Lekwauwa","Professional - Corporate Counsel"],
-  ["Delight Nwafor","Professional - Customer Support"],
-  ["Michael Ojo","Professional - Strategic Communications"],
-  ["Yachat Kanwai","Management Trainee"],
-  ["Ladi Amusu","Chief of Staff"],
-  ["Peace Oyewumi","Management Trainee"],
-  ["Tochukwu Chukwuani","Management Trainee"]
+  ["Olanike Kolawole","Executive Director – Operations","Operations Department"],
+  ["Terry Akpata","Professional - Risk & Compliance","Risk Management"],
+  ["Halima Ahmed","Intern","Audit Department"],
+  ["Awa Michael","Head, Internal Audit","Audit Department"],
+  ["Alexander Ehanire","Head, Strategy & Innovation","Strategy Department"],
+  ["Tubolayefa George","Specialist - Finance","Finance Department"],
+  ["Boluwatife Inaolaji","Intern - People Experience","People & Culture Department"],
+  ["Uzoma Nwagba","Managing Director","Office of the Managing Director"],
+  ["Adanu Ayegba","Professional - Protocol","Office of the Managing Director"],
+  ["Ziga Paago","Management Trainee","People & Culture Department"],
+  ["Obiageli Ohakim","Head, Legal & Company Secretary","Legal Department"],
+  ["Fatima Bello","Professional - Credit Operations","Credit Operations"],
+  ["Elizabeth Adu","E.A to the E.D Operations","Operations Department"],
+  ["Jonathan Aderibigbe","Chief Financial Officer","Finance Department"],
+  ["Eniola Anishe","Intern - Strategy & Innovation","Strategy Department"],
+  ["Solomon Aladegolu","Professional - IT","Strategy Department"],
+  ["Peter Esemuede","Technical Adviser to the MD/CEO & Lead, External Relations","Office of the Managing Director"],
+  ["Emmanuel Okechukwu","Professional - IT Risk & Compliance","Risk Management"],
+  ["Aisha Abdullahi","Executive Director – Credit & Portfolio Management","Credit Operations"],
+  ["Chiamaka Ogoh","Management Trainee","Strategy Department"],
+  ["Wuraola Odubiyi","Head, Admin, People & Culture","People & Culture Department"],
+  ["Imoh Usoro","Head, Procurement","Procurement Department"],
+  ["Diekololaoluwa Adewale","Intern - Legal","Legal Department"],
+  ["Olusola Adetiba","Professional - People & Culture","People & Culture Department"],
+  ["Dorcas Okolo","Management Trainee","Office of the Managing Director"],
+  ["Oluwatoyosi Ibinaiye","Intern - Customer Experience","People & Culture Department"],
+  ["Asari Etuk","Head, Risk and Compliance","Risk Management"],
+  ["Opeyemi Ayediran","Professional - Procurement","Procurement Department"],
+  ["Elizabeth Faboyo","Technical Adviser to the MD/CEO & Lead, Fundraising","Office of the Managing Director"],
+  ["Emmanuel Nwaka","Lead, Impact & Sustainability","Operations Department"],
+  ["Sadiq Mohammed","Head, Credit Operations","Credit Operations"],
+  ["Saadatu Alkali","EA to the ED Credit and Portfolio Mgmt.","Credit Operations"],
+  ["Toyin Olaiya","Professional - Admin","Administration Department"],
+  ["Najma Goni","Management Trainee","Finance Department"],
+  ["Beulah Lekwauwa","Professional - Corporate Counsel","Legal Department"],
+  ["Delight Nwafor","Professional - Customer Support","People & Culture Department"],
+  ["Michael Ojo","Professional - Strategic Communications","Strategy Department"],
+  ["Yachat Kanwai","Management Trainee","Procurement Department"],
+  ["Ladi Amusu","Chief of Staff","Office of the Managing Director"],
+  ["Peace Oyewumi","Management Trainee","Administration Department"],
+  ["Tochukwu Chukwuani","Management Trainee","Finance Department"]
 ];
 function staffEmail(name){
   const parts=String(name||"").trim().toLowerCase().split(/\s+/);
   if(parts.length<2) return "";
   return (parts[0][0]+parts[parts.length-1]).replace(/[^a-z]/g,"")+"@credicorp.ng";
 }
-function staffPickerOptions(){
-  const taken=new Set((_usersCache||[]).map(u=>String(u.email||"").toLowerCase()));
-  return `<option value="">— select a staff member (optional) —</option>`+
-    STAFF_DIRECTORY.slice().sort((a,b)=>a[0].localeCompare(b[0])).map(([n,t])=>{
-      const em=staffEmail(n); const dup=taken.has(em);
-      return `<option value="${esc(em)}" data-name="${esc(n)}"${dup?" disabled":""}>${esc(n)} · ${esc(t)}${dup?" — already added":""}</option>`;
-    }).join("");
+function staffNamesDatalist(){
+  return `<datalist id="staffNames">`+
+    STAFF_DIRECTORY.slice().sort((a,b)=>a[0].localeCompare(b[0])).map(([n,t])=>`<option value="${esc(n)}">${esc(t)}</option>`).join("")+
+    `</datalist>`;
 }
-function applyStaffPick(){
-  const sel=document.getElementById("ua_staff");
-  if(!sel||!sel.value) return;
-  const opt=sel.options[sel.selectedIndex];
-  const nameEl=document.getElementById("ua_name");
+// Fired as the Head of Audit types/picks in the Name field: on an exact staff match,
+// auto-fill the email and (when mapped) the department.
+function applyStaffPick(inp){
+  const name=String((inp&&inp.value)||"").trim().toLowerCase();
+  const hit=STAFF_DIRECTORY.find(([n])=>n.toLowerCase()===name);
+  if(!hit) return;
   const emailEl=document.getElementById("ua_email");
-  if(nameEl) nameEl.value=opt.getAttribute("data-name")||"";
-  if(emailEl) emailEl.value=sel.value;
+  if(emailEl) emailEl.value=staffEmail(hit[0]);
+  const deptEl=document.getElementById("ua_dept");
+  if(deptEl&&hit[2]) deptEl.value=hit[2];
 }
 async function loadDirectory(){
   try{
@@ -4799,29 +4852,28 @@ function avatarInitials(name){ return String(name||"").trim().split(/\s+/).slice
 function avatarHTML(u,size){ size=size||28; const s=+size; if(u&&u.photo) return `<img src="${esc(u.photo)}" alt="" class="al-avatar" style="width:${s}px;height:${s}px">`; return `<span class="al-avatar al-avatar-initials" style="width:${s}px;height:${s}px;font-size:${Math.round(s*0.4)}px">${esc(avatarInitials(u&&u.name))}</span>`; }
 function usersTableHTML(){
   if(!_usersCache.length) return `<div class="empty"><div class="big">👥</div>No users yet.<br>Use <b>Add user</b> to invite audit staff — they sign in with their Microsoft account.</div>`;
-  return `<table><thead><tr><th>Name</th><th>Department</th><th>Email</th><th>Role</th><th>Status</th><th>Sidebar access</th><th></th></tr></thead><tbody>
+  return `<table><thead><tr><th>Name</th><th>Department</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>
     ${_usersCache.map(u=>{
       const inactive=u.active===false;
       const notSelf=window.AMS_USER&&window.AMS_USER.id!==u.id;
-      return `<tr${inactive?` style="opacity:.55"`:""}>
+      return `<tr class="tracker-row"${inactive?` style="opacity:.55"`:""} onclick="modalUser('${u.id}')" title="View details & sidebar access">
       <td><div class="row" style="gap:8px;align-items:center">${avatarHTML(u,28)}<b>${esc(u.name)}</b></div></td>
       <td>${esc(u.department||"—")}</td>
       <td>${esc(u.email)}</td>
       <td>${esc(roleLabel(u.role))}</td>
       <td>${inactive?`<span class="pill sop-pending-pill">Inactive</span>`:`<span class="pill c-Low">Active</span>`}</td>
-      <td class="hint">${u.role==="head_of_audit"?"All sections + Settings":((u.sidebarAccess||[]).length?(u.sidebarAccess||[]).map(id=>esc((ASSESSMENT_NAV.find(x=>x[0]===id)||[id,id])[1])).join(", "):"Main only")}</td>
-      <td class="ra-actions-cell">${iconBtn(`modalUser('${u.id}')`,"✎","Edit")}${notSelf?(inactive?iconBtn(`setUserActive('${u.id}',true)`,"⟳","Reactivate — allow sign-in again"):iconBtn(`setUserActive('${u.id}',false)`,"⏻","Deactivate — block sign-in, keep history")):""}${notSelf?delBtn(`deleteUser('${u.id}')`,"Permanently delete"):""}</td>
+      <td class="ra-actions-cell" onclick="event.stopPropagation()">${iconBtn(`modalUser('${u.id}')`,"✎","Edit")}${notSelf?(inactive?iconBtn(`setUserActive('${u.id}',true)`,"⟳","Make active — allow sign-in again"):iconBtn(`setUserActive('${u.id}',false)`,"⏻","Make inactive — block sign-in, keep history")):""}${notSelf?delBtn(`deleteUser('${u.id}')`,"Permanently delete"):""}</td>
     </tr>`;}).join("")}
   </tbody></table>`;
 }
-// Deactivate (block sign-in, keep the account and all history) or reactivate a user.
+// Make a user inactive (block sign-in, keep the account and all history) or active again.
 // The server writes the user.deactivated / user.reactivated audit-trail entry.
 function setUserActive(id,active){
   const u=_usersCache.find(x=>x.id===id);
   if(!u){ toast("User not found.","error"); return; }
   const msg=active
-    ?`Reactivate ${u.name}? They will be able to sign in again with their Microsoft account.`
-    :`Deactivate ${u.name}? They can no longer sign in (any open session ends immediately), but the account, their observations and full history are kept. You can reactivate them at any time.`;
+    ?`Make ${u.name} active again? They will be able to sign in with their Microsoft account.`
+    :`Make ${u.name} inactive? They can no longer sign in (any open session ends immediately), but the account, their observations and full history are kept. You can make them active again at any time.`;
   uiConfirm(msg,async ()=>{
     let res,data;
     try{
@@ -4831,8 +4883,8 @@ function setUserActive(id,active){
     if(!res.ok){ toast(data.error||"Could not update the account.","error"); return; }
     await refreshUsersTable(); await loadDirectory();
     if(view==="settings") render();
-    toast(`${u.name} ${active?"reactivated":"deactivated"} — recorded in the audit trail.`,"success");
-  },{danger:!active,confirmLabel:active?"Reactivate":"Deactivate",title:active?"Reactivate user":"Deactivate user"});
+    toast(`${u.name} is now ${active?"active":"inactive"} — recorded in the audit trail.`,"success");
+  },{danger:!active,confirmLabel:active?"Make active":"Make inactive",title:active?"Make user active":"Make user inactive"});
 }
 function sidebarAccessChecks(selected,disabled){
   return ASSESSMENT_NAV.map(([id,label])=>`<label class="filter-check" style="display:block;margin:4px 0"><input type="checkbox" name="ua_view" value="${id}" style="width:auto"${disabled?" disabled":""}${(selected||[]).includes(id)?" checked":""}> ${esc(label)}</label>`).join("");
@@ -4841,13 +4893,9 @@ function modalUser(id){
   const u=id?_usersCache.find(x=>x.id===id):null;
   const isEdit=!!u;
   openModal(isEdit?"Edit user":"Add user",`
-    ${isEdit?"":`<div style="margin-bottom:10px">
-      <label>Credicorp staff</label>
-      <select id="ua_staff" onchange="applyStaffPick()">${staffPickerOptions()}</select>
-      <div class="hint" style="margin-top:4px">Selecting a person fills in the name and email below. You can still type them manually.</div>
-    </div>`}
     <div class="f2">
-      <div><label>Name *</label><input id="ua_name" value="${esc(u?u.name:"")}"></div>
+      <div><label>Name *</label><input id="ua_name" value="${esc(u?u.name:"")}"${isEdit?"":` list="staffNames" autocomplete="off" placeholder="Start typing a staff name…" oninput="applyStaffPick(this)" onchange="applyStaffPick(this)"`}>${isEdit?"":staffNamesDatalist()}
+        ${isEdit?"":``}</div>
       <div><label>Department</label><select id="ua_dept">${deptOptionsHTML(u?u.department:"Audit Department")}</select></div>
     </div>
     <div class="f2">
@@ -4860,6 +4908,7 @@ function modalUser(id){
       <div class="hint" style="margin-bottom:6px">Main sections (Dashboard, Audits &amp; Reports, Remediation Tracker) are always included.</div>
       <div id="ua_access">${sidebarAccessChecks(u?u.sidebarAccess:[],false)}</div>
     </div>
+    <div id="ua_access_alt" class="hint" style="margin-top:10px${(u?u.role:"audit_staff")==="audit_staff"?";display:none":""}">${(u&&u.role)==="head_of_audit"?"Sidebar access: all sections, including Settings and the Audit log.":"Sidebar access: the Action Owner portal (their assigned observations) only."}</div>
     <div id="ua_err" style="margin-top:10px"></div>`,
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveUser('${id||""}')">Save</button>`);
 }
@@ -4867,6 +4916,11 @@ function toggleUserAccessFields(){
   const role=val("ua_role");
   const block=document.getElementById("ua_access_block");
   if(block) block.style.display=role==="audit_staff"?"block":"none";
+  const alt=document.getElementById("ua_access_alt");
+  if(alt){
+    alt.style.display=role==="audit_staff"?"none":"block";
+    alt.textContent=role==="head_of_audit"?"Sidebar access: all sections, including Settings and the Audit log.":"Sidebar access: the Action Owner portal (their assigned observations) only.";
+  }
 }
 function selectedSidebarAccess(){
   return Array.from(document.querySelectorAll('input[name="ua_view"]:checked')).map(el=>el.value);
@@ -4923,13 +4977,13 @@ function deleteUser(id){
   const u=_usersCache.find(x=>x.id===id);
   if(!u){ toast("User not found.","error"); return; }
   openModal("Permanently delete user",`
-    <div class="note" style="border-left:3px solid var(--crit)">This <b>permanently</b> removes the login account and cannot be undone. Observations they raised or own are kept.<br><br>💡 Prefer <b>Deactivate</b> if you only want to block sign-in — it keeps the account and can be reversed anytime.</div>
+    <div class="note" style="border-left:3px solid var(--crit)">This <b>permanently</b> removes the login account and cannot be undone. Observations they raised or own are kept.<br><br>💡 Prefer <b>Make inactive</b> if you only want to block sign-in — it keeps the account and can be reversed anytime.</div>
     <div class="obs-field" style="margin-top:10px"><div class="ttl">Name</div><div class="txt">${esc(u.name)}</div></div>
     <div class="obs-field"><div class="ttl">Email</div><div class="txt">${esc(u.email)}</div></div>
     <div class="obs-field"><div class="ttl">Role</div><div class="txt">${esc(roleLabel(u.role))}${u.department?" · "+esc(u.department):""}</div></div>
     <div id="del_user_progress" style="margin-top:10px"></div>
     <div id="del_user_err" style="margin-top:10px"></div>`,
-    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn sec" onclick="closeModal();setUserActive('${id}',false)">Deactivate instead</button><button class="btn danger" id="del_user_go" onclick="doDeleteUser('${id}')">Permanently delete</button>`);
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn sec" onclick="closeModal();setUserActive('${id}',false)">Make inactive instead</button><button class="btn danger" id="del_user_go" onclick="doDeleteUser('${id}')">Permanently delete</button>`);
 }
 // Renders the live progress checklist shown while a user is being deleted.
 function delUserStepsHTML(steps){
@@ -6263,7 +6317,7 @@ function excoSections(d,e){
       </tr>`; }).join("")+`</tbody></table>`+(keySorted.length>10?`<div class="hint" style="margin-top:8px">Showing 10 of ${keySorted.length} open Critical &amp; High issues.</div>`:"")
       :`<div class="empty">No open Critical or High-risk issues.</div>`}
   </div>`;
-  h+=`<div class="card"><div class="seclabel">Emerging &amp; recurring risk themes</div>
+  h+=`<div class="card"><div class="seclabel">Recurring Risk Themes</div>
     ${d.themes.length? d.themes.slice(0,6).map(([t,n])=>`<div class="rcrow"><div class="nm">${esc(t)}</div><div class="track"><div class="fill" style="width:${n/maxT*100}%"></div></div><div class="vv">${n}</div></div>`).join("") : `<div class="hint">No open issues to theme yet.</div>`}
   </div>`;
   h+=`<div class="card"><div class="seclabel">Unmitigated fraud risks — High / Extreme residual</div>
@@ -6301,7 +6355,7 @@ function exportExco(){
     <h2>Critical &amp; High-Risk Issues Requiring Attention</h2>`;
   inner+= keySorted.length?`<table><tr><th>Criticality</th><th>Issue</th><th>Audit / Area</th><th>Owner</th><th>Target close</th><th>Status</th></tr>`+
     keySorted.map(o=>{ const ec=effectiveClose(o,o._r); const od=isOverdueObs(o,o._r); return `<tr><td>${o.criticality}${o.isRepeat?" (repeat)":""}</td><td>${esc(o.title)}</td><td>${esc(o._a.name)}${o._a.area?" · "+esc(o._a.area):""}</td><td>${esc(o.owner||"—")}</td><td>${ec?fmtDate(ec):"—"}${od?" (overdue)":""}</td><td>${esc(o.status||"Open")}</td></tr>`; }).join("")+`</table>`:`<p>No open Critical or High-risk issues.</p>`;
-  inner+=`<h2>Emerging &amp; Recurring Risk Themes</h2>`;
+  inner+=`<h2>Recurring Risk Themes</h2>`;
   inner+= d.themes.length?`<table><tr><th>Theme</th><th>Open issues</th></tr>`+d.themes.map(([t,n])=>`<tr><td>${esc(t)}</td><td>${n}</td></tr>`).join("")+`</table>`:`<p>No open issues to theme.</p>`;
   inner+=`<h2>Unmitigated Fraud Risks (High / Extreme Residual)</h2>`;
   inner+= d.unmit.length?`<table><tr><th>Residual</th><th>Scheme</th><th>Category</th><th>Owner</th><th>Status</th></tr>`+

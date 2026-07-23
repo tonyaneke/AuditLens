@@ -179,7 +179,7 @@ function renderBrief(s: Snapshot) {
         : `<div class="sub">No open Critical or High-risk issues.</div>`}
     </div>
 
-    <div class="card"><div class="seclabel">Emerging &amp; recurring risk themes</div>
+    <div class="card"><div class="seclabel">Recurring Risk Themes</div>
       ${(s.themes || []).length
         ? (s.themes || [])
             .map(([t, n]) => `<div class="theme"><div class="nm">${esc(t)}</div><div class="track"><div class="fill" style="width:${(n / maxT) * 100}%"></div></div><div class="vv">${n}</div></div>`)

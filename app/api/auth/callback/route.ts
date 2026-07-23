@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
       user: { id: user.id, name: user.name, email: user.email },
       action: "auth.login_blocked",
       category: "auth",
-      summary: `${user.name} attempted to sign in but the account is deactivated`,
+      summary: `${user.name} attempted to sign in but the account is inactive`,
       metadata: { email: user.email, method: "sso" },
     }).catch(() => {});
     return toLogin(request, "deactivated");
