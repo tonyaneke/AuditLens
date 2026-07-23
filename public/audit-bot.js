@@ -1351,7 +1351,7 @@ function saveRA(id){
   if(id){ Object.assign(U.find(x=>x.id===id),data); } else { U.push({id:uid(),...data,createdAt:new Date().toISOString()}); }
   save(); closeModal(); render();
 }
-function delRA(id){ if(!requireHead())return; uiConfirm("Delete this auditable unit?",()=>{ DB.auditUniverse=auditUniverse().filter(x=>x.id!==id); save(); render(); },{danger:true,confirmLabel:"Delete"}); }
+function delRA(id){ if(!requireHead())return; uiConfirm("Delete this auditable unit?",()=>{ const u=auditUniverse().find(x=>x.id===id); DB.auditUniverse=auditUniverse().filter(x=>x.id!==id); logAudit("plan.unit_deleted","Deleted auditable unit: "+((u&&u.name)||""),{unitId:id}); save(); render(); },{danger:true,confirmLabel:"Delete"}); }
 function modalRAPrompt(){
   if(!requireHead())return;
   openModal("Generate audit universe",`
@@ -1603,7 +1603,7 @@ function saveFraud(id){
   }
   save(); closeModal(); render();
 }
-function delFraud(id){ if(!requireHead())return; uiConfirm("Delete this fraud risk?",()=>{ DB.fraudRisks=fraudList().filter(x=>x.id!==id); save(); render(); },{danger:true,confirmLabel:"Delete"}); }
+function delFraud(id){ if(!requireHead())return; uiConfirm("Delete this fraud risk?",()=>{ const f=fraudList().find(x=>x.id===id); DB.fraudRisks=fraudList().filter(x=>x.id!==id); logAudit("fraud.risk_deleted","Deleted fraud risk: "+((f&&(f.title||f.name))||""),{fraudRiskId:id}); save(); render(); },{danger:true,confirmLabel:"Delete"}); }
 let curFraud=null;
 function renderFraudRisk(C,T,A){
   const f=fraudList().find(x=>x.id===curFraud);
@@ -2035,7 +2035,7 @@ function modalProcMeta(id){
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveProcMeta('${id}')">Save</button>`);
 }
 function saveProcMeta(id){ const p=procList().find(x=>x.id===id); if(!p)return; p.unit=val("pm_unit"); p.sopTitle=val("pm_sop"); p.period=val("pm_period"); p.overallRating=val("pm_rating"); p.summary=val("pm_sum"); p.keyRecommendations=val("pm_recs").split("\n").map(s=>s.trim()).filter(Boolean); save(); closeModal(); render(); }
-function delProc(id){ uiConfirm("Delete this process review?",()=>{ DB.processReviews=procList().filter(x=>x.id!==id); curProc=null; save(); closeModal(); render(); },{danger:true,confirmLabel:"Delete"}); }
+function delProc(id){ uiConfirm("Delete this process review?",()=>{ const p=procList().find(x=>x.id===id); DB.processReviews=procList().filter(x=>x.id!==id); curProc=null; logAudit("process.review_deleted","Deleted process review: "+((p&&(p.name||p.title))||""),{processReviewId:id}); save(); closeModal(); render(); },{danger:true,confirmLabel:"Delete"}); }
 function modalProcFinding(pid,fid){
   const p=procList().find(x=>x.id===pid); if(!p)return; p.findings=p.findings||[];
   const x=fid?p.findings.find(y=>y.id===fid):{category:"Control gap",title:"",detail:"",recommendation:"",severity:"Medium"};
@@ -2169,7 +2169,7 @@ function modalProcStep(pid,sid){
     `<button class="btn sec" onclick="closeModal()">Cancel</button>${sid?`<button class="btn sec" onclick="moveProcStep('${pid}','${sid}',-1)">↑</button><button class="btn sec" onclick="moveProcStep('${pid}','${sid}',1)">↓</button>`:""}<button class="btn" onclick="saveProcStep('${pid}','${sid||""}')">Save</button>`);
 }
 function saveProcStep(pid,sid){ const p=procList().find(x=>x.id===pid); if(!p)return; p.proposedSteps=p.proposedSteps||[]; const action=val("ps_action"); if(!action){toast("Action required");return;} const data={actor:val("ps_actor"),type:val("ps_type"),action,note:val("ps_note")}; if(sid){ Object.assign(p.proposedSteps.find(y=>y.id===sid),data); } else { p.proposedSteps.push({id:uid(),...data}); } save(); closeModal(); render(); }
-function delProcStep(pid,sid){ uiConfirm("Delete this step?",()=>{ const p=procList().find(x=>x.id===pid); if(!p)return; p.proposedSteps=(p.proposedSteps||[]).filter(y=>y.id!==sid); save(); render(); },{danger:true,confirmLabel:"Delete"}); }
+function delProcStep(pid,sid){ uiConfirm("Delete this step?",()=>{ const p=procList().find(x=>x.id===pid); if(!p)return; p.proposedSteps=(p.proposedSteps||[]).filter(y=>y.id!==sid); logAudit("process.step_deleted","Deleted a proposed step in process review: "+((p.name||p.title)||""),{processReviewId:pid,stepId:sid}); save(); render(); },{danger:true,confirmLabel:"Delete"}); }
 function moveProcStep(pid,sid,dir){ const p=procList().find(x=>x.id===pid); if(!p)return; const a=p.proposedSteps||[]; const i=a.findIndex(y=>y.id===sid); const j=i+dir; if(i<0||j<0||j>=a.length)return; const t=a[i]; a[i]=a[j]; a[j]=t; save(); render(); modalProcStep(pid,sid); }
 
 /* ============================ IA SELF-ASSESSMENT (IIA GLOBAL STANDARDS) ============================ */
@@ -2240,7 +2240,7 @@ function newIASA(period){
 function openIASA(id){ const s=iaSAAll().find(x=>x.id===id); if(!s)return; DB.iaSACurrentId=s.id; iasaMode="assessment"; save(); render(); }
 function completeIASA(id){ const s=iaSAAll().find(x=>x.id===(id||DB.iaSACurrentId)); if(!s)return; s.status="completed"; s.completedAt=new Date().toISOString(); save(); iasaMode="overview"; render(); toast("Assessment marked complete.","success"); }
 function reopenIASA(id){ const s=iaSAAll().find(x=>x.id===id); if(!s)return; s.status="in_progress"; s.completedAt=""; save(); render(); }
-function deleteIASA(id){ uiConfirm("Delete this self-assessment? This cannot be undone.",()=>{ DB.iaSAList=iaSAAll().filter(x=>x.id!==id); if(DB.iaSACurrentId===id) DB.iaSACurrentId=""; save(); iasaMode="overview"; render(); },{danger:true,confirmLabel:"Delete"}); }
+function deleteIASA(id){ uiConfirm("Delete this self-assessment? This cannot be undone.",()=>{ const sa=iaSAAll().find(x=>x.id===id); DB.iaSAList=iaSAAll().filter(x=>x.id!==id); if(DB.iaSACurrentId===id) DB.iaSACurrentId=""; logAudit("iasa.deleted","Deleted self-assessment"+((sa&&(sa.period||sa.year))?" ("+(sa.period||sa.year)+")":""),{selfAssessmentId:id}); save(); iasaMode="overview"; render(); },{danger:true,confirmLabel:"Delete"}); }
 function iasaLastCompleted(){ return iaSAAll().filter(s=>s.status==="completed"&&s.completedAt).sort((a,b)=>String(b.completedAt).localeCompare(String(a.completedAt)))[0]||null; }
 function iasaNextDue(){
   const last=iasaLastCompleted();
@@ -3322,7 +3322,7 @@ function saveTest(aid,tid){
   else{ a.plan.tests.push({id:uid(),...data}); }
   save(); closeModal(); render();
 }
-function delTest(aid,tid){ uiConfirm("Delete this test?",()=>{ const a=audit(aid); a.plan.tests=a.plan.tests.filter(x=>x.id!==tid); save(); render(); },{danger:true,confirmLabel:"Delete"}); }
+function delTest(aid,tid){ uiConfirm("Delete this test?",()=>{ const a=audit(aid); const t=(a.plan.tests||[]).find(x=>x.id===tid); a.plan.tests=a.plan.tests.filter(x=>x.id!==tid); logAudit("workspace.test_deleted","Deleted test: "+((t&&(t.name||t.title))||"")+((a&&a.name)?" in "+a.name:""),{auditId:aid,testId:tid}); save(); render(); },{danger:true,confirmLabel:"Delete"}); }
 
 /* ---- Raise an exception (observation) from a test result ---- */
 function modalRaiseException(aid,tid){
@@ -4370,6 +4370,8 @@ const AUDIT_LOG_ACTIONS=[
   ["auth.password_changed","Password changed"],
   ["user.created","User created"],
   ["user.updated","User updated"],
+  ["user.deactivated","User deactivated"],
+  ["user.reactivated","User reactivated"],
   ["user.deleted","User deleted"],
   ["data.backup_export","Backup exported"],
   ["data.backup_import","Backup imported"],
@@ -4377,7 +4379,20 @@ const AUDIT_LOG_ACTIONS=[
   ["workspace.audit_created","Audit created"],
   ["workspace.audit_updated","Audit updated"],
   ["workspace.report_created","Report created"],
-  ["workspace.observation_created","Observation created"]
+  ["workspace.observation_created","Observation created"],
+  ["workspace.department_removed","Action owner removed"],
+  ["obs.deleted","Observation deleted"],
+  ["obs.delete_requested","Observation deletion requested"],
+  ["obs.delete_approved","Observation deletion approved"],
+  ["obs.delete_rejected","Observation deletion rejected"],
+  ["obs.status_changed","Observation status changed"],
+  ["obs.closed","Observation closed"],
+  ["obs.withdrawn","Observation withdrawn"],
+  ["plan.unit_deleted","Auditable unit deleted"],
+  ["fraud.risk_deleted","Fraud risk deleted"],
+  ["process.review_deleted","Process review deleted"],
+  ["iasa.deleted","Self-assessment deleted"],
+  ["exco.brief_deleted","EXCO brief deleted"]
 ];
 let _auditLogCache={ logs:[], total:0, page:1, limit:50 };
 function viewAuditLog(){
@@ -4525,8 +4540,27 @@ async function saveDepartment(id){
   else modalCredentials(headName,headEmail,"");
 }
 function delDepartment(id){
-  uiConfirm("Remove this department? The head's login account is kept (delete it from User access management if needed).",()=>{
-    DB.departments=departments().filter(d=>d.id!==id); save(); render();
+  const d=deptById(id); if(!d) return;
+  // Only deactivate the head's login if no OTHER department still points at the same user.
+  const linked=!!d.headUserId && !departments().some(x=>x.id!==id && x.headUserId===d.headUserId);
+  const msg=linked
+    ?`Remove ${d.name}? ${d.headName||"The head"}'s Action Owner login will be deactivated (sign-in blocked, history kept). You can reactivate or permanently delete it from User access management.`
+    :"Remove this department?";
+  uiConfirm(msg,async ()=>{
+    DB.departments=departments().filter(x=>x.id!==id);
+    logAudit("workspace.department_removed","Removed department "+d.name+(d.headName?" (action owner: "+d.headName+")":""),{departmentId:id,headUserId:d.headUserId||""});
+    save();
+    if(linked){
+      try{
+        const res=await fetch(`/api/users/${d.headUserId}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({active:false})});
+        if(!res.ok){ const data=await res.json().catch(()=>({})); toast(data.error||"Department removed, but the login could not be deactivated.","error"); }
+        else toast(`Department removed. ${d.headName||"The head"}'s login was deactivated — both recorded in the audit trail.`,"success");
+      }catch(e){ toast("Department removed, but the login could not be deactivated (network error).","error"); }
+      await refreshUsersTable(); await loadDirectory();
+    } else {
+      toast("Department removed — recorded in the audit trail.","success");
+    }
+    render();
   },{danger:true,confirmLabel:"Remove"});
 }
 /* ---- Action Owner portal ---- */
@@ -4739,11 +4773,16 @@ async function loadDirectory(){
   return _directoryCache;
 }
 function auditorOptions(selectedId){
-  const list=_directoryCache.filter(u=>u.role==="audit_staff"||u.role==="head_of_audit");
+  // Deactivated accounts can't be assigned new work (an existing selection is preserved).
+  const list=_directoryCache.filter(u=>(u.role==="audit_staff"||u.role==="head_of_audit")&&(u.active!==false||u.id===selectedId));
   return `<option value="">— unassigned —</option>`+list.map(u=>`<option value="${u.id}"${selectedId===u.id?" selected":""}>${esc(u.name)}${u.role==="head_of_audit"?" (Head of Audit)":""}</option>`).join("");
 }
 function ownerOptions(selectedId,placeholder){
-  const D=departments().filter(d=>d.headUserId);
+  // Skip departments whose head's login was deactivated (keep an existing selection visible).
+  const D=departments().filter(d=>d.headUserId).filter(d=>{
+    const u=_directoryCache.find(x=>x.id===d.headUserId);
+    return !u||u.active!==false||d.headUserId===selectedId;
+  });
   return `<option value="">${esc(placeholder||"— select action owner —")}</option>`+D.map(d=>`<option value="${esc(d.headUserId)}"${selectedId===d.headUserId?" selected":""}>${esc(d.headName)} · ${esc(d.name)}</option>`).join("");
 }
 async function refreshUsersTable(){
@@ -4760,16 +4799,40 @@ function avatarInitials(name){ return String(name||"").trim().split(/\s+/).slice
 function avatarHTML(u,size){ size=size||28; const s=+size; if(u&&u.photo) return `<img src="${esc(u.photo)}" alt="" class="al-avatar" style="width:${s}px;height:${s}px">`; return `<span class="al-avatar al-avatar-initials" style="width:${s}px;height:${s}px;font-size:${Math.round(s*0.4)}px">${esc(avatarInitials(u&&u.name))}</span>`; }
 function usersTableHTML(){
   if(!_usersCache.length) return `<div class="empty"><div class="big">👥</div>No users yet.<br>Use <b>Add user</b> to invite audit staff — they sign in with their Microsoft account.</div>`;
-  return `<table><thead><tr><th>Name</th><th>Department</th><th>Email</th><th>Role</th><th>Sidebar access</th><th></th></tr></thead><tbody>
-    ${_usersCache.map(u=>`<tr>
+  return `<table><thead><tr><th>Name</th><th>Department</th><th>Email</th><th>Role</th><th>Status</th><th>Sidebar access</th><th></th></tr></thead><tbody>
+    ${_usersCache.map(u=>{
+      const inactive=u.active===false;
+      const notSelf=window.AMS_USER&&window.AMS_USER.id!==u.id;
+      return `<tr${inactive?` style="opacity:.55"`:""}>
       <td><div class="row" style="gap:8px;align-items:center">${avatarHTML(u,28)}<b>${esc(u.name)}</b></div></td>
       <td>${esc(u.department||"—")}</td>
       <td>${esc(u.email)}</td>
       <td>${esc(roleLabel(u.role))}</td>
+      <td>${inactive?`<span class="pill sop-pending-pill">Inactive</span>`:`<span class="pill c-Low">Active</span>`}</td>
       <td class="hint">${u.role==="head_of_audit"?"All sections + Settings":((u.sidebarAccess||[]).length?(u.sidebarAccess||[]).map(id=>esc((ASSESSMENT_NAV.find(x=>x[0]===id)||[id,id])[1])).join(", "):"Main only")}</td>
-      <td class="ra-actions-cell">${iconBtn(`modalUser('${u.id}')`,"✎","Edit")}${window.AMS_USER&&window.AMS_USER.id!==u.id?delBtn(`deleteUser('${u.id}')`):""}</td>
-    </tr>`).join("")}
+      <td class="ra-actions-cell">${iconBtn(`modalUser('${u.id}')`,"✎","Edit")}${notSelf?(inactive?iconBtn(`setUserActive('${u.id}',true)`,"⟳","Reactivate — allow sign-in again"):iconBtn(`setUserActive('${u.id}',false)`,"⏻","Deactivate — block sign-in, keep history")):""}${notSelf?delBtn(`deleteUser('${u.id}')`,"Permanently delete"):""}</td>
+    </tr>`;}).join("")}
   </tbody></table>`;
+}
+// Deactivate (block sign-in, keep the account and all history) or reactivate a user.
+// The server writes the user.deactivated / user.reactivated audit-trail entry.
+function setUserActive(id,active){
+  const u=_usersCache.find(x=>x.id===id);
+  if(!u){ toast("User not found.","error"); return; }
+  const msg=active
+    ?`Reactivate ${u.name}? They will be able to sign in again with their Microsoft account.`
+    :`Deactivate ${u.name}? They can no longer sign in (any open session ends immediately), but the account, their observations and full history are kept. You can reactivate them at any time.`;
+  uiConfirm(msg,async ()=>{
+    let res,data;
+    try{
+      res=await fetch(`/api/users/${id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({active:!!active})});
+      data=await res.json().catch(()=>({}));
+    }catch(e){ toast("Network error — could not update the account.","error"); return; }
+    if(!res.ok){ toast(data.error||"Could not update the account.","error"); return; }
+    await refreshUsersTable(); await loadDirectory();
+    if(view==="settings") render();
+    toast(`${u.name} ${active?"reactivated":"deactivated"} — recorded in the audit trail.`,"success");
+  },{danger:!active,confirmLabel:active?"Reactivate":"Deactivate",title:active?"Reactivate user":"Deactivate user"});
 }
 function sidebarAccessChecks(selected,disabled){
   return ASSESSMENT_NAV.map(([id,label])=>`<label class="filter-check" style="display:block;margin:4px 0"><input type="checkbox" name="ua_view" value="${id}" style="width:auto"${disabled?" disabled":""}${(selected||[]).includes(id)?" checked":""}> ${esc(label)}</label>`).join("");
@@ -4859,25 +4922,54 @@ async function saveUser(id){
 function deleteUser(id){
   const u=_usersCache.find(x=>x.id===id);
   if(!u){ toast("User not found.","error"); return; }
-  openModal("Delete user",`
-    <div class="note" style="border-left:3px solid var(--crit)">This permanently removes the login account. It cannot be undone. Observations they raised or own are kept, but they will no longer be able to sign in.</div>
+  openModal("Permanently delete user",`
+    <div class="note" style="border-left:3px solid var(--crit)">This <b>permanently</b> removes the login account and cannot be undone. Observations they raised or own are kept.<br><br>💡 Prefer <b>Deactivate</b> if you only want to block sign-in — it keeps the account and can be reversed anytime.</div>
     <div class="obs-field" style="margin-top:10px"><div class="ttl">Name</div><div class="txt">${esc(u.name)}</div></div>
     <div class="obs-field"><div class="ttl">Email</div><div class="txt">${esc(u.email)}</div></div>
     <div class="obs-field"><div class="ttl">Role</div><div class="txt">${esc(roleLabel(u.role))}${u.department?" · "+esc(u.department):""}</div></div>
+    <div id="del_user_progress" style="margin-top:10px"></div>
     <div id="del_user_err" style="margin-top:10px"></div>`,
-    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn danger" onclick="doDeleteUser('${id}')">Delete user</button>`);
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn sec" onclick="closeModal();setUserActive('${id}',false)">Deactivate instead</button><button class="btn danger" id="del_user_go" onclick="doDeleteUser('${id}')">Permanently delete</button>`);
+}
+// Renders the live progress checklist shown while a user is being deleted.
+function delUserStepsHTML(steps){
+  return `<div class="note" style="padding:10px 14px">`+steps.map(s=>{
+    const ico=s.state==="done"?"✅":s.state==="busy"?"⏳":s.state==="fail"?"❌":"◻️";
+    return `<div style="margin:4px 0${s.state==="pending"?";opacity:.5":""}">${ico} ${esc(s.label)}</div>`;
+  }).join("")+`</div>`;
 }
 async function doDeleteUser(id){
+  const u=_usersCache.find(x=>x.id===id)||{};
   const errEl=document.getElementById("del_user_err");
-  const btn=event&&event.currentTarget; const done=btnBusy(btn,"Deleting…");
+  const progEl=document.getElementById("del_user_progress");
+  const goBtn=document.getElementById("del_user_go");
+  if(goBtn) goBtn.disabled=true;
+  if(errEl) errEl.innerHTML="";
+  const steps=[
+    {label:"Remove the login account",state:"busy"},
+    {label:"Record the deletion in the audit trail",state:"pending"},
+    {label:"Refresh users and assignment lists",state:"pending"}
+  ];
+  const paint=()=>{ if(progEl) progEl.innerHTML=delUserStepsHTML(steps); };
+  paint();
   let res,data;
   try{ res=await fetch(`/api/users/${id}`,{ method:"DELETE" }); data=await res.json().catch(()=>({})); }
-  catch(e){ done(); if(errEl) errEl.innerHTML=`<div class="ai-err">Network error — could not delete user. Please try again.</div>`; return; }
-  if(!res.ok){ done(); if(errEl) errEl.innerHTML=`<div class="ai-err">${esc(data.error||"Could not delete user.")}</div>`; return; }
-  done(); closeModal();
-  await refreshUsersTable();
+  catch(e){
+    steps[0].state="fail"; paint(); if(goBtn) goBtn.disabled=false;
+    if(errEl) errEl.innerHTML=`<div class="ai-err">Network error — could not delete user. Please try again.</div>`;
+    return;
+  }
+  if(!res.ok){
+    steps[0].state="fail"; paint(); if(goBtn) goBtn.disabled=false;
+    if(errEl) errEl.innerHTML=`<div class="ai-err">${esc(data.error||"Could not delete user.")}</div>`;
+    return;
+  }
+  // The server deletes and writes the user.deleted audit-trail entry in the same request.
+  steps[0].state="done"; steps[1].state="done"; steps[2].state="busy"; paint();
+  await refreshUsersTable(); await loadDirectory();
+  steps[2].state="done"; paint();
   if(view==="settings") render();
-  toast("User deleted.","success");
+  modalSuccess(`${u.name||"The user"} was permanently deleted. The deletion has been recorded in the audit trail.`,"User deleted");
 }
 function resetAllData(){
   uiConfirm("Delete ALL content — audits, reports, observations, audit universe, fraud risks/plan and process reviews? Your org name and report author are kept. This cannot be undone.",()=>{
@@ -5263,7 +5355,9 @@ function delObs(aid,rid,oid){
   }
   uiConfirm("Delete this observation? This cannot be undone.",()=>{
     const rr=report(audit(aid),rid); rr.observations=rr.observations.filter(x=>x.id!==oid);
-    supersedePendingUpdate(oid); cancelPendingStatusChange(oid); cancelPendingDelete(oid); save();
+    supersedePendingUpdate(oid); cancelPendingStatusChange(oid); cancelPendingDelete(oid);
+    logAudit("obs.deleted","Deleted observation: "+((o&&o.title)||""),{auditId:aid,reportId:rid,observationId:oid});
+    save();
     if(view==="observation") go("report",{audit:aid,report:rid});
     else render();
   },{danger:true,confirmLabel:"Delete"});
@@ -6074,7 +6168,7 @@ async function generateExcoBriefNow(){
 }
 function viewExcoBrief(id){ const b=excoBriefs().find(x=>x.id===id); if(!b) return; try{ window.open(briefLink(b.token),"_blank","noopener"); }catch(e){ toast(briefLink(b.token)); } }
 function copyExcoBriefLink(id){ const b=excoBriefs().find(x=>x.id===id); if(!b) return; const link=briefLink(b.token); try{ navigator.clipboard.writeText(link).then(()=>toast("Link copied.","success"),()=>toast(link)); }catch(e){ toast(link); } }
-function delExcoBrief(id){ uiConfirm("Delete this brief? Its public link will stop working.",()=>{ const e=excoMeta(); e.briefs=(e.briefs||[]).filter(x=>x.id!==id); save(); render(); },{danger:true,confirmLabel:"Delete"}); }
+function delExcoBrief(id){ uiConfirm("Delete this brief? Its public link will stop working.",()=>{ const e=excoMeta(); const b=(e.briefs||[]).find(x=>x.id===id); e.briefs=(e.briefs||[]).filter(x=>x.id!==id); logAudit("exco.brief_deleted","Deleted Executive Assurance Brief"+((b&&b.period)?" for "+b.period:""),{briefId:id}); save(); render(); },{danger:true,confirmLabel:"Delete"}); }
 function buildExcoEmailTextFromSnapshot(s,link){
   const k=s.kpis||{}; const lines=[`Internal Audit — Executive Assurance Brief for the MD & Executive Committee`,`${s.org||DB.org||""} · As at ${s.period||""}`,``];
   if(s.headline) lines.push(s.headline,"");

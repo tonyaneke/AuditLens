@@ -68,6 +68,16 @@ export async function GET(request: NextRequest) {
 
   const user = await findUserByEmail(email);
   if (!user) return toLogin(request, "not_provisioned");
+  if (user.active === false) {
+    await writeAuditLog({
+      user: { id: user.id, name: user.name, email: user.email },
+      action: "auth.login_blocked",
+      category: "auth",
+      summary: `${user.name} attempted to sign in but the account is deactivated`,
+      metadata: { email: user.email, method: "sso" },
+    }).catch(() => {});
+    return toLogin(request, "deactivated");
+  }
 
   // SSO users have no local password to manage — clear any stale first-login flag, keep the display
   // name in sync with Microsoft if it was blank, and refresh the profile photo when we got one.

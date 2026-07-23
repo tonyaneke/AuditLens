@@ -30,6 +30,12 @@ export async function POST(request: NextRequest) {
   if (!user) {
     return NextResponse.json({ error: "No AuditLens user with that email." }, { status: 404 });
   }
+  if (user.active === false) {
+    return NextResponse.json(
+      { error: "This account has been deactivated. Contact the Head of Audit." },
+      { status: 403 },
+    );
+  }
 
   const sessionUser = userToSession({ ...user, mustChangePassword: false });
   const token = await signSessionToken(sessionUser);

@@ -12,15 +12,15 @@ export const AUDIT_CATEGORIES = [
 
 export type AuditCategory = (typeof AUDIT_CATEGORIES)[number];
 
-export const CLIENT_AUDIT_ACTIONS = new Set([
-  "data.backup_export",
-  "data.backup_import",
-  "data.reset_all",
-  "workspace.audit_created",
-  "workspace.audit_updated",
-  "workspace.report_created",
-  "workspace.observation_created",
-]);
+// Client-reported audit actions may be any "<area>.<event>" slug EXCEPT areas that only the
+// server itself is allowed to assert (sign-ins, user management, security) — otherwise every
+// workspace event the app logs (deletions, approvals, status changes…) is silently dropped.
+const SERVER_ONLY_ACTION_AREAS = new Set(["auth", "user", "security"]);
+
+export function isClientAuditAction(action: string): boolean {
+  const match = /^([a-z][a-z0-9_]*)\.[a-z][a-z0-9_]*$/.exec(action);
+  return !!match && !SERVER_ONLY_ACTION_AREAS.has(match[1]);
+}
 
 type AuditLogInput = {
   user?: Pick<SessionUser, "id" | "name" | "email"> | null;
@@ -64,6 +64,8 @@ export function actionLabel(action: string) {
     "auth.password_changed": "Password changed",
     "user.created": "User created",
     "user.updated": "User updated",
+    "user.deactivated": "User deactivated",
+    "user.reactivated": "User reactivated",
     "user.deleted": "User deleted",
     "data.backup_export": "Backup exported",
     "data.backup_import": "Backup imported",
@@ -72,6 +74,55 @@ export function actionLabel(action: string) {
     "workspace.audit_updated": "Audit updated",
     "workspace.report_created": "Report created",
     "workspace.observation_created": "Observation created",
+    "workspace.department_removed": "Action owner removed",
+    "workspace.test_deleted": "Test deleted",
+    "obs.raised": "Observation raised",
+    "obs.raise_requested": "Observation submitted for approval",
+    "obs.approved": "Observation approved",
+    "obs.rejected": "Observation rejected",
+    "obs.update": "Observation update posted",
+    "obs.update_requested": "Observation edit requested",
+    "obs.update_approved": "Observation edit approved",
+    "obs.update_rejected": "Observation edit rejected",
+    "obs.status_changed": "Observation status changed",
+    "obs.status_change_requested": "Status change requested",
+    "obs.status_change_approved": "Status change approved",
+    "obs.status_change_rejected": "Status change rejected",
+    "obs.reassigned": "Observation reassigned",
+    "obs.progress_requested": "Progress report requested",
+    "obs.ready_for_closure": "Marked ready for closure",
+    "obs.report_verified": "Closure report verified",
+    "obs.closure_rejected": "Closure rejected",
+    "obs.closure_escalated": "Closure escalated",
+    "obs.closed": "Observation closed",
+    "obs.deleted": "Observation deleted",
+    "obs.delete_requested": "Observation deletion requested",
+    "obs.delete_approved": "Observation deletion approved",
+    "obs.delete_rejected": "Observation deletion rejected",
+    "obs.review_requested": "Observation review requested",
+    "obs.review_declined": "Observation review declined",
+    "obs.withdraw_forwarded": "Withdrawal forwarded",
+    "obs.withdrawn": "Observation withdrawn",
+    "obs.withdraw_rejected": "Withdrawal rejected",
+    "plan.year_created": "Annual plan opened",
+    "plan.completed": "Engagement completed",
+    "plan.completion_requested": "Completion approval requested",
+    "plan.completion_approved": "Completion approved",
+    "plan.completion_rejected": "Completion rejected",
+    "plan.unit_deleted": "Auditable unit deleted",
+    "fraud.risk_deleted": "Fraud risk deleted",
+    "process.review_deleted": "Process review deleted",
+    "process.step_deleted": "Process step deleted",
+    "iasa.deleted": "Self-assessment deleted",
+    "ext.raised": "External finding added",
+    "ext.assigned": "External finding assigned",
+    "exco.generated": "EXCO brief generated",
+    "exco.sent": "EXCO brief sent",
+    "exco.brief_deleted": "EXCO brief deleted",
   };
-  return labels[action] || action;
+  if (labels[action]) return labels[action];
+  // Fallback: humanize "<area>.<event>" so unknown actions still read well in the trail.
+  const event = action.split(".")[1] || action;
+  const words = event.replace(/_/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }

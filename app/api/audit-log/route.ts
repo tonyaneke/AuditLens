@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import {
   actionLabel,
   categoryForAction,
-  CLIENT_AUDIT_ACTIONS,
+  isClientAuditAction,
   writeAuditLog,
 } from "@/lib/audit-log";
 import { requireActiveSession, requireHeadOfAudit } from "@/lib/auth";
@@ -86,7 +86,7 @@ export async function POST(request: Request) {
   const action = body.action?.trim() || "";
   const summary = body.summary?.trim() || "";
 
-  if (!CLIENT_AUDIT_ACTIONS.has(action)) {
+  if (!isClientAuditAction(action)) {
     return NextResponse.json({ error: "Invalid action." }, { status: 400 });
   }
   if (!summary) {

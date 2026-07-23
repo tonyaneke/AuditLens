@@ -93,6 +93,54 @@ export async function PUT(request: Request, { params }: Params) {
   return NextResponse.json({ user: userToSession(user) });
 }
 
+// Deactivate / reactivate. Deactivation keeps the account and all history but blocks sign-in
+// (any existing session dies on its next request). This is the recommended alternative to delete.
+export async function PATCH(request: Request, { params }: Params) {
+  let session;
+  try {
+    session = await requireHeadOfAudit();
+  } catch {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const { id } = await params;
+  const existing = await prisma.user.findUnique({ where: { id } });
+  if (!existing) {
+    return NextResponse.json({ error: "User not found." }, { status: 404 });
+  }
+
+  let body: { active?: boolean };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
+  }
+  if (typeof body.active !== "boolean") {
+    return NextResponse.json({ error: "active must be true or false." }, { status: 400 });
+  }
+  if (id === session.id && !body.active) {
+    return NextResponse.json(
+      { error: "You cannot deactivate your own account." },
+      { status: 400 },
+    );
+  }
+  if (existing.active === body.active) {
+    return NextResponse.json({ user: userToSession(existing), active: existing.active });
+  }
+
+  const user = await prisma.user.update({ where: { id }, data: { active: body.active } });
+
+  await writeAuditLog({
+    user: session,
+    action: body.active ? "user.reactivated" : "user.deactivated",
+    category: "user",
+    summary: `${body.active ? "Reactivated" : "Deactivated"} user ${user.name} (${user.email})`,
+    metadata: { targetUserId: user.id, targetEmail: user.email, role: user.role },
+  });
+
+  return NextResponse.json({ user: userToSession(user), active: user.active });
+}
+
 export async function DELETE(_request: Request, { params }: Params) {
   let session;
   try {

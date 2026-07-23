@@ -23,6 +23,7 @@ export async function GET() {
       role: true,
       sidebarAccess: true,
       photo: true,
+      active: true,
       createdAt: true,
     },
   });

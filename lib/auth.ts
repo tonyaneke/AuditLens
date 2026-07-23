@@ -97,7 +97,8 @@ export async function getSessionWithFlags(): Promise<SessionUser | null> {
   if (!session) return null;
 
   const user = await prisma.user.findUnique({ where: { id: session.id } });
-  if (!user) return null;
+  // A deactivated user's existing session is invalid immediately — same as a deleted one.
+  if (!user || user.active === false) return null;
 
   return userToSession(user);
 }
