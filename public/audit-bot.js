@@ -4663,6 +4663,72 @@ function viewOwnerDashboard(){
 }
 let _usersCache=[];
 let _directoryCache=[];
+// Credicorp staff list — used by the Add user modal so the Head of Audit can pick a person
+// instead of typing. Emails follow the convention first-initial + surname @credicorp.ng.
+const STAFF_DIRECTORY=[
+  ["Olanike Kolawole","Executive Director – Operations"],
+  ["Terry Akpata","Professional - Risk & Compliance"],
+  ["Halima Ahmed","Intern"],
+  ["Alexander Ehanire","Head, Strategy & Innovation"],
+  ["Tubolayefa George","Specialist - Finance"],
+  ["Boluwatife Inaolaji","Intern - People Experience"],
+  ["Uzoma Nwagba","Managing Director"],
+  ["Adanu Ayegba","Professional - Protocol"],
+  ["Ziga Paago","Management Trainee"],
+  ["Obiageli Ohakim","Head, Legal & Company Secretary"],
+  ["Fatima Bello","Professional - Credit Operations"],
+  ["Elizabeth Adu","E.A to the E.D Operations"],
+  ["Jonathan Aderibigbe","Chief Financial Officer"],
+  ["Eniola Anishe","Intern - Strategy & Innovation"],
+  ["Solomon Aladegolu","Professional - IT"],
+  ["Peter Esemuede","Technical Adviser to the MD/CEO & Lead, External Relations"],
+  ["Emmanuel Okechukwu","Professional - IT Risk & Compliance"],
+  ["Aisha Abdullahi","Executive Director – Credit & Portfolio Management"],
+  ["Chiamaka Ogoh","Management Trainee"],
+  ["Wuraola Odubiyi","Head, Admin, People & Culture"],
+  ["Imoh Usoro","Head, Procurement"],
+  ["Diekololaoluwa Adewale","Intern - Legal"],
+  ["Olusola Adetiba","Professional - People & Culture"],
+  ["Dorcas Okolo","Management Trainee"],
+  ["Oluwatoyosi Ibinaiye","Intern - Customer Experience"],
+  ["Asari Etuk","Head, Risk and Compliance"],
+  ["Opeyemi Ayediran","Professional - Procurement"],
+  ["Elizabeth Faboyo","Technical Adviser to the MD/CEO & Lead, Fundraising"],
+  ["Emmanuel Nwaka","Lead, Impact & Sustainability"],
+  ["Sadiq Mohammed","Head, Credit Operations"],
+  ["Saadatu Alkali","EA to the ED Credit and Portfolio Mgmt."],
+  ["Toyin Olaiya","Professional - Admin"],
+  ["Najma Goni","Management Trainee"],
+  ["Beulah Lekwauwa","Professional - Corporate Counsel"],
+  ["Delight Nwafor","Professional - Customer Support"],
+  ["Michael Ojo","Professional - Strategic Communications"],
+  ["Yachat Kanwai","Management Trainee"],
+  ["Ladi Amusu","Chief of Staff"],
+  ["Peace Oyewumi","Management Trainee"],
+  ["Tochukwu Chukwuani","Management Trainee"]
+];
+function staffEmail(name){
+  const parts=String(name||"").trim().toLowerCase().split(/\s+/);
+  if(parts.length<2) return "";
+  return (parts[0][0]+parts[parts.length-1]).replace(/[^a-z]/g,"")+"@credicorp.ng";
+}
+function staffPickerOptions(){
+  const taken=new Set((_usersCache||[]).map(u=>String(u.email||"").toLowerCase()));
+  return `<option value="">— select a staff member (optional) —</option>`+
+    STAFF_DIRECTORY.slice().sort((a,b)=>a[0].localeCompare(b[0])).map(([n,t])=>{
+      const em=staffEmail(n); const dup=taken.has(em);
+      return `<option value="${esc(em)}" data-name="${esc(n)}"${dup?" disabled":""}>${esc(n)} · ${esc(t)}${dup?" — already added":""}</option>`;
+    }).join("");
+}
+function applyStaffPick(){
+  const sel=document.getElementById("ua_staff");
+  if(!sel||!sel.value) return;
+  const opt=sel.options[sel.selectedIndex];
+  const nameEl=document.getElementById("ua_name");
+  const emailEl=document.getElementById("ua_email");
+  if(nameEl) nameEl.value=opt.getAttribute("data-name")||"";
+  if(emailEl) emailEl.value=sel.value;
+}
 async function loadDirectory(){
   try{
     const res=await fetch("/api/directory");
@@ -4712,6 +4778,11 @@ function modalUser(id){
   const u=id?_usersCache.find(x=>x.id===id):null;
   const isEdit=!!u;
   openModal(isEdit?"Edit user":"Add user",`
+    ${isEdit?"":`<div style="margin-bottom:10px">
+      <label>Credicorp staff</label>
+      <select id="ua_staff" onchange="applyStaffPick()">${staffPickerOptions()}</select>
+      <div class="hint" style="margin-top:4px">Selecting a person fills in the name and email below. You can still type them manually.</div>
+    </div>`}
     <div class="f2">
       <div><label>Name *</label><input id="ua_name" value="${esc(u?u.name:"")}"></div>
       <div><label>Department</label><select id="ua_dept">${deptOptionsHTML(u?u.department:"Audit Department")}</select></div>
