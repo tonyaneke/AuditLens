@@ -258,7 +258,7 @@ function fmtAuditWhen(iso){
 function canAccessView(v){
   const u = window.AMS_USER;
   if(!u) return ["dashboard","audits","tracker","audit","report","observation","newobs","insights","guide"].includes(v);
-  if(u.role==="action_owner"){ return v==="myobs"||v==="myext"||v==="observation"||v==="extfinding"||v==="dashboard"; }
+  if(u.role==="action_owner"){ return v==="myobs"||v==="myext"||v==="myfraud"||v==="observation"||v==="extfinding"||v==="dashboard"; }
   if(u.role==="head_of_audit"){
     if(["dashboard","audits","tracker","auditra","fraud","process","external","iasa","approvals","exco","settings","auditlog","audit","report","observation","extfinding","newobs","insights","guide"].includes(v)) return true;
     return false;
@@ -347,7 +347,7 @@ const ICON_TRASH=`<svg viewBox="0 0 24 24" width="14" height="14" fill="none" st
 function iconBtn(fn,icon,title,danger){ return `<button type="button" class="btn-icon-action${danger?" danger":""}" title="${esc(title)}" onclick="${fn}">${icon}</button>`; }
 function delBtn(fn,title){ return iconBtn(fn,ICON_TRASH,title||"Delete",true); }
 function pageTitleFor(v){
-  const map={dashboard:"Dashboard",audits:"Audits & Reports",tracker:"Remediation Tracker",auditra:"Audit Risk Assessment",fraud:"Fraud Risk Assessment",process:"Process Review",external:"External Findings",iasa:"IA Self-Assessment",approvals:"Approvals",exco:"Executive Assurance Brief",myobs:"Internal Observations",myext:"External Observations",guide:"How to use AuditLens",settings:"Settings",auditlog:"Audit log"};
+  const map={dashboard:"Dashboard",audits:"Audits & Reports",tracker:"Remediation Tracker",auditra:"Audit Risk Assessment",fraud:"Fraud Risk Assessment",process:"Process Review",external:"External Findings",iasa:"IA Self-Assessment",approvals:"Approvals",exco:"Executive Assurance Brief",myobs:"Internal Observations",myext:"External Observations",myfraud:"Fraud Risk Control Tracker",guide:"How to use AuditLens",settings:"Settings",auditlog:"Audit log"};
   return map[v]||"AuditLens";
 }
 function planYearOptions(selected){
@@ -406,7 +406,7 @@ function render(){
   const T=document.getElementById("pageTitle");
   const A=document.getElementById("topActions");
   A.innerHTML=""; setTopSearch(""); setTopBack("");
-  if(window.AMS_USER && window.AMS_USER.role==="action_owner" && !["myobs","myext","observation","extfinding","dashboard"].includes(view)){ view="myobs"; }
+  if(window.AMS_USER && window.AMS_USER.role==="action_owner" && !["myobs","myext","myfraud","observation","extfinding","dashboard"].includes(view)){ view="myobs"; }
   if(view==="dashboard" && isActionOwner()){ T.textContent=pageTitleFor("dashboard"); C.innerHTML=viewOwnerDashboard(); }
   else if(view==="dashboard"){ T.textContent=pageTitleFor("dashboard"); A.innerHTML=`<button class="btn sec sm" onclick="exportDashboard()">⤓ Export dashboard</button><button class="btn sec sm" onclick="modalCaeReport()">⤓ Quarterly BAC report</button>`; C.innerHTML=viewDashboard(); }
   else if(view==="auditra"){ T.textContent=pageTitleFor("auditra"); A.innerHTML=isStaff()?`${iconBtn("modalRADownload()","⤓","Download")}`:(auditUniverse().length?`${iconBtn("modalRADownload()","⤓","Download")}<button class="btn sm" onclick="modalNewAuditPlan()">+ New audit plan</button>`:`<button class="btn sm dark ai-generate-btn" onclick="modalRAPrompt()">Generate audit universe</button>`); C.innerHTML=viewAuditRA(); }
@@ -468,6 +468,11 @@ function render(){
     if(!canAccessView("myext")){ go("dashboard"); return; }
     T.textContent=pageTitleFor("myext");
     C.innerHTML=viewMyExt();
+  }
+  else if(view==="myfraud"){
+    if(!canAccessView("myfraud")){ go("dashboard"); return; }
+    T.textContent=pageTitleFor("myfraud");
+    C.innerHTML=viewMyFraud();
   }
   else {
     T.textContent=pageTitleFor(view)||"AuditLens";
@@ -4152,7 +4157,8 @@ function submitClosureReject(aid,rid,oid,target){
   o.reportVerifiedAt=""; o.reportVerifiedBy=""; o.reportVerifiedByName="";
   if(!toAuditor){ o.ownerRectifiedAt=""; o.ownerRectifiedBy=""; o.ownerRectifiedByName=""; if(o.status==="Closed"||o.status==="Open") o.status="In Progress"; }
   // A rejection to the auditor is Internal-Audit-internal — the action owner must not see it.
-  obsUpdates(o).push({id:uid(),by:u.id||"",byName:u.name||"",role:u.role||"",at:new Date().toISOString(),text:(toAuditor?"Rejected to auditor: ":"Escalated to action owner: ")+note,evidence:[],audience:toAuditor?"ia":""});
+  // (audience "ia_only" — NOT "ia", which is the default recipient marker on normal comments.)
+  obsUpdates(o).push({id:uid(),by:u.id||"",byName:u.name||"",role:u.role||"",at:new Date().toISOString(),text:(toAuditor?"Rejected to auditor: ":"Escalated to action owner: ")+note,evidence:[],audience:toAuditor?"ia_only":""});
   const a=audit(aid);
   if(toAuditor){
     const ids=[]; if(o.raisedBy) ids.push(o.raisedBy); if(a&&a.leadAuditorId) ids.push(a.leadAuditorId);
@@ -4253,6 +4259,27 @@ function obsCommentRowHTML(u){
   const person=(u.by&&(_directoryCache||[]).find(x=>x.id===u.by))||{name:u.byName||""};
   return `<div class="obs-note${u.audience==="owner"?" obs-note-private":""}"><div class="obs-note-text">${linkify(u.text||"")}</div>${(u.evidence||[]).map(e=>`<div class="hint">📎 <a href="/api/files/${esc(e.itemId)}" target="_blank" rel="noopener">${esc(e.name)}</a></div>`).join("")}<div class="obs-note-meta" style="display:flex;align-items:center;gap:8px;font-weight:700;color:var(--accent,#0d5a47)">${avatarHTML(person,22)}<span>${esc(u.byName||"")}${u.role?" ("+esc(roleLabel(u.role))+")":""}${u.at?" · "+esc(fmtDateTime(u.at)):""}</span><span style="flex:1"></span><span class="pill" style="background:${t[1]};color:${t[2]}">${t[0]}</span></div></div>`;
 }
+// Auditor / Head: add a comment to the action owner straight from the comments page.
+function modalAuditorComment(){
+  openModal("Add comment",`
+    <label>Comment for the action owner *</label>
+    <textarea id="ac_text" style="min-height:110px" oninput="autoGrow(this)" placeholder="Add a comment on this observation…"></textarea>
+    <div id="ac_err" style="margin-top:8px"></div>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="postAuditorComment()">Post comment</button>`);
+}
+function postAuditorComment(){
+  const a=audit(curAudit); const r=report(a,curReport); const o=r&&r.observations.find(x=>x.id===curObs); if(!o) return;
+  const text=val("ac_text");
+  if(!text){ const e=document.getElementById("ac_err"); if(e) e.innerHTML=`<div class="ai-err">Write a comment first.</div>`; return; }
+  const u=window.AMS_USER||{};
+  obsUpdates(o).push({id:uid(),by:u.id||"",byName:u.name||"",role:u.role||"",at:new Date().toISOString(),text,evidence:[],audience:""});
+  if(o.ownerUserId) notify(o.ownerUserId,"update","New comment on: "+o.title,"myobs",o.id);
+  if(o.secondaryOwnerUserId) notify(o.secondaryOwnerUserId,"update","New comment on: "+o.title,"myobs",o.id);
+  const emails=[]; const pe=ownerEmailFor(o.ownerUserId); if(pe) emails.push(pe); const se=ownerEmailFor(o.secondaryOwnerUserId); if(se) emails.push(se);
+  emailNotify(uniq(emails),"AuditLens — new comment on your observation",`Internal Audit${u.name?" ("+u.name+")":""} posted a comment on the observation "${o.title}".${text?` Comment: "${text.slice(0,140)}${text.length>140?"…":""}".`:""} Sign in to AuditLens to respond.`);
+  logAudit("obs.update","Update posted on: "+o.title,{observationId:o.id});
+  save(); closeModal(); render(); toast("Comment sent.","success");
+}
 // The full comment thread lives on its own in-page view so the observation page stays clean.
 let obsCommentsOpen=false;
 let obsCommentsFilter={type:"All",by:"All",order:"Newest first"};
@@ -4289,8 +4316,9 @@ function obsRemediationHTML(o,a,r){
   const canPost=isOwnerViewer&&!closed&&!withdrawn;
   const coOwnerExists=!!(o.ownerUserId&&o.secondaryOwnerUserId);
   // Private owner-to-owner notes (audience "owner") are hidden from Internal Audit / the Head;
-  // Internal-Audit-only notes (audience "ia", e.g. Head→auditor rejections) are hidden from owners.
-  const visibleUpdates=updates.filter(u=>(u.audience!=="owner"||isOwnerViewer)&&(u.audience!=="ia"||!isOwnerViewer));
+  // IA-only notes (audience "ia_only", e.g. Head→auditor rejections) are hidden from owners.
+  // Note: audience "ia" is the default recipient marker on ordinary comments — visible to all.
+  const visibleUpdates=updates.filter(u=>(u.audience!=="owner"||isOwnerViewer)&&(u.audience!=="ia_only"||!isOwnerViewer));
   const nextHint = closed ? "" :
     primary && !o.ownerRectifiedAt ? (rej&&rej.target==="owner" ? "This was sent back to your department for more work — address the feedback, then mark it Ready for Closure again." : "When your department has addressed this, mark it Ready for Closure for Internal Audit to verify.") :
     secondary && !o.reportVerifiedAt ? "You have oversight of this observation — follow progress and add comments; the primary owner responds and closes." :
@@ -4360,8 +4388,8 @@ function renderObservation(C,T,A){
     if(o.closureNote&&closed) updates.push({text:o.closureNote,byName:o.reportVerifiedByName||"",role:"audit_staff",at:o.reportVerifiedAt||"",tag:"closure_update",evidence:o.closureFile?[o.closureFile]:[]});
     if(o.headComment&&closed) updates.push({text:o.headComment,byName:o.headVerifiedByName||"",role:"head_of_audit",at:o.headVerifiedAt||"",tag:"closure_update"});
     // Private owner-to-owner notes stay hidden from Internal Audit / the Head; IA-only
-    // notes (Head→auditor rejections) stay hidden from action owners.
-    const visible=updates.filter(u=>(u.audience!=="owner"||isOwnerViewer)&&(u.audience!=="ia"||!isOwnerViewer))
+    // notes (audience "ia_only", Head→auditor rejections) stay hidden from action owners.
+    const visible=updates.filter(u=>(u.audience!=="owner"||isOwnerViewer)&&(u.audience!=="ia_only"||!isOwnerViewer))
       .sort((x,y)=>String(y.at||"").localeCompare(String(x.at||"")));
     const f=obsCommentsFilter;
     const authors=uniq(visible.map(u=>u.byName).filter(Boolean));
@@ -4387,6 +4415,7 @@ function renderObservation(C,T,A){
           <select class="field-select field-select-sm" onchange="obsCommentsSet('order',this.value)">${["Newest first","Oldest first"].map(t=>`<option${f.order===t?" selected":""}>${esc(t)}</option>`).join("")}</select></div>
       </div>
       ${rows.length?rows.map(obsCommentRowHTML).join(""):`<div class="hint">${visible.length?"No comments match the current filters.":"No comments yet."}</div>`}
+      ${!isOwnerViewer?`<button class="btn" style="position:fixed;bottom:28px;right:36px;z-index:40;box-shadow:0 6px 18px rgba(13,90,71,.35);padding:12px 22px;font-size:14px" onclick="modalAuditorComment()">＋ Add comment</button>`:""}
     </div>`;
     return;
   }
@@ -4884,6 +4913,72 @@ function viewMyExt(){
       <div class="spacer" style="flex:1"></div><span class="hint">${items0.length} total</span>
     </div></div>`;
   return myObsSectionsHTML(items,filterHTML,["Open external findings","Closed external findings"]);
+}
+/* ---- Auditee Fraud Risk Control Tracker: prevention actions assigned to this owner ---- */
+function myFraudRisks(){ const me=window.AMS_USER||{}; migrateFraudActions(); return fraudList().filter(f=>f.ownerUserId===me.id); }
+function viewMyFraud(){
+  const risks=myFraudRisks();
+  if(!risks.length) return `<div class="card"><div class="empty"><div class="big">⚠</div>No fraud risks assigned to you yet.<br><br>When Internal Audit assigns a fraud risk to your department, its prevention actions appear here for you to implement and report progress on.</div></div>`;
+  const acts=risks.flatMap(f=>fraudActions(f).map(a=>({f,a})));
+  const impl=acts.filter(x=>x.a.status==="Implemented").length;
+  const prog=acts.filter(x=>x.a.status==="In Progress").length;
+  const plan=acts.filter(x=>(x.a.status||"Planned")==="Planned").length;
+  let h=`<div class="dash-kpis anim-fade-in" style="grid-template-columns:repeat(4,1fr)">
+    ${kpi("base","Prevention actions",acts.length,"across "+risks.length+" fraud risk"+(risks.length===1?"":"s"))}
+    ${kpi(acts.length&&impl===acts.length?"good":"accent","Implemented",impl,"controls in place")}
+    ${kpi(prog?"warn":"base","In progress",prog,"being implemented")}
+    ${kpi(plan?"bad":"good","Planned",plan,"not yet started")}
+  </div>`;
+  risks.forEach(f=>{
+    const inh=fraudBand(f.likelihood*f.impact); const res=f.residualOverride||residualBand(inh,f.controlStrength);
+    const A=fraudActions(f);
+    h+=`<div class="card anim-fade-in"><div class="row" style="align-items:center;gap:8px;flex-wrap:wrap">
+      <div class="seclabel" style="margin:0">${esc(f.scheme)}</div>
+      <span class="pill" style="background:${hx2rgba(BAND_HEX[res],.16)};color:${BAND_HEX[res]};font-weight:700">${res} residual</span>
+      ${f.category?`<span class="tag">${esc(f.category)}</span>`:""}
+      <div class="spacer"></div><span class="hint">${esc(f.status||"Identified")}</span></div>
+    ${A.length?`<table style="margin-top:10px"><thead><tr><th>Prevention / response action</th><th>Type</th><th>Target</th><th style="width:150px">Status</th><th>Latest update</th><th></th></tr></thead><tbody>
+      ${A.map(a=>{ const last=(a.ownerUpdates||[])[0]; return `<tr>
+        <td>${esc(a.text)}</td>
+        <td><span class="tag">${esc(a.type||"—")}</span></td>
+        <td>${esc(a.targetDate||"—")}</td>
+        <td><select class="field-select field-select-sm" onchange="myFraudSetStatus('${f.id}','${a.id}',this.value)">${ACTION_STATUS.map(s=>`<option${(a.status||"Planned")===s?" selected":""}>${s}</option>`).join("")}</select></td>
+        <td class="hint">${last?`${esc(last.text)}<div style="margin-top:2px">${esc(last.byName||"")} · ${esc(fmtDateTime(last.at))}</div>`:"—"}</td>
+        <td class="ra-actions-cell"><button class="btn sec sm" onclick="modalMyFraudUpdate('${f.id}','${a.id}')">+ Update</button></td>
+      </tr>`; }).join("")}</tbody></table>`:`<div class="hint" style="margin-top:8px">No prevention actions defined for this risk yet.</div>`}
+    </div>`;
+  });
+  return h;
+}
+function myFraudSetStatus(fid,aid,v){
+  const f=fraudList().find(x=>x.id===fid); const a=f&&(f.actions||[]).find(x=>x.id===aid); if(!a) return;
+  a.status=v; rollupFraud(f);
+  logAudit("fraud.action_status_updated","Fraud action status → "+v+" ("+f.scheme+")",{fraudRiskId:fid,actionId:aid});
+  headUsers().forEach(hh=>notify(hh.id,"fraud_update",`Fraud control ${v.toLowerCase()}: ${f.scheme}`,"fraud"));
+  save(); render(); toast("Status updated — Internal Audit has been notified.","success");
+}
+function modalMyFraudUpdate(fid,aid){
+  const f=fraudList().find(x=>x.id===fid); const a=f&&(f.actions||[]).find(x=>x.id===aid); if(!a) return;
+  openModal("Implementation update",`
+    <div class="note" style="margin-bottom:10px"><b>${esc(a.text)}</b><div class="hint" style="margin-top:4px">Fraud risk: ${esc(f.scheme)}</div></div>
+    <label>Status</label><select id="mfu_status">${ACTION_STATUS.map(s=>`<option${(a.status||"Planned")===s?" selected":""}>${s}</option>`).join("")}</select>
+    <label>What has been done / current progress *</label>
+    <textarea id="mfu_text" style="min-height:110px" oninput="autoGrow(this)" placeholder="Describe concretely what has been implemented, current progress, and what remains…"></textarea>
+    <div id="mfu_err" style="margin-top:8px"></div>`,
+    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveMyFraudUpdate('${fid}','${aid}')">Post update</button>`);
+}
+function saveMyFraudUpdate(fid,aid){
+  const f=fraudList().find(x=>x.id===fid); const a=f&&(f.actions||[]).find(x=>x.id===aid); if(!a) return;
+  const text=val("mfu_text");
+  if(!text){ const e=document.getElementById("mfu_err"); if(e) e.innerHTML=`<div class="ai-err">Describe the implementation progress before posting.</div>`; return; }
+  const u=window.AMS_USER||{};
+  a.status=val("mfu_status")||a.status;
+  a.ownerUpdates=a.ownerUpdates||[]; a.ownerUpdates.unshift({at:new Date().toISOString(),by:u.id||"",byName:u.name||"",text,status:a.status});
+  a.update=text; // surfaces on the Fraud Prevention Plan table for Internal Audit
+  rollupFraud(f);
+  logAudit("fraud.action_update","Implementation update on fraud action ("+f.scheme+")",{fraudRiskId:fid,actionId:aid});
+  headUsers().forEach(hh=>notifyBoth(hh.id,"fraud_update",`Fraud control update: ${f.scheme}`,"fraud","AuditLens — fraud control update",`${u.name||"The action owner"} posted an implementation update on the fraud risk "${f.scheme}".\n\nAction: ${a.text}\nStatus: ${a.status}\n\nUpdate: ${text}\n\nSign in to AuditLens to review.`));
+  save(); closeModal(); render(); toast("Update posted — Internal Audit has been notified.","success");
 }
 function dismissOwnerAnnounce(){ try{ localStorage.setItem("al_owner_ann_"+((window.AMS_USER&&window.AMS_USER.id)||""),"1"); }catch(e){} render(); }
 /* ---- First-login walkthrough for action owners: a simulated observation → response → closure ---- */
