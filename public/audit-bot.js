@@ -4088,7 +4088,7 @@ function modalCloseObservation(aid,rid,oid){
     ${o.ownerRectifiedAt?`<div class="hint" style="margin-bottom:8px">Marked Ready for Closure by ${esc(o.ownerRectifiedByName||"the action owner")} on ${esc(fmtDateTime(o.ownerRectifiedAt))}.</div>`:""}
     ${o.ownerResponse?`<div class="obs-field"><div class="ttl">Action owner's closure response</div><div class="txt">${richText(o.ownerResponse)}${(o.ownerResponseEvidence||[]).map(e=>`<div class="hint" style="margin-top:4px">📎 <a href="/api/files/${esc(e.itemId)}" target="_blank" rel="noopener">${esc(e.name)}</a></div>`).join("")}</div></div>`:""}
     <div class="f2">
-      <div><label>Closure date</label><input type="date" id="co_date" value="${esc(o.closedDateISO||isoNow())}"></div>
+      <div><label>Closure date</label><input type="date" id="co_date" value="${esc(String(o.closedDateISO||isoNow()).slice(0,10))}"></div>
       <div><label>Verified by</label><input id="co_by" value="${esc((window.AMS_USER&&window.AMS_USER.name)||"")}"></div>
     </div>
     <label>Closure evidence file <span class="hint">(optional upload)</span></label>
@@ -4125,7 +4125,7 @@ async function submitCloseObservation(aid,rid,oid){
   if(fileEl&&fileEl.files&&fileEl.files.length){ const ev=await uploadEvidenceFile(oid,fileEl); if(ev) o.closureFile=ev; else { done(); return; } }
   const u=window.AMS_USER||{};
   o.reportVerifiedBy=u.id||""; o.reportVerifiedByName=val("co_by")||u.name||""; o.reportVerifiedAt=new Date().toISOString();
-  o.closureNote=val("co_note"); const cd=val("co_date"); if(cd) o.closedDateISO=cd;
+  o.closureNote=val("co_note"); o.closedDateISO=val("co_date")||o.closedDateISO||isoNow();
   if(o.closureRejection && o.closureRejection.target==="auditor") o.closureRejection=null;
   headUsers().forEach(h=>notify(h.id,"verify",o.title+" verified — ready for Head closure","observation",o.id));
   emailNotify(headUsers().map(h=>h.email),"AuditLens — ready for closure sign-off",`"${o.title}" was verified by Internal Audit and is ready for your closure sign-off.`);
@@ -4180,7 +4180,7 @@ function modalHeadClose(aid,rid,oid){
     ${o.ownerResponse?`<div class="obs-field"><div class="ttl">Action owner's response</div><div class="txt">${richText(o.ownerResponse)}${(o.ownerResponseEvidence||[]).map(e=>`<div class="hint" style="margin-top:4px">📎 <a href="/api/files/${esc(e.itemId)}" target="_blank" rel="noopener">${esc(e.name)}</a></div>`).join("")}</div></div>`:""}
     ${o.reportVerifiedAt?`<div class="obs-field"><div class="ttl">Auditor's verification &amp; closure note</div><div class="txt">${o.closureNote?richText(o.closureNote):"<span class='hint'>No note.</span>"}${o.closureFile?`<div class="hint" style="margin-top:4px">📎 <a href="/api/files/${esc(o.closureFile.itemId)}" target="_blank" rel="noopener">${esc(o.closureFile.name)}</a></div>`:""}</div></div>`:""}
     <div class="f2" style="margin-top:4px">
-      <div class="kv"><b>Closure date</b> ${o.closedDateISO?esc(fmtDate(isoToDate(o.closedDateISO))):"—"}</div>
+      <div class="kv"><b>Closure date</b> ${o.closedDateISO?esc(fmtDate(isoToDate(o.closedDateISO))):(o.reportVerifiedAt?esc(fmtDate(isoToDate(o.reportVerifiedAt))):"—")}</div>
       <div class="kv"><b>Verified by</b> ${esc(o.reportVerifiedByName||"—")}</div>
     </div>
     <label style="margin-top:10px">Additional comment <span class="hint">(optional)</span></label>
@@ -4256,7 +4256,11 @@ const OBS_COMMENT_TAGS={
 function obsCommentTag(u){ return u.tag||(u.audience==="owner"?"private":u.kind==="progress"?"progress":"feedback"); }
 function obsCommentRowHTML(u){
   const t=OBS_COMMENT_TAGS[obsCommentTag(u)]||OBS_COMMENT_TAGS.feedback;
-  const person=(u.by&&(_directoryCache||[]).find(x=>x.id===u.by))||{name:u.byName||""};
+  // Resolve the person by id, else by name (closure-stage entries only carry a name) — so the
+  // profile photo shows for Head/auditor rows too.
+  const person=(u.by&&(_directoryCache||[]).find(x=>x.id===u.by))
+    ||(u.byName&&(_directoryCache||[]).find(x=>x.name===u.byName))
+    ||{name:u.byName||""};
   return `<div class="obs-note${u.audience==="owner"?" obs-note-private":""}"><div class="obs-note-text">${linkify(u.text||"")}</div>${(u.evidence||[]).map(e=>`<div class="hint">📎 <a href="/api/files/${esc(e.itemId)}" target="_blank" rel="noopener">${esc(e.name)}</a></div>`).join("")}<div class="obs-note-meta" style="display:flex;align-items:center;gap:8px;font-weight:700;color:var(--accent,#0d5a47)">${avatarHTML(person,22)}<span>${esc(u.byName||"")}${u.role?" ("+esc(roleLabel(u.role))+")":""}${u.at?" · "+esc(fmtDateTime(u.at)):""}</span><span style="flex:1"></span><span class="pill" style="background:${t[1]};color:${t[2]}">${t[0]}</span></div></div>`;
 }
 // Auditor / Head: add a comment to the action owner straight from the comments page.
@@ -4301,7 +4305,8 @@ function obsRemediationHTML(o,a,r){
   }
   if(!closed && !withdrawn){
     if(primary && !o.ownerRectifiedAt) actions+=`<button class="btn sm" onclick="modalReadyForClosure('${a.id}','${r.id}','${o.id}')">✓ Ready for Closure</button>`;
-    if(canVerify && o.ownerRectifiedAt && !o.reportVerifiedAt) actions+=`<button class="btn sm" onclick="modalCloseObservation('${a.id}','${r.id}','${o.id}')">${(rej&&rej.target==="auditor")?"Resend for closure verification":"Verify remediation"}</button>`;
+    // After a Head reject-to-auditor, re-verification is the AUDITOR's job — the Head only waits.
+    if(canVerify && o.ownerRectifiedAt && !o.reportVerifiedAt && !(head&&rej&&rej.target==="auditor")) actions+=`<button class="btn sm" onclick="modalCloseObservation('${a.id}','${r.id}','${o.id}')">${(rej&&rej.target==="auditor")?"Resend for closure verification":"Verify remediation"}</button>`;
     if(head && o.reportVerifiedAt && !o.headVerifiedAt){
       actions+=`<button class="btn sm" onclick="modalHeadClose('${a.id}','${r.id}','${o.id}')">Verify &amp; close</button>`;
       actions+=`<button class="btn sec sm" onclick="modalClosureReject('${a.id}','${r.id}','${o.id}','auditor')">Reject to auditor</button>`;
@@ -4322,6 +4327,7 @@ function obsRemediationHTML(o,a,r){
   const nextHint = closed ? "" :
     primary && !o.ownerRectifiedAt ? (rej&&rej.target==="owner" ? "This was sent back to your department for more work — address the feedback, then mark it Ready for Closure again." : "When your department has addressed this, mark it Ready for Closure for Internal Audit to verify.") :
     secondary && !o.reportVerifiedAt ? "You have oversight of this observation — follow progress and add comments; the primary owner responds and closes." :
+    head && rej && rej.target==="auditor" && o.ownerRectifiedAt && !o.reportVerifiedAt ? "You returned this to Internal Audit — the auditor will address your note and resend it for your closure sign-off." :
     canVerify && o.ownerRectifiedAt && !o.reportVerifiedAt ? (rej&&rej.target==="auditor" ? "The Head of Audit returned this to Internal Audit — address the note above, then resend for closure verification." : "The action owner has marked this Ready for Closure — review their response and evidence, then verify to prepare closure.") :
     head && o.reportVerifiedAt && !o.headVerifiedAt ? "Verified by the auditor and sent to you — review the closure and evidence, then close, reject to the auditor, or escalate to the owner." :
     primary ? "Your department has marked this Ready for Closure. Internal Audit will verify." :
@@ -4415,8 +4421,8 @@ function renderObservation(C,T,A){
           <select class="field-select field-select-sm" onchange="obsCommentsSet('order',this.value)">${["Newest first","Oldest first"].map(t=>`<option${f.order===t?" selected":""}>${esc(t)}</option>`).join("")}</select></div>
       </div>
       ${rows.length?rows.map(obsCommentRowHTML).join(""):`<div class="hint">${visible.length?"No comments match the current filters.":"No comments yet."}</div>`}
-      ${!isOwnerViewer?`<button class="btn" style="position:fixed;bottom:28px;right:36px;z-index:40;box-shadow:0 6px 18px rgba(13,90,71,.35);padding:12px 22px;font-size:14px" onclick="modalAuditorComment()">＋ Add comment</button>`:""}
-    </div>`;
+    </div>
+    ${!isOwnerViewer?`<button class="btn" style="position:fixed;bottom:28px;right:36px;z-index:40;box-shadow:0 6px 18px rgba(13,90,71,.35);padding:12px 22px;font-size:14px" onclick="modalAuditorComment()">＋ Add comment</button>`:""}`;
     return;
   }
   T.textContent=pageTitleFor(isOwner?"myobs":"audits");
