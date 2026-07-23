@@ -406,7 +406,7 @@ function render(){
   const T=document.getElementById("pageTitle");
   const A=document.getElementById("topActions");
   A.innerHTML=""; setTopSearch(""); setTopBack("");
-  if(window.AMS_USER && window.AMS_USER.role==="action_owner" && !["myobs","observation","dashboard"].includes(view)){ view="myobs"; }
+  if(window.AMS_USER && window.AMS_USER.role==="action_owner" && !["myobs","myext","observation","extfinding","dashboard"].includes(view)){ view="myobs"; }
   if(view==="dashboard" && isActionOwner()){ T.textContent=pageTitleFor("dashboard"); C.innerHTML=viewOwnerDashboard(); }
   else if(view==="dashboard"){ T.textContent=pageTitleFor("dashboard"); A.innerHTML=`<button class="btn sec sm" onclick="exportDashboard()">⤓ Export dashboard</button><button class="btn sec sm" onclick="modalCaeReport()">⤓ Quarterly BAC report</button>`; C.innerHTML=viewDashboard(); }
   else if(view==="auditra"){ T.textContent=pageTitleFor("auditra"); A.innerHTML=isStaff()?`${iconBtn("modalRADownload()","⤓","Download")}`:(auditUniverse().length?`${iconBtn("modalRADownload()","⤓","Download")}<button class="btn sm" onclick="modalNewAuditPlan()">+ New audit plan</button>`:`<button class="btn sm dark ai-generate-btn" onclick="modalRAPrompt()">Generate audit universe</button>`); C.innerHTML=viewAuditRA(); }
@@ -4883,7 +4883,7 @@ function viewMyExt(){
       ${myExtFilter.sev!=="All"?`<button class="btn ghost sm" onclick="myExtFilter={sev:'All'};render()">Clear</button>`:""}
       <div class="spacer" style="flex:1"></div><span class="hint">${items0.length} total</span>
     </div></div>`;
-  return myObsSectionsHTML(items,filterHTML,["Open findings","Closed findings"]);
+  return myObsSectionsHTML(items,filterHTML,["Open external findings","Closed external findings"]);
 }
 function dismissOwnerAnnounce(){ try{ localStorage.setItem("al_owner_ann_"+((window.AMS_USER&&window.AMS_USER.id)||""),"1"); }catch(e){} render(); }
 /* ---- First-login walkthrough for action owners: a simulated observation → response → closure ---- */

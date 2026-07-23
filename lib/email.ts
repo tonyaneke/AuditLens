@@ -1,7 +1,7 @@
-// Sender for all AuditLens mail. Must be a VERIFIED SendGrid sender identity (or an address on
-// an authenticated domain) or SendGrid rejects the send with a 403 and no mail goes out.
-// SENDGRID_SENDER in .env overrides; defaults to the authenticated auditlens address.
-const SENDER_EMAIL = process.env.SENDGRID_SENDER?.trim() || "auditlens@credicorp.org";
+// Hardcoded sender for ALL AuditLens mail — deliberately ignores SENDGRID_SENDER so no
+// environment misconfiguration can break sending. The credicorp.org domain is authenticated
+// in SendGrid, so this address is always accepted.
+const SENDER_EMAIL = "auditlens@credicorp.org";
 
 type WelcomeEmailParams = {
   to: string;
