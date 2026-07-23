@@ -4195,13 +4195,25 @@ function withdrawalBannerHTML(o){
   }
   return "";
 }
+// Comment classification tags: [label, background, colour]
+const OBS_COMMENT_TAGS={
+  feedback:["feedback","#e9f8f2","#0d5a47"],
+  progress:["progress report","#fbf3dd","#a67c00"],
+  closure:["closure","#eaf5eb","#2e7d32"],
+  closure_update:["closure update","#e7eef5","#2c5f8a"],
+  private:["private","#eef2ff","#4b3fa0"]
+};
+function obsCommentTag(u){ return u.tag||(u.audience==="owner"?"private":u.kind==="progress"?"progress":"feedback"); }
 function obsCommentRowHTML(u){
-  return `<div class="obs-note${u.audience==="owner"?" obs-note-private":""}"><div class="obs-note-text">${linkify(u.text||"")}</div>${(u.evidence||[]).map(e=>`<div class="hint">📎 <a href="/api/files/${esc(e.itemId)}" target="_blank" rel="noopener">${esc(e.name)}</a></div>`).join("")}<div class="obs-note-meta">${u.audience==="owner"?`<span class="pill" style="background:#eef2ff;color:#4b3fa0">private</span> `:""}${u.kind==="progress"?`<span class="pill" style="background:#fbf3dd;color:#a67c00">progress report</span> `:""}${esc(u.byName||"")}${u.role?" ("+esc(roleLabel(u.role))+")":""}${u.at?" · "+esc(fmtDateTime(u.at)):""}</div></div>`;
+  const t=OBS_COMMENT_TAGS[obsCommentTag(u)]||OBS_COMMENT_TAGS.feedback;
+  return `<div class="obs-note${u.audience==="owner"?" obs-note-private":""}"><div class="obs-note-text">${linkify(u.text||"")}</div>${(u.evidence||[]).map(e=>`<div class="hint">📎 <a href="/api/files/${esc(e.itemId)}" target="_blank" rel="noopener">${esc(e.name)}</a></div>`).join("")}<div class="obs-note-meta" style="font-weight:700;color:var(--accent,#0d5a47)"><span class="pill" style="background:${t[1]};color:${t[2]}">${t[0]}</span> ${esc(u.byName||"")}${u.role?" ("+esc(roleLabel(u.role))+")":""}${u.at?" · "+esc(fmtDateTime(u.at)):""}</div></div>`;
 }
 // The full comment thread lives on its own in-page view so the observation page stays clean.
 let obsCommentsOpen=false;
-function openObsComments(){ obsCommentsOpen=true; render(); }
+let obsCommentsFilter={type:"All",by:"All",order:"Newest first"};
+function openObsComments(){ obsCommentsOpen=true; obsCommentsFilter={type:"All",by:"All",order:"Newest first"}; render(); }
 function closeObsComments(){ obsCommentsOpen=false; render(); }
+function obsCommentsSet(k,v){ obsCommentsFilter[k]=v; render(); }
 function obsRemediationHTML(o,a,r){
   const primary=isPrimaryOwner(o); const secondary=isSecondaryOwner(o);
   const canVerify=canVerifyItem(o,a); const head=isHeadUser();
@@ -4294,17 +4306,40 @@ function renderObservation(C,T,A){
   // In-page comments view: replaces the observation detail with the thread + a back button.
   if(obsCommentsOpen){
     const isOwnerViewer=isPrimaryOwner(o)||isSecondaryOwner(o);
-    const updates=obsUpdates(o).slice().sort((x,y)=>String(y.at||"").localeCompare(String(x.at||"")));
+    const closed=o.status==="Closed";
+    const updates=obsUpdates(o).slice();
+    // Closure-stage entries appear in the thread with their own tags (same visibility as the
+    // closure package on the observation page).
+    if(o.ownerResponse&&(closed||isOwnerViewer)) updates.push({text:o.ownerResponse,byName:o.ownerRectifiedByName||"",role:"action_owner",at:o.ownerRectifiedAt||"",tag:"closure",evidence:o.ownerResponseEvidence||[]});
+    if(o.closureNote&&closed) updates.push({text:o.closureNote,byName:o.reportVerifiedByName||"",role:"audit_staff",at:o.reportVerifiedAt||"",tag:"closure_update",evidence:o.closureFile?[o.closureFile]:[]});
+    if(o.headComment&&closed) updates.push({text:o.headComment,byName:o.headVerifiedByName||"",role:"head_of_audit",at:o.headVerifiedAt||"",tag:"closure_update"});
     // Private owner-to-owner notes stay hidden from Internal Audit / the Head.
-    const visible=updates.filter(u=>u.audience!=="owner"||isOwnerViewer);
+    const visible=updates.filter(u=>u.audience!=="owner"||isOwnerViewer)
+      .sort((x,y)=>String(y.at||"").localeCompare(String(x.at||"")));
+    const f=obsCommentsFilter;
+    const authors=uniq(visible.map(u=>u.byName).filter(Boolean));
+    const TYPE_TAG={"Feedback":"feedback","Progress reports":"progress","Closure":"closure","Closure updates":"closure_update","Private notes":"private"};
+    const types=["All","Feedback","Progress reports","Closure","Closure updates"].concat(isOwnerViewer?["Private notes"]:[]);
+    let rows=visible.filter(u=>f.type==="All"||obsCommentTag(u)===TYPE_TAG[f.type]);
+    if(f.by!=="All") rows=rows.filter(u=>u.byName===f.by);
+    if(f.order==="Oldest first") rows=rows.slice().reverse();
+    const filtersActive=f.type!=="All"||f.by!=="All";
     T.textContent="Comments";
     setTopBack(backBtn("closeObsComments()"));
     A.innerHTML="";
     C.innerHTML=`<div class="anim-fade-in">
-      <div class="row" style="margin-bottom:12px"><button class="btn sec sm" onclick="closeObsComments()">← Back to observation</button></div>
-      <div class="card"><div class="seclabel">${isOwnerViewer?"Your past comments":"Comments"} · ${esc(o.title)}</div>
-        ${visible.length?visible.map(obsCommentRowHTML).join(""):`<div class="hint">No comments yet.</div>`}
+      <div class="row" style="gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+        <span class="hint">${rows.length} of ${visible.length} comment${visible.length===1?"":"s"}</span>
+        <div class="spacer"></div>
+        ${filtersActive?`<button class="btn ghost sm" onclick="obsCommentsFilter={type:'All',by:'All',order:'Newest first'};render()">Clear</button>`:""}
+        <div class="filter-group"><span class="filter-label">Type</span>
+          <select class="field-select field-select-sm" onchange="obsCommentsSet('type',this.value)">${types.map(t=>`<option${f.type===t?" selected":""}>${esc(t)}</option>`).join("")}</select></div>
+        <div class="filter-group"><span class="filter-label">Posted by</span>
+          <select class="field-select field-select-sm" onchange="obsCommentsSet('by',this.value)">${["All",...authors].map(t=>`<option${f.by===t?" selected":""}>${esc(t)}</option>`).join("")}</select></div>
+        <div class="filter-group"><span class="filter-label">Order</span>
+          <select class="field-select field-select-sm" onchange="obsCommentsSet('order',this.value)">${["Newest first","Oldest first"].map(t=>`<option${f.order===t?" selected":""}>${esc(t)}</option>`).join("")}</select></div>
       </div>
+      ${rows.length?rows.map(obsCommentRowHTML).join(""):`<div class="hint">${visible.length?"No comments match the current filters.":"No comments yet."}</div>`}
     </div>`;
     return;
   }
