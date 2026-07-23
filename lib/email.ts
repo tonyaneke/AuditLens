@@ -1,3 +1,6 @@
+// Hardcoded verified SendGrid sender for all AuditLens mail (ignores SENDGRID_SENDER).
+const SENDER_EMAIL = "auditlens@credicorp.org";
+
 type WelcomeEmailParams = {
   to: string;
   name: string;
@@ -58,12 +61,12 @@ function brandedEmail(opts: {
 
 export async function sendWelcomeEmail(params: WelcomeEmailParams) {
   const apiKey = process.env.SENDGRID_API_KEY?.trim();
-  const from = process.env.SENDGRID_SENDER?.trim();
+  const from = SENDER_EMAIL;
 
-  if (!apiKey || !from) {
+  if (!apiKey) {
     return {
       sent: false as const,
-      error: "Email is not configured (SENDGRID_API_KEY / SENDGRID_SENDER).",
+      error: "Email is not configured (SENDGRID_API_KEY).",
     };
   }
 
@@ -186,9 +189,9 @@ export async function sendNotificationEmail(params: {
   bodyHtml?: string;
 }) {
   const apiKey = process.env.SENDGRID_API_KEY?.trim();
-  const from = process.env.SENDGRID_SENDER?.trim();
+  const from = SENDER_EMAIL;
   const recipients = params.to.filter(Boolean);
-  if (!apiKey || !from) {
+  if (!apiKey) {
     return { sent: false as const, error: "Email is not configured." };
   }
   if (!recipients.length) {
