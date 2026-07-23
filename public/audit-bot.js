@@ -328,6 +328,7 @@ function go(v,opts={}){
   if(gated.includes(v) && !canAccessView(v)){ go(window.AMS_USER&&window.AMS_USER.role==="action_owner"?"myobs":"dashboard"); return; }
   view=v;
   curProc=null;
+  obsCommentsOpen=false;
   if(opts.audit!==undefined) curAudit=opts.audit;
   if(opts.report!==undefined) curReport=opts.report;
   if(opts.obs!==undefined) curObs=opts.obs;
@@ -4197,17 +4198,10 @@ function withdrawalBannerHTML(o){
 function obsCommentRowHTML(u){
   return `<div class="obs-note${u.audience==="owner"?" obs-note-private":""}"><div class="obs-note-text">${linkify(u.text||"")}</div>${(u.evidence||[]).map(e=>`<div class="hint">📎 <a href="/api/files/${esc(e.itemId)}" target="_blank" rel="noopener">${esc(e.name)}</a></div>`).join("")}<div class="obs-note-meta">${u.audience==="owner"?`<span class="pill" style="background:#eef2ff;color:#4b3fa0">private</span> `:""}${u.kind==="progress"?`<span class="pill" style="background:#fbf3dd;color:#a67c00">progress report</span> `:""}${esc(u.byName||"")}${u.role?" ("+esc(roleLabel(u.role))+")":""}${u.at?" · "+esc(fmtDateTime(u.at)):""}</div></div>`;
 }
-// The full comment thread lives in this modal so the observation page itself stays clean.
-function modalObsComments(aid,rid,oid){
-  const o=findObs(aid,rid,oid); if(!o) return;
-  const isOwnerViewer=isPrimaryOwner(o)||isSecondaryOwner(o);
-  const updates=obsUpdates(o).slice().sort((x,y)=>String(y.at||"").localeCompare(String(x.at||"")));
-  // Private owner-to-owner notes stay hidden from Internal Audit / the Head.
-  const visible=updates.filter(u=>u.audience!=="owner"||isOwnerViewer);
-  openModal("Comments · "+(o.title||"Observation"),
-    visible.length?visible.map(obsCommentRowHTML).join(""):`<div class="hint">No comments yet.</div>`,
-    `<button class="btn" onclick="closeModal()">Close</button>`);
-}
+// The full comment thread lives on its own in-page view so the observation page stays clean.
+let obsCommentsOpen=false;
+function openObsComments(){ obsCommentsOpen=true; render(); }
+function closeObsComments(){ obsCommentsOpen=false; render(); }
 function obsRemediationHTML(o,a,r){
   const primary=isPrimaryOwner(o); const secondary=isSecondaryOwner(o);
   const canVerify=canVerifyItem(o,a); const head=isHeadUser();
@@ -4267,7 +4261,7 @@ function obsRemediationHTML(o,a,r){
     ${pkg.join("")}
     <div class="obs-notes-label obs-updates-label">Conversation &amp; evidence</div>
     ${visibleUpdates.length
-      ?`<div class="row" style="margin:6px 0 2px"><button class="btn sec sm" onclick="modalObsComments('${a.id}','${r.id}','${o.id}')">${isOwnerViewer?"View your past comments":"View comments"} (${visibleUpdates.length})</button></div>`
+      ?`<div class="row" style="margin:6px 0 2px"><button class="btn sec sm" onclick="openObsComments()">${isOwnerViewer?"View your past comments":"View comments"} (${visibleUpdates.length})</button></div>`
       :`<div class="hint">No comments yet.</div>`}
     ${canPost?`<div class="obs-composer" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">
       <div class="obs-notes-label obs-updates-label" style="border-top:none;padding-top:0;margin-top:0">${composerTitle}</div>
@@ -4297,6 +4291,23 @@ function renderObservation(C,T,A){
   const o=r&&r.observations.find(x=>x.id===curObs);
   if(!a||!r||!o){ go(window.AMS_USER&&window.AMS_USER.role==="action_owner"?"myobs":"report",{audit:curAudit,report:curReport}); return; }
   const isOwner=window.AMS_USER&&window.AMS_USER.role==="action_owner";
+  // In-page comments view: replaces the observation detail with the thread + a back button.
+  if(obsCommentsOpen){
+    const isOwnerViewer=isPrimaryOwner(o)||isSecondaryOwner(o);
+    const updates=obsUpdates(o).slice().sort((x,y)=>String(y.at||"").localeCompare(String(x.at||"")));
+    // Private owner-to-owner notes stay hidden from Internal Audit / the Head.
+    const visible=updates.filter(u=>u.audience!=="owner"||isOwnerViewer);
+    T.textContent="Comments";
+    setTopBack(backBtn("closeObsComments()"));
+    A.innerHTML="";
+    C.innerHTML=`<div class="anim-fade-in">
+      <div class="row" style="margin-bottom:12px"><button class="btn sec sm" onclick="closeObsComments()">← Back to observation</button></div>
+      <div class="card"><div class="seclabel">${isOwnerViewer?"Your past comments":"Comments"} · ${esc(o.title)}</div>
+        ${visible.length?visible.map(obsCommentRowHTML).join(""):`<div class="hint">No comments yet.</div>`}
+      </div>
+    </div>`;
+    return;
+  }
   T.textContent=pageTitleFor(isOwner?"myobs":"audits");
   setTopBack(backBtn(isOwner?"go('myobs')":("go('report',{audit:'"+a.id+"',report:'"+r.id+"'})")));
   const _canEdit=isHeadUser()||canVerifyItem(o,a); const _head=isHeadUser();
