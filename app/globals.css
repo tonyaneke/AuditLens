@@ -3737,6 +3737,13 @@ td.timeline-cell {
   border-color: #bfe3c4;
 }
 
+/* Milestone reached but unwound by a Head rejection — shown, not hidden. */
+.verify-step.returned .verify-dot {
+  background: #fdefe6;
+  color: #c05621;
+  border-color: #f0c9a8;
+}
+
 .verify-step-label {
   font-size: 13px;
   font-weight: 600;

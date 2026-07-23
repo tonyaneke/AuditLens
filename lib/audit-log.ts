@@ -68,6 +68,7 @@ export function actionLabel(action: string) {
     "user.reactivated": "User made active",
     "user.deleted": "User deleted",
     "data.backup_export": "Backup exported",
+    "data.audit_log_export": "Audit log exported",
     "data.backup_import": "Backup imported",
     "data.reset_all": "All data reset",
     "workspace.audit_created": "Audit created",
