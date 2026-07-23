@@ -753,11 +753,15 @@ function toggleObsExpand(aid,rid,oid,ev){
 }
 let trackerRecentOpen=false;
 function trackerTabs(){
+  // Recent-observations mode replaces the whole tracker UI — only a back button up top.
+  if(trackerMode==="actions"&&trackerRecentOpen){
+    return `<div class="row" style="margin-bottom:14px"><button class="btn sec sm" onclick="trackerRecentOpen=false;render()">← Back to tracker</button></div>`;
+  }
   return `<div class="row" style="margin-bottom:14px"><div class="row" style="gap:6px">
     <button class="btn ${trackerMode==="actions"?"":"sec"} sm" onclick="trackerMode='actions';render()">Open Actions</button>
     <button class="btn ${trackerMode==="insights"?"":"sec"} sm" onclick="trackerMode='insights';render()">Insights</button></div>
     <div class="spacer"></div>
-    ${trackerMode==="actions"?`<button class="btn ${trackerRecentOpen?"":"sec"} sm" onclick="trackerRecentOpen=!trackerRecentOpen;render()">${trackerRecentOpen?"Hide Recent Observations":"View Recent Observations"}</button>`:""}
+    ${trackerMode==="actions"?`<button class="btn sec sm" onclick="trackerRecentOpen=true;render()">View Recent Observations</button>`:""}
   </div>`;
 }
 function trackerSet(k,v){ trackerFilter[k]=v; render(); }
@@ -806,6 +810,7 @@ function trackerRecentHTML(){
 function parseDate(s){ if(!s)return null; const d=new Date(s); return isNaN(d.getTime())?null:d; }
 function trackerBucketOf(o){ const d=daysToClose(o,o._r); return d==null?"No date":closeBucket(d); }
 function viewTracker(){
+  if(trackerRecentOpen) return trackerRecentHTML();
   const obs=allObs().filter(obsIsApproved);
   if(!obs.length){
     return `<div class="card"><div class="empty"><div class="big">◷</div>No observations yet. Once you raise observations, every open remediation action shows up here — grouped by expected close, with overdue flags.</div></div>`;
@@ -842,7 +847,6 @@ function viewTracker(){
     ${kc("overdue",kpi("warn","Overdue",overdue,"past expected close"))}
     ${kc("repeat",kpi("accent","Repeat findings",repeats,"recur from prior audits"))}
   </div>
-  ${trackerRecentOpen?trackerRecentHTML():""}
   <div class="card tracker-filters"><div class="filter-row filter-row-right">
     <div class="filter-group"><span class="filter-label">Expected close</span>
       <select class="field-select field-select-sm" onchange="trackerSet('tl',this.value)"><option value="All"${tlF==="All"?" selected":""}>All</option>${CLOSE_GROUPS.map(x=>`<option value="${esc(x)}"${tlF===x?" selected":""}>${esc(groupLabel(x))}</option>`).join("")}</select></div>
@@ -3893,6 +3897,7 @@ async function addObsUpdate(aid,rid,oid){
   }
   logAudit("obs.update","Update posted on: "+o.title,{observationId:oid});
   save(); render();
+  toast(isProgressPost?"Progress report sent.":"Comment sent.","success");
 }
 /* ---- Reassign an observation's action owner (any time, incl. closed) ---- */
 function modalReassignObs(aid,rid,oid){
@@ -4189,6 +4194,20 @@ function withdrawalBannerHTML(o){
   }
   return "";
 }
+function obsCommentRowHTML(u){
+  return `<div class="obs-note${u.audience==="owner"?" obs-note-private":""}"><div class="obs-note-text">${linkify(u.text||"")}</div>${(u.evidence||[]).map(e=>`<div class="hint">📎 <a href="/api/files/${esc(e.itemId)}" target="_blank" rel="noopener">${esc(e.name)}</a></div>`).join("")}<div class="obs-note-meta">${u.audience==="owner"?`<span class="pill" style="background:#eef2ff;color:#4b3fa0">private</span> `:""}${u.kind==="progress"?`<span class="pill" style="background:#fbf3dd;color:#a67c00">progress report</span> `:""}${esc(u.byName||"")}${u.role?" ("+esc(roleLabel(u.role))+")":""}${u.at?" · "+esc(fmtDateTime(u.at)):""}</div></div>`;
+}
+// The full comment thread lives in this modal so the observation page itself stays clean.
+function modalObsComments(aid,rid,oid){
+  const o=findObs(aid,rid,oid); if(!o) return;
+  const isOwnerViewer=isPrimaryOwner(o)||isSecondaryOwner(o);
+  const updates=obsUpdates(o).slice().sort((x,y)=>String(y.at||"").localeCompare(String(x.at||"")));
+  // Private owner-to-owner notes stay hidden from Internal Audit / the Head.
+  const visible=updates.filter(u=>u.audience!=="owner"||isOwnerViewer);
+  openModal("Comments · "+(o.title||"Observation"),
+    visible.length?visible.map(obsCommentRowHTML).join(""):`<div class="hint">No comments yet.</div>`,
+    `<button class="btn" onclick="closeModal()">Close</button>`);
+}
 function obsRemediationHTML(o,a,r){
   const primary=isPrimaryOwner(o); const secondary=isSecondaryOwner(o);
   const canVerify=canVerifyItem(o,a); const head=isHeadUser();
@@ -4247,7 +4266,9 @@ function obsRemediationHTML(o,a,r){
     ${o.progressReport&&!o.ownerRectifiedAt&&!closed?`<div class="note" style="border-left:3px solid #c98a00"><b>📋 Progress report requested by Internal Audit</b><div class="hint" style="margin-top:4px">${isOwnerViewer?"Post a progress update below — it stays requested until you mark this Ready for Closure.":"Awaiting a progress update from the action owner."} · ${esc(o.progressReport.byName||"Internal Audit")}${o.progressReport.at?" · "+esc(fmtDateTime(o.progressReport.at)):""}</div></div>`:""}
     ${pkg.join("")}
     <div class="obs-notes-label obs-updates-label">Conversation &amp; evidence</div>
-    ${visibleUpdates.length?visibleUpdates.map(u=>`<div class="obs-note${u.audience==="owner"?" obs-note-private":""}"><div class="obs-note-text">${linkify(u.text||"")}</div>${(u.evidence||[]).map(e=>`<div class="hint">📎 <a href="/api/files/${esc(e.itemId)}" target="_blank" rel="noopener">${esc(e.name)}</a></div>`).join("")}<div class="obs-note-meta">${u.audience==="owner"?`<span class="pill" style="background:#eef2ff;color:#4b3fa0">private</span> `:""}${u.kind==="progress"?`<span class="pill" style="background:#fbf3dd;color:#a67c00">progress report</span> `:""}${esc(u.byName||"")}${u.role?" ("+esc(roleLabel(u.role))+")":""}${u.at?" · "+esc(fmtDateTime(u.at)):""}</div></div>`).join(""):`<div class="hint">No comments yet.</div>`}
+    ${visibleUpdates.length
+      ?`<div class="row" style="margin:6px 0 2px"><button class="btn sec sm" onclick="modalObsComments('${a.id}','${r.id}','${o.id}')">${isOwnerViewer?"View your past comments":"View comments"} (${visibleUpdates.length})</button></div>`
+      :`<div class="hint">No comments yet.</div>`}
     ${canPost?`<div class="obs-composer" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">
       <div class="obs-notes-label obs-updates-label" style="border-top:none;padding-top:0;margin-top:0">${composerTitle}</div>
       ${nextHint?`<div class="hint" style="margin:2px 0 8px">${esc(nextHint)}</div>`:""}
