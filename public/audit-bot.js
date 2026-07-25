@@ -413,12 +413,12 @@ function render(){
   else if(view==="raunit"){ renderRaUnit(C,T,A); }
   else if(view==="fraudrisk"){ renderFraudRisk(C,T,A); }
   else if(view==="fraud"){ T.textContent=pageTitleFor("fraud"); A.innerHTML=`${btnDownload("modalFraudDownload()","Download")}${isStaff()?"":`<button class="btn sm dark ai-generate-btn" onclick="modalFraudPrompt()">Generate fraud risks</button><button class="btn sm" onclick="modalFraud()">+ Add fraud risk</button>`}`; C.innerHTML=viewFraud(); }
-  else if(view==="external"){ T.textContent=pageTitleFor("external"); A.innerHTML=`<button class="btn sec sm" onclick="exportExternal()">⤓ Status report (Word)</button><button class="btn sm dark" onclick="modalExtImport()">⤒ Import findings</button><button class="btn sm" onclick="extRaiseStart()">+ Add finding</button>`; C.innerHTML=viewExternal(); }
+  else if(view==="external"){ T.textContent=pageTitleFor("external"); A.innerHTML=`<button class="btn sec sm" onclick="exportAllExtFindingsCsv()">⤓ All findings (Excel)</button><button class="btn sec sm" onclick="exportExternal()">⤓ Status report (Word)</button><button class="btn sm dark" onclick="modalExtImport()">⤒ Import findings</button><button class="btn sm" onclick="extRaiseStart()">+ Add finding</button>`; C.innerHTML=viewExternal(); }
   else if(view==="iasa"){ T.textContent=pageTitleFor("iasa"); A.innerHTML=iasaTopActions(); C.innerHTML=viewIASA(); }
   else if(view==="audits"){
     T.textContent=pageTitleFor("audits");
     setTopSearch(`<input id="afq" class="topbar-search" value="${esc(auditFilter.q||"")}" placeholder="Search audits &amp; reports…" oninput="auditFilter.q=this.value;refreshAuditList()">`);
-    A.innerHTML=isStaff()?"":`<button class="btn" onclick="modalAudit()">+ New Audit</button>`;
+    A.innerHTML=`<button class="btn sec sm" onclick="exportAllObservationsCsv()">⤓ All observations (Excel)</button>${isStaff()?"":`<button class="btn" onclick="modalAudit()">+ New Audit</button>`}`;
     C.innerHTML=viewAudits();
   }
   else if(view==="audit"){ renderAudit(C,T,A); }
@@ -430,7 +430,7 @@ function render(){
     T.textContent=pageTitleFor("tracker");
     A.innerHTML=trackerMode==="insights"
       ? `<button class="btn sec sm" onclick="exportInsights()">⤓ Export insights</button>`
-      : `<button class="btn sec sm" onclick="exportTracker()">⤓ Export tracker</button>`;
+      : `<button class="btn sec sm" onclick="exportAllObservationsCsv()">⤓ All observations (Excel)</button> <button class="btn sec sm" onclick="exportTracker()">⤓ Export tracker</button>`;
     C.innerHTML=trackerTabs()+(trackerMode==="insights"?viewInsights():viewTracker());
   }
   else if(view==="process"){ T.textContent=pageTitleFor("process"); const pp=curProc?procList().find(x=>x.id===curProc):null; A.innerHTML = pp? `<button class="btn sec sm" onclick="curProc=null;render()">← All reviews</button><button class="btn sec sm" onclick="exportProc('${pp.id}')">⤓ Export (Word)</button><button class="btn sm" onclick="modalProcMeta('${pp.id}')">Edit details</button>` : `<button class="btn sm" onclick="modalProcNew()">+ New review</button>`; C.innerHTML=viewProcess(); }
@@ -1423,22 +1423,25 @@ function modalRA(id){
       <div><label>Rating override</label><select id="ra_rate"><option value="">Auto</option>${RA_BANDS.slice().reverse().map(b=>`<option${e.ratingOverride===b?" selected":""}>${b}</option>`).join("")}</select></div>
       <div><label>Frequency override</label><input id="ra_freq" value="${esc(e.frequencyOverride||"")}" placeholder="blank = auto"></div>
     </div>
-    <div style="margin-top:8px"><label>Planned timing <span class="hint">(quarter(s) for the plan year)</span></label>
-      <select id="ra_timing">${raTimingOptions(e.plannedPeriod)}</select></div>
+    <div style="margin-top:8px"><label>Planned timing <span class="hint">(tick each quarter this unit is audited — e.g. Q1 &amp; Q3 for twice a year)</span></label>
+      ${raTimingChecks(e.plannedPeriod)}</div>
     <label>Rationale / notes (for the plan)</label><textarea id="ra_note">${esc(e.rationale||"")}</textarea>`,
     `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveRA('${id||""}')">Save</button>`);
 }
-function raTimingOptions(cur){
-  const py=planYear(); cur=(cur||"").trim();
-  const presets=["",`Q1 ${py}`,`Q2 ${py}`,`Q3 ${py}`,`Q4 ${py}`,`Q1-Q2 ${py}`,`Q3-Q4 ${py}`,`Q1-Q4 ${py}`];
-  let o=presets.map(p=>`<option value="${esc(p)}"${cur===p?" selected":""}>${p?esc(p):"— none —"}</option>`).join("");
-  if(cur && !presets.includes(cur)) o+=`<option value="${esc(cur)}" selected>${esc(cur)}</option>`;
-  return o;
+// Quarter checkboxes for the plan year — allows any combination (e.g. Q1 & Q3 for a twice-yearly audit).
+function raTimingChecks(cur){
+  const py=planYear();
+  const set=new Set(parseQuarters(cur).map(q=>{ const m=String(q).match(/Q\s*([1-4])/i); return m?"Q"+m[1]:""; }).filter(Boolean)); // "Q1".."Q4"
+  return `<div class="row" id="ra_timing" style="gap:16px;flex-wrap:wrap;margin-top:4px">${[1,2,3,4].map(q=>`<label class="filter-check" style="display:flex;align-items:center;gap:6px;font-weight:500;margin:0"><input type="checkbox" class="ra_q" value="${q}" style="width:auto"${set.has("Q"+q)?" checked":""}> Q${q} <span class="hint">${py}</span></label>`).join("")}</div>`;
+}
+function raTimingValue(){
+  const qs=Array.from(document.querySelectorAll(".ra_q:checked")).map(el=>+el.value).sort((a,b)=>a-b);
+  return qs.length? qs.map(n=>"Q"+n).join(", ")+" "+planYear() : "";
 }
 function saveRA(id){
   const U=auditUniverse(); const name=val("ra_name"); if(!name){toast("Unit name required");return;}
   const factors={}; RA_FACTORS.forEach(([k])=>factors[k]=+val("ra_"+k)||3);
-  const data={name,category:val("ra_cat"),owner:val("ra_owner"),factors,lastAudited:val("ra_last"),ratingOverride:val("ra_rate"),frequencyOverride:val("ra_freq"),plannedPeriod:val("ra_timing"),rationale:val("ra_note")};
+  const data={name,category:val("ra_cat"),owner:val("ra_owner"),factors,lastAudited:val("ra_last"),ratingOverride:val("ra_rate"),frequencyOverride:val("ra_freq"),plannedPeriod:raTimingValue(),rationale:val("ra_note")};
   if(id){ Object.assign(U.find(x=>x.id===id),data); } else { U.push({id:uid(),...data,createdAt:new Date().toISOString()}); }
   save(); closeModal(); render();
 }
@@ -6277,6 +6280,38 @@ function stamp(){ const d=new Date(); return d.getFullYear()+("0"+(d.getMonth()+
 function dl(content,name,type){
   const b=new Blob([content],{type}); const u=URL.createObjectURL(b);
   const a=document.createElement("a"); a.href=u; a.download=name; a.click(); URL.revokeObjectURL(u);
+}
+// Quote a CSV field only when needed (commas, quotes or newlines). Used by templates and exports.
+function csvEsc(v){ v=String(v==null?"":v); return /[",\n\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
+function csvString(headers,rows){ return [headers.map(csvEsc).join(",")].concat(rows.map(r=>r.map(csvEsc).join(","))).join("\r\n")+"\r\n"; }
+function nowStamp(){ try{ return new Date().toISOString().slice(0,10); }catch(e){ return "export"; } }
+// Full export of every observation (open, closed, withdrawn) with all detail fields — opens in Excel.
+function exportAllObservationsCsv(){
+  const headers=["Audit","Area / Department","Report","Ref","Observation","Criticality","Category","Description","Criteria","Risk / Impact","Root cause","Recommendation","Proposed SOP update","Management response","Owner","Timeline","Closure action","Expected close date","Actual close date","Status","Repeat","Repeat of","Raised by","Created"];
+  const rows=allObsRaw()
+    .sort((a,b)=>String(a._a.name||"").localeCompare(String(b._a.name||""))||String(a._r.title||"").localeCompare(String(b._r.title||""))||String(a.ref||"").localeCompare(String(b.ref||"")))
+    .map(o=>{ const r=o._r, a=o._a; const ec=effectiveClose(o,r); return [
+      a.name||"", a.area||"", r.title||"", o.ref||"", o.title||"", o.criticality||"", o.category||"",
+      o.description||"", o.criteria||"", o.risk||"", o.rootCause||"", o.recommendation||"",
+      o.sopUpdate||"", o.managementResponse||"", o.owner||"", o.timeline||"", o.dueDate||"",
+      ec?fmtDate(ec):"", o.closedDateISO?fmtDate(isoToDate(o.closedDateISO)):"", o.status||"Open",
+      o.isRepeat?"Yes":"No", o.repeatOf||"", o.raisedByName||"", o.createdAt?fmtDateTime(o.createdAt):"" ];
+    });
+  if(!rows.length){ toast("No observations to export."); return; }
+  dl("﻿"+csvString(headers,rows),"AuditLens-observations-"+nowStamp()+".csv","text/csv;charset=utf-8");
+}
+// Full export of every external / regulatory finding with all detail fields — opens in Excel.
+function exportAllExtFindingsCsv(){
+  const F=extList();
+  if(!F.length){ toast("No external findings to export."); return; }
+  const headers=["Source","Source ref","Year","Ref","Finding","Theme","Severity","Detail","Risk / Impact","Recommendation","Management response","Owner","Expected close (target)","Actual close date","Status","Repeat","Repeat of","Created"];
+  const rows=F.slice()
+    .sort((a,b)=>String(b.year||"").localeCompare(String(a.year||""))||String(a.source||"").localeCompare(String(b.source||"")))
+    .map(f=>[ f.source||"", f.sourceRef||"", f.year||"", f.ref||"", f.title||"", f.theme||"", f.severity||"",
+      f.detail||"", f.risk||"", f.recommendation||"", f.managementResponse||"", f.owner||"",
+      f.targetDate||"", f.closedDateISO?fmtDate(isoToDate(f.closedDateISO)):"", f.status||"Open",
+      f.isRepeat?"Yes":"No", f.repeatOf||"", f.createdAt?fmtDateTime(f.createdAt):"" ]);
+  dl("﻿"+csvString(headers,rows),"AuditLens-external-findings-"+nowStamp()+".csv","text/csv;charset=utf-8");
 }
 function uploadLogo(e){ const f=e.target.files[0]; if(!f)return; const rd=new FileReader(); rd.onload=()=>{ DB.logo=rd.result; save(); render(); }; rd.readAsDataURL(f); }
 
