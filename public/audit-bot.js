@@ -1572,6 +1572,7 @@ function fraudActions(f){ return f.actions||[]; }
 function rollupFraud(f){ const a=f.actions||[]; if(!a.length) return; f.status = a.every(x=>x.status==="Implemented")?"Mitigated" : a.some(x=>x.status==="Implemented"||x.status==="In Progress")?"Mitigating" : "Identified"; }
 function migrateFraudActions(){ let ch=false; fraudList().forEach(f=>{ if(!f.actions){ f.actions=f.preventionAction?[{id:uid(),text:f.preventionAction,type:"Preventive",owner:f.owner||"",targetDate:"",status:f.status==="Mitigated"?"Implemented":"Planned"}]:[]; ch=true; } const before=f.status; rollupFraud(f); if(f.status!==before) ch=true; }); if(ch) save(); }
 function actStatusClass(s){ return s==="Implemented"?"s-Closed":s==="In Progress"?"s-InProgress":"s-Open"; }
+let fraudPlanExpanded=false;
 function viewFraud(){
   const F=fraudList(); const plan=DB.fraudPlanNarrative||"";
   if(!F.length){
@@ -1614,12 +1615,11 @@ function viewFraud(){
   const allActs=en.flatMap(f=>fraudActions(f)); const implN=allActs.filter(a=>a.status==="Implemented").length;
   h+=`<div class="card"><div class="row" style="align-items:center"><div class="seclabel" style="margin:0">Fraud Prevention Plan</div><div class="spacer"></div>
     <span class="hint">${allActs.length?implN+"/"+allActs.length+" actions implemented":"no actions yet"}</span>
-    <button class="btn ghost sm ai-generate-btn" onclick="modalFraudActionsPrompt()">Generate actions</button>
-    <button class="btn ghost sm ai-generate-btn" onclick="modalFraudPlanPrompt()">Generate overview</button>
     <button class="btn ghost sm" onclick="modalFraudUpdate()">📅 Quarterly update</button>
     <button class="btn ghost sm" onclick="modalFraudPlan()">Edit overview</button></div>
     <div class="hint" style="margin:4px 0 10px">Each fraud risk from the assessment is listed below by residual priority. Add the prevention/response actions that will mitigate it — together they are your fraud prevention plan.</div>
-    ${plan?`<div class="txt" style="white-space:pre-wrap;margin:8px 0;padding:10px 12px;background:#f8fafc;border:1px solid var(--line);border-radius:8px">${esc(plan)}</div>`:`<div class="hint" style="margin:8px 0">No plan overview yet.</div>`}
+    ${plan?`<div class="txt" style="white-space:pre-wrap;margin:8px 0 4px;padding:10px 12px;background:#f8fafc;border:1px solid var(--line);border-radius:8px${fraudPlanExpanded?"":";max-height:96px;overflow:hidden;position:relative;-webkit-mask-image:linear-gradient(#000 60%,transparent)"}">${esc(plan)}</div>
+    ${plan.length>260?`<button class="btn ghost sm" style="margin-bottom:8px" onclick="fraudPlanExpanded=!fraudPlanExpanded;render()">${fraudPlanExpanded?"▲ Show less":"▼ Read more"}</button>`:""}`:`<div class="hint" style="margin:8px 0">No plan overview yet.</div>`}
     ${en.slice().sort((a,b)=>BANDS.indexOf(b.res)-BANDS.indexOf(a.res)).map(f=>{ const acts=fraudActions(f); return `
       <div class="fraud-plan-card">
         <div class="fraud-plan-head">
@@ -1651,29 +1651,112 @@ function fraudHeatHTML(grid){
 }
 function modalFraud(id){
   if(!requireHead())return;
-  const F=fraudList(); const f=id?F.find(x=>x.id===id):{year:String((new Date()).getFullYear()),process:"",category:"Asset Misappropriation",scheme:"",description:"",likelihood:3,impact:3,existingControls:"",controlStrength:"Moderate",residualOverride:"",preventionAction:"",owner:"",status:"Identified"};
-  openModal(id?"Edit fraud risk":"Add fraud risk",`
+  const F=fraudList(); const isEdit=!!id;
+  const f=isEdit?F.find(x=>x.id===id):(_newFraud||{year:String((new Date()).getFullYear()),process:"",category:"Asset Misappropriation",scheme:"",description:"",likelihood:3,impact:3,existingControls:"",controlStrength:"Moderate",residualOverride:"",preventionAction:"",owner:"",status:"Identified"});
+  openModal(isEdit?"Edit fraud risk":"Add fraud risk — step 1 of 2: risk details",`
     <div class="f3">
       <div><label>Year</label><input id="fr_year" value="${esc(f.year||"")}"></div>
       <div><label>Scheme category (ACFE)</label><select id="fr_cat">${FRAUD_CATS.map(c=>`<option${f.category===c?" selected":""}>${c}</option>`).join("")}</select></div>
       <div><label>Department</label><select id="fr_proc">${deptOptionsHTML(f.process||"")}</select></div>
     </div>
     <label>Fraud scheme / risk title *</label><input id="fr_scheme" value="${esc(f.scheme)}" placeholder="e.g. Collusive / ghost borrowers">
-    <label>Description (how the fraud could occur)</label><textarea id="fr_desc">${esc(f.description)}</textarea>
+    <label>Description (how the fraud could occur)</label><textarea id="fr_desc" oninput="autoGrow(this)">${esc(f.description)}</textarea>
     <div class="f3">
       <div><label>Likelihood (1–5)</label><select id="fr_like">${[1,2,3,4,5].map(n=>`<option value="${n}"${f.likelihood===n?" selected":""}>${n} — ${LIKE_LABEL[n]}</option>`).join("")}</select></div>
       <div><label>Impact (1–5)</label><select id="fr_imp">${[1,2,3,4,5].map(n=>`<option value="${n}"${f.impact===n?" selected":""}>${n} — ${IMP_LABEL[n]}</option>`).join("")}</select></div>
       <div><label>Control strength</label><select id="fr_cs">${CTRL_STRENGTH.map(c=>`<option${f.controlStrength===c?" selected":""}>${c}</option>`).join("")}</select></div>
     </div>
-    <label>Existing anti-fraud controls</label><textarea id="fr_ctrl">${esc(f.existingControls)}</textarea>
-    <div class="hint" style="margin-top:6px">Prevention / response actions are added in the <b>Fraud Prevention Plan</b> section below (one or more per risk, each tracked separately).</div>
+    <label>Existing anti-fraud controls</label><textarea id="fr_ctrl" oninput="autoGrow(this)">${esc(f.existingControls)}</textarea>
     <div class="f3" style="margin-top:8px">
       <div><label>Residual rating <span class="hint">(blank = auto)</span></label><select id="fr_res"><option value="">Auto</option>${BANDS.map(b=>`<option${f.residualOverride===b?" selected":""}>${b}</option>`).join("")}</select></div>
-      <div><label>Owner <span class="hint">(action owner)</span></label><select id="fr_owner">${ownerOptions(f.ownerUserId||"")}</select>${(!f.ownerUserId&&f.owner)?`<div class="hint" style="margin-top:3px">Currently: ${esc(f.owner)}</div>`:""}</div>
-      <div><label>Overall status <span class="hint">(auto from actions)</span></label><select id="fr_status"${(f.actions&&f.actions.length)?" disabled":""}>${FRAUD_STATUS.map(s=>`<option${f.status===s?" selected":""}>${s}</option>`).join("")}</select></div>
+      ${isEdit?`<div><label>Owner <span class="hint">(action owner)</span></label><select id="fr_owner">${ownerOptions(f.ownerUserId||"")}</select>${(!f.ownerUserId&&f.owner)?`<div class="hint" style="margin-top:3px">Currently: ${esc(f.owner)}</div>`:""}</div>`:""}
+      ${isEdit?`<div><label>Overall status <span class="hint">(auto from actions)</span></label><select id="fr_status"${(f.actions&&f.actions.length)?" disabled":""}>${FRAUD_STATUS.map(s=>`<option${f.status===s?" selected":""}>${s}</option>`).join("")}</select></div>`:""}
     </div>
-    ${departments().filter(d=>d.headUserId).length?"":`<div class="hint" style="color:var(--crit);margin-top:4px">No action owners exist yet — add departments in Settings to assign one (you can still save without an owner).</div>`}`,
-    `<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveFraud('${id||""}')">Save</button>`);
+    ${isEdit?"":`<div class="hint" style="margin-top:6px">The risk starts <b>unassigned</b> — assign an action owner later from Edit once the register is agreed. Next, preventive actions are proposed from your likelihood, impact and control-strength ratings.</div>`}`,
+    isEdit
+      ?`<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveFraud('${id}')">Save changes</button>`
+      :`<button class="btn sec" onclick="closeModal()">Cancel</button><button class="btn ai-generate-btn" onclick="fraudStep1Next()">Next: Preventive actions →</button>`);
+}
+/* ---- Add-fraud step 2: AI-proposed preventive actions from likelihood/impact/control strength ---- */
+let _newFraud=null,_newFraudActions=[],_newFraudRationale="";
+function fraudStep1Next(){
+  const scheme=val("fr_scheme"); if(!scheme){ toast("Scheme title required","error"); return; }
+  _newFraud={year:val("fr_year"),process:val("fr_proc"),category:val("fr_cat"),scheme,description:val("fr_desc"),
+    likelihood:+val("fr_like")||3,impact:+val("fr_imp")||3,existingControls:val("fr_ctrl"),controlStrength:val("fr_cs"),
+    residualOverride:val("fr_res"),owner:"",ownerUserId:"",status:"Identified"};
+  openFraudStep2(true);
+}
+function newFraudResidual(){ const inh=fraudBand(_newFraud.likelihood*_newFraud.impact); return _newFraud.residualOverride||residualBand(inh,_newFraud.controlStrength); }
+function openFraudStep2(generate){
+  const res=newFraudResidual();
+  openModal("Add fraud risk — step 2 of 2: preventive actions",`
+    <div class="note" style="margin-bottom:10px"><b>${esc(_newFraud.scheme)}</b> · residual <span class="pill" style="background:${hx2rgba(BAND_HEX[res],.16)};color:${BAND_HEX[res]};font-weight:700">${res}</span> <span class="hint">(likelihood ${_newFraud.likelihood} × impact ${_newFraud.impact}, ${esc(_newFraud.controlStrength||"—")} controls)</span></div>
+    <div id="nfa_wrap"><div class="hint">Proposing preventive actions…</div></div>`,
+    `<button class="btn sec" onclick="modalFraud()">← Back</button><button class="btn" id="nfa_add" onclick="fraudFinishAdd()">Add fraud</button>`);
+  if(generate) generateNewFraudActions(); else renderNewFraudActions();
+}
+async function generateNewFraudActions(){
+  const res=newFraudResidual();
+  const prompt=`Act as a fraud risk specialist for ${DB.org}. A fraud risk has just been assessed:
+Scheme: ${_newFraud.scheme}
+Category: ${_newFraud.category} · Department: ${_newFraud.process||"(unspecified)"}
+Description: ${_newFraud.description||"(none)"}
+Existing anti-fraud controls: ${_newFraud.existingControls||"(none noted)"}
+Likelihood: ${_newFraud.likelihood}/5 (${LIKE_LABEL[_newFraud.likelihood]}) · Impact: ${_newFraud.impact}/5 (${IMP_LABEL[_newFraud.impact]})
+Control strength: ${_newFraud.controlStrength} · Residual risk: ${res}
+
+Based on the residual risk and existing control strength, decide whether ADDITIONAL preventive/response actions are needed. If the residual risk is Low and controls are already strong, it is acceptable to conclude that no further action is needed. Otherwise propose as many actions as the risk genuinely warrants (typically 2–4; more for High/Extreme residual) — a mix of preventive and detective controls, each specific and actionable.
+
+Return ONLY a JSON object:
+{"needed": true or false, "rationale": "one sentence explaining the decision", "actions": [ { "text": "specific action", "type": "Preventive | Detective | Corrective", "targetDate": "e.g. Q4 2026", "status": "Planned" } ]}
+Use an empty actions array when needed is false.`;
+  try{
+    const d=parseAiJson(await aiGenerate(prompt,"json"));
+    _newFraudRationale=d.rationale||"";
+    _newFraudActions=(d.needed===false?[]:(Array.isArray(d.actions)?d.actions:[])).map(a=>({
+      text:a.text||"",type:ACTION_TYPES.includes(a.type)?a.type:"Preventive",
+      targetDate:a.targetDate||"",status:ACTION_STATUS.includes(a.status)?a.status:"Planned"}));
+  }catch(e){ _newFraudRationale=""; _newFraudActions=[]; toast("Could not auto-propose actions — add them manually or retry.","error"); }
+  renderNewFraudActions();
+}
+function renderNewFraudActions(){
+  const el=document.getElementById("nfa_wrap"); if(!el) return;
+  el.innerHTML=`
+    ${_newFraudRationale?`<div class="hint" style="margin-bottom:10px">✦ ${esc(_newFraudRationale)}</div>`:""}
+    ${_newFraudActions.length?_newFraudActions.map((a,i)=>`<div class="obs-block" style="padding:10px 12px;margin-bottom:10px">
+      <label>Prevention / response action</label><textarea id="nfa_text_${i}" style="min-height:48px" oninput="autoGrow(this)">${esc(a.text)}</textarea>
+      <div class="f3" style="margin-top:6px">
+        <div><label>Control type</label><select id="nfa_type_${i}">${ACTION_TYPES.map(t=>`<option${a.type===t?" selected":""}>${t}</option>`).join("")}</select></div>
+        <div><label>Target date</label><input id="nfa_tgt_${i}" value="${esc(a.targetDate||"")}" placeholder="e.g. Q4 2026"></div>
+        <div><label>Status</label><select id="nfa_status_${i}">${ACTION_STATUS.map(s=>`<option${a.status===s?" selected":""}>${s}</option>`).join("")}</select></div>
+      </div>
+      <div class="row" style="margin-top:6px"><div class="spacer"></div><button class="btn ghost sm danger" type="button" onclick="removeNewFraudAction(${i})">Remove</button></div>
+    </div>`).join(""):`<div class="note" style="margin-bottom:10px"><b>No preventive action needed.</b><div class="hint" style="margin-top:4px">${esc(_newFraudRationale||"The residual risk is acceptably low given existing controls.")} You can still add actions manually below.</div></div>`}
+    <div class="row" style="gap:8px">
+      <button class="btn sec sm" type="button" onclick="addNewFraudActionRow()">＋ Add action</button>
+      <button class="btn ghost sm ai-generate-btn" type="button" onclick="syncNewFraudActions();generateNewFraudActions()">↻ Regenerate with AI</button>
+    </div>`;
+}
+function syncNewFraudActions(){
+  _newFraudActions=_newFraudActions.map((a,i)=>({
+    text:val("nfa_text_"+i)||a.text,type:val("nfa_type_"+i)||a.type,
+    targetDate:val("nfa_tgt_"+i),status:val("nfa_status_"+i)||a.status
+  })).filter(a=>a.text);
+}
+function addNewFraudActionRow(){ syncNewFraudActions(); _newFraudActions.push({text:"",type:"Preventive",targetDate:"",status:"Planned"}); renderNewFraudActions(); }
+function removeNewFraudAction(i){ syncNewFraudActions(); _newFraudActions.splice(i,1); renderNewFraudActions(); }
+async function fraudFinishAdd(){
+  syncNewFraudActions();
+  const btn=document.getElementById("nfa_add"); const done=btnBusy(btn,"Adding…");
+  const obj={id:uid(),..._newFraud,createdAt:new Date().toISOString(),
+    actions:_newFraudActions.map(a=>({id:uid(),text:a.text,type:a.type,owner:"",targetDate:a.targetDate,status:a.status}))};
+  fraudList().push(obj); rollupFraud(obj);
+  logAudit("fraud.risk_created","Added fraud risk: "+obj.scheme+" ("+_newFraudActions.length+" preventive action(s))",{fraudRiskId:obj.id});
+  save();
+  if(typeof _pendingSave!=="undefined"&&_pendingSave){ clearTimeout(_saveTimer); await saveNow().catch(()=>{}); }
+  done(); _newFraud=null; _newFraudActions=[]; _newFraudRationale="";
+  closeModal(); render();
+  modalSuccess("Fraud alert sent — the fraud risk and its preventive actions are now in the register (unassigned). Assign an action owner from Edit when ready.","Fraud alert sent");
 }
 function saveFraud(id){
   const F=fraudList(); const scheme=val("fr_scheme"); if(!scheme){toast("Scheme title required");return;}
@@ -4927,13 +5010,13 @@ function viewMyFraud(){
   if(!risks.length) return `<div class="card"><div class="empty"><div class="big">⚠</div>No fraud risks assigned to you yet.<br><br>When Internal Audit assigns a fraud risk to your department, its prevention actions appear here for you to implement and report progress on.</div></div>`;
   const acts=risks.flatMap(f=>fraudActions(f).map(a=>({f,a})));
   const impl=acts.filter(x=>x.a.status==="Implemented").length;
-  const prog=acts.filter(x=>x.a.status==="In Progress").length;
-  const plan=acts.filter(x=>(x.a.status||"Planned")==="Planned").length;
+  const unmit=acts.length-impl;
+  const hiRes=risks.filter(f=>{ const inh=fraudBand(f.likelihood*f.impact); const res=f.residualOverride||residualBand(inh,f.controlStrength); return res==="Extreme"||res==="High"; }).length;
   let h=`<div class="dash-kpis anim-fade-in" style="grid-template-columns:repeat(4,1fr)">
-    ${kpi("base","Prevention actions",acts.length,"across "+risks.length+" fraud risk"+(risks.length===1?"":"s"))}
-    ${kpi(acts.length&&impl===acts.length?"good":"accent","Implemented",impl,"controls in place")}
-    ${kpi(prog?"warn":"base","In progress",prog,"being implemented")}
-    ${kpi(plan?"bad":"good","Planned",plan,"not yet started")}
+    ${kpi(hiRes?"bad":"good","Extreme / High",hiRes,"residual fraud risks")}
+    ${kpi("base","Total risks",risks.length,"assigned to you")}
+    ${kpi(unmit?"warn":"good","Unmitigated actions",unmit,"not yet implemented")}
+    ${kpi(acts.length&&impl===acts.length?"good":"accent","Implemented",impl,"of "+acts.length+" prevention actions")}
   </div>`;
   risks.forEach(f=>{
     const inh=fraudBand(f.likelihood*f.impact); const res=f.residualOverride||residualBand(inh,f.controlStrength);
