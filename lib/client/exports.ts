@@ -37,7 +37,14 @@ const WORD_CSS = `body{font-family:'Calibri',sans-serif;font-size:11pt;color:#1c
     .Critical{background:#f6dde0;color:#7a0012} .High{background:#fdecef;color:#b00020} .Moderate{background:#fdefe6;color:#e8590c} .Low{background:#eaf5eb;color:#2e7d32} .Improve{background:#e7eef5;color:#2c5f8a}
     .obs{border:0.75pt solid #cbd5e1;border-left:4pt solid #999;padding:8pt 11pt;margin:8pt 0}
     .ttl{font-size:8.5pt;color:#64748b;text-transform:uppercase;font-weight:bold;margin-top:6pt} .note{background:#e9f8f2;border:0.75pt solid #c6e9df;border-left:3pt solid #0d5a47;padding:7pt 9pt;margin:6pt 0}
-    .hint{color:#64748b;font-size:9.5pt} ul{margin:4pt 0;padding-left:16pt}`;
+    .hint{color:#64748b;font-size:9.5pt} ul{margin:4pt 0;padding-left:16pt}
+    .lc-Critical{border-left-color:#7a0012} .lc-High{border-left-color:#b00020} .lc-Moderate{border-left-color:#e8590c} .lc-Low{border-left-color:#2e7d32} .lc-Improve{border-left-color:#2c5f8a}
+    .cover{text-align:center;margin:36pt 0 26pt} .cover .org{font-size:11pt;color:#64748b;letter-spacing:1pt}
+    .cover .t1{font-size:26pt;color:#0d5a47;font-weight:bold;margin:16pt 0 4pt} .cover .t2{font-size:15pt;color:#10745a;letter-spacing:2pt}
+    .cover .dt{margin-top:13pt;font-size:11pt}
+    .conf{font-size:9pt;color:#475569;border:0.75pt solid #cbd5e1;background:#f8fafc;padding:8pt 10pt;margin:8pt 0}
+    .findings td{font-size:9pt} .findings .sn{text-align:center;font-weight:bold} .findings ul{margin:3pt 0;padding-left:14pt}
+    .rate{margin-top:4pt;font-weight:bold} .sign{margin-top:12pt}`;
 
 /** MS-Word-flavoured HTML document, downloaded as .doc (same technique as legacy wordDoc). */
 export function wordDoc(title: string, inner: string, logoDataUrl?: string): void {

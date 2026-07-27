@@ -1,0 +1,275 @@
+"use client";
+
+// Shared building blocks for the Action-Owner portal list pages — ports of myObsCard(),
+// myObsSectionsHTML(), ownerAnnounceHTML()/dismissOwnerAnnounce() and the first-login
+// walkthrough (modalOwnerSimulation/showSimStep) from audit-bot.js.
+
+import { useRouter } from "next/navigation";
+import { useState, useSyncExternalStore, type ReactNode } from "react";
+import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
+import { CritPill, StatusPill, TintPill } from "@/components/ui";
+import { hrefForView, isLegacyPath } from "@/lib/routes";
+import { EXT_SEV_HEX } from "@/lib/workspace/portal";
+import { effectiveClose, fmtDate, type ObsWithContext } from "@/lib/workspace/selectors";
+import type { ExtFinding } from "@/lib/workspace/types";
+
+/* ---------------- card list item ---------------- */
+
+export type PortalItem =
+  | { o: ObsWithContext; type: "Internal" }
+  | { o: ExtFinding; type: "External" };
+
+export function MyObsCard({ item }: { item: PortalItem }) {
+  const router = useRouter();
+  const ext = item.type === "External";
+  const o = item.o;
+
+  function open() {
+    const href = ext
+      ? hrefForView("extfinding", { ext: o.id })
+      : hrefForView("observation", {
+          audit: (o as ObsWithContext)._a.id,
+          report: (o as ObsWithContext)._r.id,
+          obs: o.id,
+        });
+    // Cross-shell navigation must be a full page load (legacy script boots on a fresh document).
+    if (isLegacyPath(href)) window.location.assign(href);
+    else router.push(href);
+  }
+
+  const sv = EXT_SEV_HEX[String((o as ExtFinding).severity || "")] || "#64748b";
+  const ctx = ext
+    ? `${(o as ExtFinding).source || "—"}${(o as ExtFinding).year ? " · " + (o as ExtFinding).year : ""}`
+    : `${(o as ObsWithContext)._a.name}${(o as ObsWithContext)._a.area ? " · " + (o as ObsWithContext)._a.area : ""}`;
+  const ecStr = ext
+    ? String((o as ExtFinding).dueDate || "")
+    : (() => {
+        const c = effectiveClose(o as ObsWithContext, (o as ObsWithContext)._r);
+        return c ? fmtDate(c) : "";
+      })();
+  const rfc = !!o.ownerRectifiedAt && (o.status || "Open") !== "Closed";
+
+  return (
+    <div className="myobs-card" onClick={open} title="Open">
+      <div className="myobs-card-top">
+        {ext ? (
+          <TintPill hex={sv}>{(o as ExtFinding).severity || "—"}</TintPill>
+        ) : (
+          <CritPill crit={(o as ObsWithContext).criticality} />
+        )}
+        <span className="tag">{item.type}</span>
+        <StatusPill status={o.status} />
+        {rfc ? (
+          <span
+            className="pill"
+            style={{ background: "color-mix(in oklch,var(--low) 16%,#fff)", color: "var(--low)" }}
+          >
+            Ready for closure
+          </span>
+        ) : null}
+      </div>
+      <div className="myobs-card-title">{o.title}</div>
+      <div className="myobs-card-meta">{ctx}</div>
+      {ecStr ? (
+        <div className="myobs-card-foot">
+          <span className="hint">Expected close</span>
+          <span>{ecStr}</span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/* ---------------- open / closed sections (myObsSectionsHTML) ---------------- */
+
+export function MyObsSections({
+  items,
+  labels,
+}: {
+  items: PortalItem[];
+  labels: [string, string];
+}) {
+  const open = items.filter((x) => (x.o.status || "Open") !== "Closed");
+  const closed = items.filter((x) => (x.o.status || "Open") === "Closed");
+  const section = (title: string, arr: PortalItem[]) => (
+    <>
+      <div className="seclabel" style={{ margin: "20px 0 12px" }}>
+        {title} <span className="hint" style={{ fontWeight: 400 }}>({arr.length})</span>
+      </div>
+      {arr.length ? (
+        <div className="myobs-grid">
+          {arr.map((x) => (
+            <MyObsCard key={x.o.id} item={x} />
+          ))}
+        </div>
+      ) : (
+        <div className="hint" style={{ marginBottom: 8 }}>Nothing here.</div>
+      )}
+    </>
+  );
+  return (
+    <>
+      {section(labels[0], open)}
+      {section(labels[1], closed)}
+    </>
+  );
+}
+
+/* ---------------- "New here?" announcement + walkthrough ---------------- */
+
+const annListeners = new Set<() => void>();
+const annKey = (userId: string) => "al_owner_ann_" + (userId || "");
+
+function readAnnDismissed(userId: string): boolean {
+  try {
+    return !!localStorage.getItem(annKey(userId));
+  } catch {
+    return false;
+  }
+}
+
+/** Legacy dismissOwnerAnnounce() — persist + re-render subscribers. */
+function dismissOwnerAnnounce(userId: string): void {
+  try {
+    localStorage.setItem(annKey(userId), "1");
+  } catch {
+    /* ignore */
+  }
+  annListeners.forEach((l) => l());
+}
+
+function useAnnDismissed(userId: string): boolean {
+  return useSyncExternalStore(
+    (cb) => {
+      annListeners.add(cb);
+      return () => annListeners.delete(cb);
+    },
+    () => readAnnDismissed(userId),
+    () => true, // server render: hidden until the client can read localStorage
+  );
+}
+
+export function OwnerAnnounce({ userId }: { userId: string }) {
+  const modal = useModal();
+  const dismissed = useAnnDismissed(userId);
+  if (dismissed) return null;
+  return (
+    <div className="owner-announce" onClick={() => modal.open(<OwnerSimulationDialog userId={userId} />)}>
+      <span className="owner-announce-ico" aria-hidden="true">📌</span>
+      <div>
+        <b>New here?</b> When your department has addressed an observation, open it and use the{" "}
+        <b>Ready for Closure</b> button to send it back to Internal Audit.{" "}
+        <u>Click to see how it works.</u>
+      </div>
+      <button
+        className="owner-announce-x"
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          dismissOwnerAnnounce(userId);
+        }}
+        title="Dismiss"
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
+/* ---- first-login walkthrough (modalOwnerSimulation / showSimStep / SIM_STEPS) ---- */
+
+const SIM_STEPS: { title: string; body: ReactNode }[] = [
+  {
+    title: "1 · An observation is raised",
+    body: (
+      <>
+        When Internal Audit raises an observation against your department, it appears in{" "}
+        <b>My Observations</b>. Open it to read the finding, the risk and the recommendation.
+      </>
+    ),
+  },
+  {
+    title: "2 · Add your response",
+    body: (
+      <>
+        Once your department has done the remediation work, open the observation and click{" "}
+        <b>Ready for Closure</b>. You describe exactly what was done — an AI checker makes sure
+        it&apos;s concrete — and you can attach evidence.
+      </>
+    ),
+  },
+  {
+    title: "3 · Internal Audit verifies & closes",
+    body: (
+      <>
+        Your response goes back to the auditor to verify, then the Head of Audit signs off and
+        closes it. You&apos;re notified (in-app and by email) at each step.
+      </>
+    ),
+  },
+];
+
+export function OwnerSimulationDialog({ userId }: { userId: string }) {
+  const modal = useModal();
+  const [idx, setIdx] = useState(0);
+  const s = SIM_STEPS[idx];
+  const last = idx >= SIM_STEPS.length - 1;
+  return (
+    <ModalFrame
+      title="How remediation works"
+      footer={
+        <>
+          {idx > 0 ? (
+            <button className="btn sec" type="button" onClick={() => setIdx(idx - 1)}>
+              Back
+            </button>
+          ) : (
+            <button className="btn sec" type="button" onClick={() => modal.close()}>
+              Skip
+            </button>
+          )}
+          <button
+            className="btn"
+            type="button"
+            onClick={() => {
+              if (last) {
+                dismissOwnerAnnounce(userId);
+                modal.close();
+              } else {
+                setIdx(idx + 1);
+              }
+            }}
+          >
+            {last ? "Got it" : "Next →"}
+          </button>
+        </>
+      }
+    >
+      <div className="onboard-step">
+        <div style={{ fontWeight: 700, marginBottom: 6 }}>{s.title}</div>
+        {s.body}
+      </div>
+      {idx === 1 ? (
+        <div className="myobs-card" style={{ marginTop: 14, cursor: "default" }}>
+          <div className="myobs-card-top">
+            <span className="pill c-High">High</span>
+            <span className="tag">Internal</span>
+            <span className="status-pill open">Open</span>
+          </div>
+          <div className="myobs-card-title">
+            Example — Weak segregation of duties in disbursements
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <span className="btn sm" style={{ pointerEvents: "none" }}>✓ Ready for Closure</span>{" "}
+            <span className="hint">← the button you&apos;ll press</span>
+          </div>
+        </div>
+      ) : null}
+      <div className="onboard-dots" style={{ marginTop: 14 }}>
+        {SIM_STEPS.map((_, i) => (
+          <span key={i} className={`onboard-dot${i === idx ? " on" : ""}`} />
+        ))}
+      </div>
+    </ModalFrame>
+  );
+}

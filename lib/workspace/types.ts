@@ -90,6 +90,7 @@ export type Observation = {
   progressReport?: { by: string; byName: string; at: string } | null;
   updateRequestedAt?: string;
   withdrawn?: boolean;
+  withdrawnAt?: string;
   withdrawal?: { stage: string; [k: string]: unknown } | null;
   notes?: unknown[];
   updates?: ObsUpdate[];
@@ -157,6 +158,8 @@ export type FraudRisk = {
   existingControls?: string;
   controlStrength?: string;
   residualOverride?: string;
+  /** Pre-actions-migration single prevention action (legacy field; still written by AI import). */
+  preventionAction?: string;
   ownerUserId?: string;
   owner?: string;
   departmentId?: string;
@@ -169,18 +172,57 @@ export type FraudRisk = {
 export type ExtFinding = {
   id: string;
   source?: string;
+  sourceRef?: string;
   year?: string;
   ref?: string;
   theme?: string;
   severity?: string;
   title: string;
+  detail?: string;
+  risk?: string;
+  recommendation?: string;
+  managementResponse?: string;
   owner?: string;
   ownerUserId?: string;
+  secondaryOwner?: string;
   secondaryOwnerUserId?: string;
+  departmentId?: string;
   targetDate?: string;
+  /** Closure date set by the raise/assign flows (mirrors targetDate). */
+  dueDate?: string;
   status?: string;
   isRepeat?: boolean;
+  repeatOf?: string;
+  verifiedBy?: string;
+  closureEvidence?: string;
   closedDateISO?: string;
+  /** Set by the raise-with-owner flow (saveExtRaise). */
+  isExternal?: boolean;
+  raisedBy?: string;
+  raisedByName?: string;
+  raisedAt?: string;
+  /* Remediation / verification chain — same stamps the legacy shared obs workflow writes. */
+  ownerResponse?: string;
+  ownerResponseEvidence?: EvidenceFile[];
+  ownerRectifiedBy?: string;
+  ownerRectifiedByName?: string;
+  ownerRectifiedAt?: string;
+  reportVerifiedBy?: string;
+  reportVerifiedByName?: string;
+  reportVerifiedAt?: string;
+  headVerifiedBy?: string;
+  headVerifiedByName?: string;
+  headVerifiedAt?: string;
+  headComment?: string;
+  closureNote?: string;
+  closureFile?: EvidenceFile | null;
+  closureDate?: string;
+  closureRejection?: ClosureRejection | null;
+  progressReport?: { by: string; byName: string; at: string } | null;
+  updateRequestedAt?: string;
+  updateRequestedBy?: string;
+  withdrawn?: boolean;
+  withdrawal?: { stage: string; [k: string]: unknown } | null;
   updates?: ObsUpdate[];
   createdAt?: string;
   [k: string]: unknown;
@@ -205,6 +247,46 @@ export type AuditUniverseUnit = {
   rationale?: string;
   /** Plan year this engagement slipped from (set by the rollover). */
   carryOverFrom?: string | number;
+  createdAt?: string;
+  [k: string]: unknown;
+};
+
+/* ---- process & control effectiveness reviews ---- */
+
+export type ProcFinding = {
+  id: string;
+  category?: string;
+  title: string;
+  detail?: string;
+  recommendation?: string;
+  severity?: string;
+  [k: string]: unknown;
+};
+
+export type ProcStep = {
+  id: string;
+  actor?: string;
+  action: string;
+  /** "start" | "step" | "control" | "decision" | "end" */
+  type?: string;
+  note?: string;
+  [k: string]: unknown;
+};
+
+export type ProcessReview = {
+  id: string;
+  unit?: string;
+  sopTitle?: string;
+  sopFileName?: string;
+  /** Original SOP PDF (base64, no data: prefix) kept for AI redesign context. */
+  sopPdfBase64?: string;
+  period?: string;
+  overallRating?: string;
+  summary?: string;
+  findings?: ProcFinding[];
+  keyRecommendations?: string[];
+  proposedSummary?: string;
+  proposedSteps?: ProcStep[];
   createdAt?: string;
   [k: string]: unknown;
 };
@@ -262,6 +344,18 @@ export type Approval = {
   unitName?: string;
   obsTitle?: string;
   newStatus?: string;
+  /** observation_status_change: the status when the change was requested. */
+  fromStatus?: string;
+  /** observation_update: the proposed replacement field values. */
+  changes?: Record<string, unknown>;
+  /** observation_withdraw: the action owner's reason. */
+  reason?: string;
+  /** observation_withdraw: Internal Audit's note when forwarding to the Head. */
+  forwardNote?: string;
+  /** observation_withdraw: the Head's decision reason. */
+  headReason?: string;
+  /** observation_raise: the assigned primary action owner. */
+  ownerUserId?: string;
   requestedBy?: string;
   requestedByName?: string;
   requestedAt?: string;
@@ -309,6 +403,8 @@ export type ExcoMeta = {
   commentary?: string;
   briefs?: ExcoBrief[];
   recipientsList?: { id: string; name?: string; email: string }[];
+  /** Settings → MD & EXCO brief recipients (the field name the legacy script actually writes). */
+  recipientList?: { id: string; name?: string; role?: string; email: string }[];
   [k: string]: unknown;
 };
 
@@ -324,7 +420,7 @@ export type WorkspaceDb = {
   fraudRisks?: FraudRisk[];
   fraudPlanNarrative?: string;
   fraudUpdate?: { period?: string; commentary?: string };
-  processReviews?: unknown[];
+  processReviews?: ProcessReview[];
   extFindings?: ExtFinding[];
   extCommentary?: string;
   iaSAList?: IaSaRecord[];
