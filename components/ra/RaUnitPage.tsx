@@ -34,7 +34,7 @@ import EngagementStatusPill from "./EngagementStatusPill";
 import { RaUnitDialog } from "./dialogs";
 
 export default function RaUnitPage({ unitId }: { unitId: string }) {
-  const { db, mutate } = useWorkspace();
+  const { db, mutate, ready } = useWorkspace();
   const user = useUser();
   const modal = useModal();
   const router = useRouter();
@@ -70,9 +70,10 @@ export default function RaUnitPage({ unitId }: { unitId: string }) {
   );
 
   // Legacy renderRaUnit() bounced back to the list when the unit id no longer resolved.
+  // Only once the workspace has loaded — a direct deep-link renders before the blob arrives.
   useEffect(() => {
-    if (!e) router.replace(backHref);
-  }, [e, router, backHref]);
+    if (ready && !e) router.replace(backHref);
+  }, [ready, e, router, backHref]);
 
   if (!e) return null;
 
@@ -283,6 +284,40 @@ export default function RaUnitPage({ unitId }: { unitId: string }) {
             <div className="watch-meta-label" style={{ marginBottom: 6 }}>
               Status
             </div>
+            {parseQuarters(e.plannedPeriod).length ? (
+              <div className="row" style={{ gap: 14, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+                {parseQuarters(e.plannedPeriod).map((q) => {
+                  const done = (e.occDone || []).includes(q);
+                  return (
+                    <label
+                      key={q}
+                      className="filter-check"
+                      style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 500, margin: 0 }}
+                      title={done ? "Mark this occurrence as not done" : "Mark this occurrence as done"}
+                    >
+                      <input
+                        type="checkbox"
+                        style={{ width: "auto" }}
+                        checked={done}
+                        disabled={!!pend}
+                        onChange={() =>
+                          mutate((d) => {
+                            const u = universe(d).find((x) => x.id === e.id);
+                            if (!u) return;
+                            u.occDone = u.occDone || [];
+                            u.occDone = u.occDone.includes(q)
+                              ? u.occDone.filter((x) => x !== q)
+                              : [...u.occDone, q];
+                            if (u.engStatus !== "Completed" && u.occDone.length) u.engStatus = "In progress";
+                          })
+                        }
+                      />{" "}
+                      {q} {done ? <span className="hint" style={{ color: "var(--low)" }}>done</span> : null}
+                    </label>
+                  );
+                })}
+              </div>
+            ) : null}
             <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               {statusBody}
             </div>
@@ -291,16 +326,6 @@ export default function RaUnitPage({ unitId }: { unitId: string }) {
                 Marking an engagement complete needs Head of Audit approval.
               </div>
             ) : null}
-          </div>
-
-          <div className="row" style={{ marginTop: 12, gap: 8 }}>
-            <button
-              className="btn ghost sm"
-              type="button"
-              onClick={editUnit}
-            >
-              Edit unit &amp; timing
-            </button>
           </div>
         </div>
       </div>

@@ -9,7 +9,7 @@ import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useUser } from "@/components/chrome/UserContext";
 import { toast } from "@/components/feedback/ToastHost";
 import { CritPill, Empty, Kpi, StatusPill } from "@/components/ui";
-import { esc, dl, csvEsc, stamp, wordDoc } from "@/lib/client/exports";
+import { esc, excelDoc, stamp, wordDoc } from "@/lib/client/exports";
 import { hrefForView } from "@/lib/routes";
 import {
   allObs,
@@ -104,33 +104,71 @@ export default function TrackerPage() {
     wordDoc("Remediation Tracker " + stamp(), inner, typeof db.logo === "string" ? db.logo : undefined);
   }
 
-  function exportCsv() {
-    const headers = ["Audit","Area / Department","Report","Ref","Observation","Criticality","Category","Description","Criteria","Risk / Impact","Root cause","Recommendation","Proposed SOP update","Management response","Owner","Timeline","Closure action","Expected close date","Actual close date","Status","Repeat","Repeat of","Raised by","Created"];
-    const rows = allObsRaw(db)
-      .sort(
-        (a, b) =>
-          String(a._a.name || "").localeCompare(String(b._a.name || "")) ||
-          String(a._r.title || "").localeCompare(String(b._r.title || "")) ||
-          String(a.ref || "").localeCompare(String(b.ref || "")),
-      )
-      .map((o) => {
-        const ec = effectiveClose(o, o._r);
-        return [
-          o._a.name || "", (o._a.area as string) || "", o._r.title || "", o.ref || "", o.title || "",
-          o.criticality || "", o.category || "", o.description || "", o.criteria || "", o.risk || "",
-          o.rootCause || "", o.recommendation || "", o.sopUpdate || "", o.managementResponse || "",
-          o.owner || "", o.timeline || "", o.dueDate || "", ec ? fmtDate(ec) : "",
-          o.closedDateISO ? fmtDate(isoToDate(o.closedDateISO)) : "", o.status || "Open",
-          o.isRepeat ? "Yes" : "No", o.repeatOf || "", o.raisedByName || "",
-          o.createdAt ? fmtDateTime(o.createdAt) : "",
-        ];
-      });
-    if (!rows.length) {
+  function exportExcelObs() {
+    // Excel export — formatted table with colour-coded criticality/status cells.
+    const CRIT_BG: Record<string, [string, string]> = {
+      Critical: ["#f6dde0", "#7a0012"],
+      High: ["#fdecef", "#b00020"],
+      Moderate: ["#fdefe6", "#e8590c"],
+      Low: ["#eaf5eb", "#2e7d32"],
+      "Process Improvement": ["#e7eef5", "#2c5f8a"],
+    };
+    const STATUS_BG: Record<string, [string, string]> = {
+      Open: ["#fdecef", "#b00020"],
+      "In Progress": ["#fff3e6", "#a15c00"],
+      Closed: ["#eaf5eb", "#2e7d32"],
+    };
+    const headers = ["Audit","Area / Department","Report","Ref","Observation","Criticality","Category","Description","Criteria","Risk / Impact","Root cause","Recommendation","Proposed SOP update","Management response","Owner","Timeline","Expected close","Actual close","Status","Overdue","Repeat","Repeat of","Raised by","Created"];
+    const list = allObsRaw(db).sort(
+      (a, b) =>
+        String(a._a.name || "").localeCompare(String(b._a.name || "")) ||
+        String(a._r.title || "").localeCompare(String(b._r.title || "")) ||
+        String(a.ref || "").localeCompare(String(b.ref || "")),
+    );
+    if (!list.length) {
       toast("No observations to export.");
       return;
     }
-    const csv = [headers, ...rows].map((r) => r.map(csvEsc).join(",")).join("\r\n");
-    dl("﻿" + csv, "AuditLens-observations-" + stamp() + ".csv", "text/csv;charset=utf-8");
+    const cell = (v: string, style = "") => `<td${style ? ` style="${style}"` : ""}>${esc(v)}</td>`;
+    const rowsHtml = list
+      .map((o) => {
+        const ec = effectiveClose(o, o._r);
+        const od = isOverdueObs(o, o._r);
+        const cb = CRIT_BG[o.criticality] || ["#ffffff", "#1c2733"];
+        const sb = STATUS_BG[String(o.status || "Open")] || ["#ffffff", "#1c2733"];
+        return `<tr>${[
+          cell(o._a.name || ""),
+          cell((o._a.area as string) || ""),
+          cell(o._r.title || ""),
+          cell(o.ref || ""),
+          cell(o.title || "", "font-weight:bold"),
+          cell(o.criticality || "", `background:${cb[0]};color:${cb[1]};font-weight:bold;text-align:center`),
+          cell(o.category || ""),
+          cell(o.description || ""),
+          cell(o.criteria || ""),
+          cell(o.risk || ""),
+          cell(o.rootCause || ""),
+          cell(o.recommendation || ""),
+          cell(o.sopUpdate || ""),
+          cell(o.managementResponse || ""),
+          cell(o.owner || ""),
+          cell((o.timeline as string) || ""),
+          cell(ec ? fmtDate(ec) : ""),
+          cell(o.closedDateISO ? fmtDate(isoToDate(o.closedDateISO)) : ""),
+          cell(String(o.status || "Open"), `background:${sb[0]};color:${sb[1]};font-weight:bold;text-align:center`),
+          cell(od ? "OVERDUE" : "", od ? "background:#b00020;color:#ffffff;font-weight:bold;text-align:center" : ""),
+          cell(o.isRepeat ? "Yes" : "No", o.isRepeat ? "background:#efe3f7;color:#6b3fa0;font-weight:bold;text-align:center" : "text-align:center"),
+          cell(o.repeatOf || ""),
+          cell(o.raisedByName || ""),
+          cell(o.createdAt ? fmtDateTime(o.createdAt) : ""),
+        ].join("")}</tr>`;
+      })
+      .join("");
+    const table = `<table>
+      <tr><th colspan="${headers.length}" style="background:#0d5a47;color:#ffffff;font-size:13pt;text-align:left;padding:8pt">${esc(db.org || "AuditLens")} — All Audit Observations (${list.length}) · exported ${esc(fmtDate(new Date()))}</th></tr>
+      <tr>${headers.map((h) => `<th>${esc(h)}</th>`).join("")}</tr>
+      ${rowsHtml}</table>`;
+    excelDoc("AuditLens-observations-" + stamp(), table);
   }
 
   function exportInsightsDoc() {
@@ -171,8 +209,8 @@ export default function TrackerPage() {
           <button className="btn sec sm" type="button" onClick={mode === "insights" ? exportInsightsDoc : exportTracker}>
             ⤓ Export {mode === "insights" ? "insights" : "tracker"}
           </button>
-          <button className="btn sec sm" type="button" onClick={exportCsv}>
-            ⤓ All observations (.csv)
+          <button className="btn sec sm" type="button" onClick={exportExcelObs}>
+            ⤓ All observations (Excel)
           </button>
         </>
       ),

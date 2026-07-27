@@ -15,7 +15,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const user = useUser();
   const { chrome } = useChrome();
   const { db } = useWorkspace();
-  const logo = typeof db.logo === "string" && db.logo ? db.logo : "";
+  // Fall back to the bundled brand icon when no org logo is uploaded (legacy logoSrc behavior).
+  const logo = typeof db.logo === "string" && db.logo ? db.logo : "/icon.png";
 
   return (
     <div className="app">

@@ -4,12 +4,12 @@
 // lifecycle (startIASA/openIASA/completeIASA/reopenIASA/deleteIASA). The legacy `iasaMode`
 // global becomes ?tab=assessment|insights on /self-assessment.
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { usePageChrome } from "@/components/chrome/PageChrome";
 import BusyButton from "@/components/feedback/BusyButton";
 import { toast } from "@/components/feedback/ToastHost";
-import { useModal } from "@/components/modals/ModalProvider";
+import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import { Empty } from "@/components/ui";
 import { logAudit } from "@/lib/client/audit-log";
 import {
@@ -34,8 +34,50 @@ import { generateIASA } from "./generate";
 
 type Tab = "overview" | "assessment" | "insights";
 
+// The AI evaluation is grounded in a context statement about the IA function, captured up
+// front (and editable on every regeneration). The generated ratings stay fully editable.
+function GenerateContextDialog({ rec }: { rec: IaSaRecord }) {
+  const { db, mutate } = useWorkspace();
+  const modal = useModal();
+  const [ctx, setCtx] = useState(String(rec.aiContext || ""));
+  return (
+    <ModalFrame
+      title="Generate self-assessment"
+      footer={
+        <>
+          <button className="btn sec" type="button" onClick={modal.close}>
+            Cancel
+          </button>
+          <BusyButton
+            className="btn dark ai-generate-btn"
+            busyLabel="Generating…"
+            onClick={async () => {
+              modal.close();
+              await generateIASA(db, rec.id, mutate, ctx.trim());
+            }}
+          >
+            Generate assessment
+          </BusyButton>
+        </>
+      }
+    >
+      <label>Context about the IA function</label>
+      <p className="hint" style={{ margin: "2px 0 6px" }}>
+        The AI evaluates every standard and principle against this context — the more specific it
+        is, the better the assessment. All generated ratings remain editable afterwards.
+      </p>
+      <textarea
+        style={{ minHeight: 140 }}
+        value={ctx}
+        onChange={(e) => setCtx(e.target.value)}
+        placeholder="e.g. one-person in-house function (Head of Internal Audit); board-approved IA charter; functionally reports to the Board Audit Committee; risk-based annual plan approved; uses IIA methodology; whistleblowing programme; no external quality assessment yet; …"
+      />
+    </ModalFrame>
+  );
+}
+
 export default function SelfAssessmentPage() {
-  const { db, mutate, version } = useWorkspace();
+  const { db, mutate, version, ready } = useWorkspace();
   const modal = useModal();
   const router = useRouter();
   const search = useSearchParams();
@@ -58,9 +100,10 @@ export default function SelfAssessmentPage() {
   }, [version]);
 
   // The assessment/insights tabs need a record; without one there is nothing to show.
+  // Only once the workspace has loaded — a direct deep-link renders before the blob arrives.
   useEffect(() => {
-    if (tab !== "overview" && !cur) router.replace("/self-assessment");
-  }, [tab, cur, router]);
+    if (ready && tab !== "overview" && !cur) router.replace("/self-assessment");
+  }, [ready, tab, cur, router]);
 
   const goTab = (t: Tab) =>
     router.replace(t === "overview" ? "/self-assessment" : `/self-assessment?tab=${t}`);
@@ -138,13 +181,13 @@ export default function SelfAssessmentPage() {
             </button>
             {cur && cur.status !== "completed" ? (
               <>
-                <BusyButton
+                <button
                   className="btn sm dark ai-generate-btn"
-                  busyLabel="Generating…"
-                  onClick={() => generateIASA(db, cur.id, mutate)}
+                  type="button"
+                  onClick={() => modal.open(<GenerateContextDialog rec={cur} />)}
                 >
                   Generate
-                </BusyButton>
+                </button>
                 <button className="btn sm" type="button" onClick={complete}>
                   ✓ Mark complete
                 </button>

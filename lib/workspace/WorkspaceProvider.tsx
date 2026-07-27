@@ -143,12 +143,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     };
   }, [bump]);
 
-  // Poll for other users' changes (legacy pollData semantics).
+  // Poll for other users' changes (legacy pollData semantics). Two-step: a byte-sized
+  // ?meta=1 watermark check every tick; the full multi-MB blob is fetched only on change.
   useEffect(() => {
     if (!ready) return;
     const t = setInterval(async () => {
       if (store.pendingSave || isSyncPaused()) return;
       try {
+        const metaRes = await fetch("/api/data?meta=1");
+        if (!metaRes.ok) return;
+        const meta = await metaRes.json();
+        if (!meta || !meta.updatedAt || meta.updatedAt === store.lastUpdatedAt) return;
+        if (store.pendingSave || isSyncPaused()) return; // state may have changed mid-flight
         const res = await fetch("/api/data");
         if (!res.ok) return;
         const json = await res.json();

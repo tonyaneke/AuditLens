@@ -233,6 +233,11 @@ async function pollData(){
   if(userIsComposing()) return; // don't clobber half-typed comments/fields
   const ovEl=document.getElementById("overlay"); if(ovEl && ovEl.classList.contains("show")) return; // a modal is open — don't clobber
   try{
+    // Byte-sized watermark check first — only download the full workspace blob on change.
+    const metaRes=await fetch("/api/data?meta=1"); if(!metaRes.ok) return;
+    const meta=await metaRes.json();
+    if(!meta || !meta.updatedAt || meta.updatedAt===_lastUpdatedAt) return;
+    if(_pendingSave || userIsComposing()) return;
     const res=await fetch("/api/data"); if(!res.ok) return;
     const json=await res.json();
     if(json && json.updatedAt && json.updatedAt!==_lastUpdatedAt){
@@ -420,7 +425,7 @@ function render(){
   else if(view==="raunit"){ renderRaUnit(C,T,A); }
   else if(view==="fraudrisk"){ renderFraudRisk(C,T,A); }
   else if(view==="fraud"){ T.textContent=pageTitleFor("fraud"); A.innerHTML=`${btnDownload("modalFraudDownload()","Download")}${isStaff()?"":`<button class="btn sm dark ai-generate-btn" onclick="modalFraudPrompt()">Generate fraud risks</button><button class="btn sm" onclick="modalFraud()">+ Add fraud risk</button>`}`; C.innerHTML=viewFraud(); }
-  else if(view==="external"){ T.textContent=pageTitleFor("external"); A.innerHTML=`<button class="btn sec sm" onclick="exportAllExtFindingsCsv()">⤓ All findings (Excel)</button><button class="btn sec sm" onclick="exportExternal()">⤓ Status report (Word)</button><button class="btn sm dark" onclick="modalExtImport()">⤒ Import findings</button><button class="btn sm" onclick="extRaiseStart()">+ Add finding</button>`; C.innerHTML=viewExternal(); }
+  else if(view==="external"){ T.textContent=pageTitleFor("external"); A.innerHTML=`<button class="btn sec sm" onclick="exportAllExtFindingsCsv()">⤓ All findings (Excel)</button><button class="btn sm dark" onclick="modalExtImport()">⤒ Import findings</button><button class="btn sm" onclick="extRaiseStart()">+ Add finding</button>`; C.innerHTML=viewExternal(); }
   else if(view==="iasa"){ T.textContent=pageTitleFor("iasa"); A.innerHTML=iasaTopActions(); C.innerHTML=viewIASA(); }
   else if(view==="audits"){
     T.textContent=pageTitleFor("audits");
@@ -7007,6 +7012,7 @@ function initAuditBot(){
       if(v==="iasa"&&tab) iasaMode=tab;
       if(v==="newobs"){ view="dashboard"; setTimeout(()=>{ try{ modalNewObs(); }catch(e){} },500); }
       else view=v;
+      if(v==="audits"&&qs.get("new")) setTimeout(()=>{ try{ modalAudit(); }catch(e){} },500);
     }
   }catch(e){}
   window.addEventListener("ams-navigate", (e) => {

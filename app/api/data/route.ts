@@ -8,7 +8,7 @@ import { authorizeWorkspaceWrite } from "@/lib/workspace-authz";
 
 const WORKSPACE_ID = "default";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     await requireActiveSession();
   } catch (err) {
@@ -17,6 +17,17 @@ export async function GET() {
       return NextResponse.json({ error: "Password change required." }, { status: 403 });
     }
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Cheap poll: ?meta=1 returns only the change watermark, so the 4-second client poll costs
+  // bytes instead of re-downloading the multi-megabyte workspace blob every tick.
+  const url = new URL(request.url);
+  if (url.searchParams.get("meta")) {
+    const row = await prisma.workspaceData.findUnique({
+      where: { id: WORKSPACE_ID },
+      select: { updatedAt: true },
+    });
+    return NextResponse.json({ updatedAt: row?.updatedAt ?? null });
   }
 
   const row = await prisma.workspaceData.findUnique({ where: { id: WORKSPACE_ID } });

@@ -102,11 +102,12 @@ export async function generateIASA(
   db: WorkspaceDb,
   recId: string,
   mutate: (fn: (d: WorkspaceDb) => void) => void,
+  ctx = "",
 ): Promise<void> {
   const org = db.org || "";
   const results = await withAiBusy(() =>
     Promise.allSettled(
-      GIAS.map((g) => aiGenerate(buildIASADomainPrompt(org, g, ""), "json").then(parseAiJson)),
+      GIAS.map((g) => aiGenerate(buildIASADomainPrompt(org, g, ctx), "json").then(parseAiJson)),
     ),
   );
   let nStd = 0;
@@ -114,6 +115,8 @@ export async function generateIASA(
   const failed: string[] = [];
   mutate((d) => {
     const rec = ensureIaSaList(d).find((x) => x.id === recId);
+    // The evaluation context is part of the assessment record — shown/edited on regeneration.
+    if (rec && ctx) rec.aiContext = ctx;
     results.forEach((r, i) => {
       if (r.status === "fulfilled") {
         if (rec) {

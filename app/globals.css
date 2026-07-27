@@ -2019,19 +2019,25 @@ td.timeline-cell {
 
 /* New-audit-plan unit picker */
 .np-unit-list {
-  max-height: 250px;
+  max-height: 290px;
   overflow-y: auto;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 4px 10px;
+  border-radius: 10px;
+  padding: 6px 12px;
 }
 
 .np-unit-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 5px 0;
+  gap: 12px;
+  margin: 0;
+  padding: 9px 4px;
   font-weight: 400;
+  border-bottom: 1px solid color-mix(in oklch, var(--line) 55%, transparent);
+}
+
+.np-unit-row:last-child {
+  border-bottom: none;
 }
 
 .np-unit-name {

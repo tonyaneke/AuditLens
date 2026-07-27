@@ -76,7 +76,11 @@ export function RaUnitDialog({ unitId }: { unitId?: string }) {
   const modal = useModal();
   const existing = unitId ? universe(db).find((x) => x.id === unitId) : undefined;
   const [f, setF] = useState<UnitForm>(() => formFor(existing));
-  const py = planYear(db);
+  // Timing year: keep the year already on the unit; NEW units default to the current calendar
+  // year — not the active plan year, which may already be opened for a future year.
+  const py =
+    (existing?.plannedPeriod || "").match(/20\d{2}/)?.[0] ||
+    String(new Date().getFullYear());
 
   function toggleQuarter(q: number) {
     setF((cur) => ({
