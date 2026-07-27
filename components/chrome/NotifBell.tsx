@@ -6,7 +6,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { hrefForView } from "@/lib/routes";
+import { hrefForView, isLegacyPath } from "@/lib/routes";
 import type { ViewKey } from "@/lib/routes";
 import {
   extList,
@@ -64,7 +64,7 @@ export default function NotifBell() {
 
   function navigate(href: string) {
     // Cross-shell targets need a real page load; same-shell can use the router.
-    if (href.startsWith("/legacy")) window.location.assign(href);
+    if (isLegacyPath(href)) window.location.assign(href);
     else router.push(href);
   }
 

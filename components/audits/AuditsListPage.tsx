@@ -144,7 +144,7 @@ export default function AuditsListPage() {
       actions:
         user.role === "head_of_audit" ? (
           // The create-audit dialog is still legacy — deep-link opens it directly.
-          <a className="btn sm" href="/legacy?view=audits&new=1">
+          <a className="btn sm" href="/audits/new">
             + New audit
           </a>
         ) : undefined,
@@ -162,7 +162,7 @@ export default function AuditsListPage() {
           {isStaff ? (
             "Ask your Head of Audit to create an audit and assign you as lead."
           ) : (
-            <a className="btn" href="/legacy?view=audits">
+            <a className="btn" href="/audits/new">
               + Create your first audit
             </a>
           )}

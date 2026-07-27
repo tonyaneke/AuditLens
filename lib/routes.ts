@@ -123,33 +123,29 @@ export function urlForView(view: ViewKey, opts: ViewOpts = {}): string {
     case "guide":
       return "/guide";
     case "newobs":
-      // The "raise observation" modal — legacy-only until the audits phase migrates it.
-      return legacyUrlFor("newobs");
+      // Legacy dashboard + "raise observation" modal until the observation phase migrates it.
+      return "/observations/new";
   }
 }
 
-// URL that opens the LEGACY shell at a given view (the shell seeds its state from these params).
+// Every view now lives at its clean URL — unmigrated ones mount the legacy shell there, which
+// seeds its state from the pathname. Kept as a named export so call sites read correctly.
 export function legacyUrlFor(view: ViewKey, opts: ViewOpts = {}): string {
-  return (
-    LEGACY_BASE +
-    q({
-      view,
-      audit: opts.audit,
-      report: opts.report,
-      obs: opts.obs,
-      ext: opts.ext,
-      unit: opts.unit,
-      fraud: opts.fraud,
-      proc: opts.proc,
-      mode: opts.mode,
-      tab: opts.tab,
-    })
-  );
+  return urlForView(view, opts);
 }
 
 // The right href for a view wherever it currently lives.
 export function hrefForView(view: ViewKey, opts: ViewOpts = {}): string {
-  return MIGRATED_VIEWS.has(view) ? urlForView(view, opts) : legacyUrlFor(view, opts);
+  return urlForView(view, opts);
+}
+
+// True when this href renders in the legacy shell. Cross-shell navigation must be a full page
+// load (the legacy script only boots on a fresh document) — never router.push/<Link> to these.
+export function isLegacyPath(href: string): boolean {
+  const path = href.split(/[?#]/)[0];
+  if (path === LEGACY_BASE) return true;
+  const view = viewForPathname(path);
+  return view !== null && !MIGRATED_VIEWS.has(view);
 }
 
 // Reverse-map a new-shell pathname to its view (permission guard). null = not a guarded
@@ -189,6 +185,8 @@ export function viewForPathname(pathname: string): ViewKey | null {
       return "auditlog";
     case "guide":
       return "guide";
+    case "observations":
+      return "newobs";
     default:
       return null;
   }

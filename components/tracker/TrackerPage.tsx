@@ -10,7 +10,7 @@ import { useUser } from "@/components/chrome/UserContext";
 import { toast } from "@/components/feedback/ToastHost";
 import { CritPill, Empty, Kpi, StatusPill } from "@/components/ui";
 import { esc, excelDoc, stamp, wordDoc } from "@/lib/client/exports";
-import { hrefForView } from "@/lib/routes";
+import { hrefForView, isLegacyPath } from "@/lib/routes";
 import {
   allObs,
   allObsRaw,
@@ -70,7 +70,7 @@ export default function TrackerPage() {
 
   function goObservation(o: ObsWithContext) {
     const href = hrefForView("observation", { audit: o._a.id, report: o._r.id, obs: o.id });
-    if (href.startsWith("/legacy")) window.location.assign(href);
+    if (isLegacyPath(href)) window.location.assign(href);
     else router.push(href);
   }
   const setMode = (m: string) => router.replace(m === "actions" ? "/tracker" : `/tracker?mode=${m}`);

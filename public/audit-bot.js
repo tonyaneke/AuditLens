@@ -353,6 +353,14 @@ function go(v,opts={}){
   if(opts.fraud!==undefined) curFraud=opts.fraud;
   document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("active",b.dataset.view===v && v!=="report" && v!=="observation" && v!=="sopupdate" && v!=="audit" && v!=="raunit" && v!=="fraudrisk"));
   render();
+  // Keep the address bar on the clean URL for legacy-internal navigation (back/forward reloads
+  // and re-seeds from the pathname). Skip when an id the URL needs is missing.
+  try{
+    if(window.AMS_ROUTES && window.history && history.pushState){
+      const u=window.AMS_ROUTES.url(v,{audit:curAudit||undefined,report:curReport||undefined,obs:curObs||undefined,ext:curExt||undefined,unit:curRaUnit||undefined,fraud:curFraud||undefined,proc:curProc||undefined,mode:(v==="external"&&extMode&&extMode!=="register")?extMode:undefined});
+      if(u && u.indexOf("undefined")<0 && (location.pathname+location.search)!==u) history.pushState({ams:1},"",u);
+    }
+  }catch(e){}
 }
 function backBtn(fn){ return `<button class="btn-back" onclick="${fn}" title="Back"><span aria-hidden="true">←</span> Back</button>`; }
 const ICON_TRASH=`<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>`;
@@ -6992,29 +7000,37 @@ function exportCaeReport(){
 /* ============================ INIT ============================ */
 function initAuditBot(){
   window.go = go;
-  // URL boot: the legacy shell is deep-linkable as /legacy?view=x&audit=…&obs=… — the React
-  // shell links here for views that haven't been migrated yet.
+  // URL boot: unmigrated views mount this shell at their clean URLs (/fraud, /process,
+  // /audits/{id}/…). Seed view + selection from the pathname; query params carry modes.
   try{
     const qs=new URLSearchParams(location.search);
-    const v=qs.get("view");
-    if(v){
-      if(qs.get("audit")) curAudit=qs.get("audit");
-      if(qs.get("report")) curReport=qs.get("report");
-      if(qs.get("obs")) curObs=qs.get("obs");
-      if(qs.get("ext")) curExt=qs.get("ext");
-      if(qs.get("unit")) curRaUnit=qs.get("unit");
-      if(qs.get("fraud")) curFraud=qs.get("fraud");
-      if(qs.get("proc")) curProc=qs.get("proc");
-      const mode=qs.get("mode"), tab=qs.get("tab");
-      if(v==="tracker"&&mode==="insights") trackerMode="insights";
-      if(v==="tracker"&&mode==="recent") trackerRecentOpen=true;
-      if(v==="external"&&mode) extMode=mode;
-      if(v==="iasa"&&tab) iasaMode=tab;
-      if(v==="newobs"){ view="dashboard"; setTimeout(()=>{ try{ modalNewObs(); }catch(e){} },500); }
-      else view=v;
-      if(v==="audits"&&qs.get("new")) setTimeout(()=>{ try{ modalAudit(); }catch(e){} },500);
+    const seg=location.pathname.split("/").filter(Boolean);
+    let v=null;
+    if(seg[0]==="audits"){
+      if(seg[1]==="new"){ v="audits"; setTimeout(()=>{ try{ modalAudit(); }catch(e){} },500); }
+      else if(seg[1]){
+        curAudit=seg[1]; v="audit";
+        if(seg[2]==="reports"&&seg[3]){
+          curReport=seg[3]; v="report";
+          if(seg[4]==="observations"&&seg[5]){
+            curObs=seg[5]; v=(seg[6]==="sop")?"sopupdate":"observation";
+            if(qs.get("comments")) obsCommentsOpen=true;
+          }
+        }
+      }
     }
+    else if(seg[0]==="fraud"){ v="fraud"; if(seg[1]){ curFraud=seg[1]; v="fraudrisk"; } }
+    else if(seg[0]==="process"){ v="process"; if(seg[1]) curProc=seg[1]; }
+    else if(seg[0]==="external"){ v="external"; if(seg[1]){ curExt=seg[1]; v="extfinding"; } if(qs.get("mode")) extMode=qs.get("mode"); }
+    else if(seg[0]==="approvals") v="approvals";
+    else if(seg[0]==="settings") v="settings";
+    else if(seg[0]==="portal") v=(seg[1]==="external")?"myext":(seg[1]==="fraud")?"myfraud":"myobs";
+    else if(seg[0]==="observations"&&seg[1]==="new"){ v="dashboard"; setTimeout(()=>{ try{ modalNewObs(); }catch(e){} },500); }
+    if(v) view=v;
   }catch(e){}
+  // Back/forward re-seeds from the URL with a fresh boot (the SPA keeps the address bar in
+  // sync via history.pushState in go()).
+  window.addEventListener("popstate",()=>{ try{ location.reload(); }catch(e){} });
   window.addEventListener("ams-navigate", (e) => {
     const view = e.detail?.view;
     if (view) go(view);

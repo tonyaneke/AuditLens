@@ -5,7 +5,7 @@
 
 import { useState, type MouseEvent } from "react";
 import { useRouter } from "next/navigation";
-import { hrefForView } from "@/lib/routes";
+import { hrefForView, isLegacyPath } from "@/lib/routes";
 import { ensureUniverse, raLinkIds } from "@/lib/workspace/ra";
 import type { AuditUniverseUnit } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
@@ -43,7 +43,7 @@ export default function AuditLinks({ unit }: { unit: AuditUniverseUnit }) {
   function openAudit(e: MouseEvent, auditId: string) {
     e.stopPropagation();
     const href = hrefForView("audit", { audit: auditId });
-    if (href.startsWith("/legacy")) window.location.assign(href);
+    if (isLegacyPath(href)) window.location.assign(href);
     else router.push(href);
   }
 

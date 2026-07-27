@@ -5,7 +5,7 @@
 import { useRouter } from "next/navigation";
 import { useUser } from "@/components/chrome/UserContext";
 import { CritPill, Empty, Kpi, StatusPill } from "@/components/ui";
-import { hrefForView } from "@/lib/routes";
+import { hrefForView, isLegacyPath } from "@/lib/routes";
 import {
   allObs,
   daysBetween,
@@ -83,7 +83,7 @@ export default function OwnerDashboard() {
             report: (x.o as ObsWithContext)._r.id,
             obs: x.o.id,
           });
-    if (href.startsWith("/legacy")) window.location.assign(href);
+    if (isLegacyPath(href)) window.location.assign(href);
     else router.push(href);
   }
 

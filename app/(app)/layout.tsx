@@ -13,7 +13,7 @@ import AiBusyOverlay from "@/components/feedback/AiBusyOverlay";
 import ToastHost from "@/components/feedback/ToastHost";
 import { ModalProvider } from "@/components/modals/ModalProvider";
 import { canAccessView, type SessionUser } from "@/lib/permissions";
-import { hrefForView, viewForPathname } from "@/lib/routes";
+import { hrefForView, isLegacyPath, viewForPathname } from "@/lib/routes";
 import { WorkspaceProvider } from "@/lib/workspace/WorkspaceProvider";
 
 function PermissionGuard({ user, children }: { user: SessionUser; children: ReactNode }) {
@@ -25,7 +25,7 @@ function PermissionGuard({ user, children }: { user: SessionUser; children: Reac
   useEffect(() => {
     if (!allowed) {
       const fallback = user.role === "action_owner" ? hrefForView("myobs") : "/";
-      if (fallback.startsWith("/legacy")) window.location.assign(fallback);
+      if (isLegacyPath(fallback)) window.location.assign(fallback);
       else router.replace(fallback);
     }
   }, [allowed, router, user.role]);
