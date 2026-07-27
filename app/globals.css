@@ -274,7 +274,8 @@ a {
   padding: 0 10px 6px;
 }
 
-.nav button {
+.nav button,
+.nav a {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -288,16 +289,21 @@ a {
   font-size: 13px;
   font-weight: 500;
   margin-bottom: 2px;
+  text-decoration: none;
+  box-sizing: border-box;
+  cursor: pointer;
   transition: background 0.18s ease-out, color 0.18s ease-out, transform 0.18s ease-out;
 }
 
-.nav button:hover {
+.nav button:hover,
+.nav a:hover {
   background: rgba(255, 255, 255, 0.07);
   color: #fff;
   transform: translateX(2px);
 }
 
-.nav button.active {
+.nav button.active,
+.nav a.active {
   background: var(--brand-500);
   color: #fff;
   font-weight: 600;
@@ -1738,7 +1744,8 @@ td.timeline-cell {
   .findings-summary-cards .kpi,
   .kpi:hover,
   .obs-close-item:hover,
-  .nav button:hover {
+  .nav button:hover,
+  .nav a:hover {
     animation: none;
     transition: none;
     transform: none;
@@ -3822,7 +3829,8 @@ td.timeline-cell {
     display: none;
   }
 
-  .nav button {
+  .nav button,
+  .nav a {
     font-size: 11px;
     padding: 7px 8px;
   }
@@ -4398,6 +4406,16 @@ body.ai-busy .ai-generate-btn:not(:disabled) {
 /* ---- Numbered rich-text lists (replaces asterisk bullets) ---- */
 ol.rt-list { margin: 6px 0; padding-left: 22px; }
 ol.rt-list li { margin: 4px 0; }
+
+/* Buttons rendered as links in the React shell keep button styling. */
+a.btn,
+a.btn-back {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+}
 
 /* ---- Remediation tracker: recent activity strip ---- */
 .tracker-recent { display: flex; flex-direction: column; margin-top: 6px; }

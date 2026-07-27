@@ -2,6 +2,8 @@
 
 import type { MouseEvent } from "react";
 import { useState } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Alert02Icon,
@@ -19,12 +21,18 @@ import {
   WorkflowSquare01Icon,
 } from "@hugeicons/core-free-icons";
 import type { SessionUser } from "@/lib/permissions";
-import { ASSESSMENT_VIEWS, MAIN_VIEWS } from "@/lib/permissions";
+import { visibleViews } from "@/lib/permissions";
+import {
+  hrefForView,
+  MIGRATED_VIEWS,
+  viewForPathname,
+  type ViewKey,
+} from "@/lib/routes";
 
 const ICON_SIZE = 20;
 
 type NavItem = {
-  view: string;
+  view: ViewKey;
   label: string;
   icon: typeof DashboardSquare01Icon;
 };
@@ -67,6 +75,9 @@ const SECTIONS: { label: string; items: NavItem[] }[] = [
 
 type SidebarNavProps = {
   user: SessionUser;
+  /** "legacy": the audit-bot.js shell (window.go navigation, data-view buttons).
+   *  "app": the React shell (Link/anchor navigation, pathname-based active state). */
+  shell?: "legacy" | "app";
 };
 
 function formatRole(role: string) {
@@ -82,31 +93,26 @@ function initials(name: string) {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-function navigate(view: string) {
+// Legacy-shell navigation: prefer window.go (the script's router — its bridge redirects
+// migrated views to real URLs), with the historical fallbacks kept intact.
+function legacyNavigate(view: string) {
   const w = window as Window & { go?: (v: string) => void };
   if (typeof w.go === "function") {
     w.go(view);
     return;
   }
-  window.dispatchEvent(
-    new CustomEvent("ams-navigate", { detail: { view } }),
-  );
+  window.dispatchEvent(new CustomEvent("ams-navigate", { detail: { view } }));
   const btn = document.querySelector(
     `#nav button[data-view="${view}"]`,
   ) as HTMLButtonElement | null;
   btn?.click();
 }
 
-function onProfileNav(
-  e: MouseEvent,
-  view: string,
-) {
-  e.preventDefault();
-  navigate(view);
-}
-
-export default function SidebarNav({ user }: SidebarNavProps) {
+export default function SidebarNav({ user, shell = "legacy" }: SidebarNavProps) {
   const [signingOut, setSigningOut] = useState(false);
+  const pathname = usePathname();
+  const activeView = shell === "app" ? viewForPathname(pathname || "/") : null;
+
   async function handleSignOut() {
     if (signingOut) return;
     setSigningOut(true);
@@ -116,13 +122,14 @@ export default function SidebarNav({ user }: SidebarNavProps) {
       window.location.href = "/login";
     }
   }
-  const isHead = user.role === "head_of_audit";
-  const isOwner = user.role === "action_owner";
-  const access = isHead
-    ? new Set<string>([...MAIN_VIEWS, ...ASSESSMENT_VIEWS, "approvals", "exco"])
-    : isOwner
-      ? new Set<string>(["dashboard", "myobs", "myext", "myfraud"])
-      : new Set<string>([...MAIN_VIEWS, ...(user.sidebarAccess || [])]);
+
+  function onProfileNav(e: MouseEvent, view: ViewKey) {
+    e.preventDefault();
+    if (shell === "legacy") legacyNavigate(view);
+    else window.location.assign(hrefForView(view));
+  }
+
+  const access = new Set(visibleViews(user));
 
   return (
     <>
@@ -133,23 +140,46 @@ export default function SidebarNav({ user }: SidebarNavProps) {
           return (
             <div className="nav-section" key={section.label}>
               <div className="nav-label">{section.label}</div>
-              {items.map((item) => (
-                <button
-                  key={item.view}
-                  type="button"
-                  data-view={item.view}
-                  className={item.view === "dashboard" ? "active" : undefined}
-                >
+              {items.map((item) => {
+                const icon = (
                   <span className="ic">
-                    <HugeiconsIcon
-                      icon={item.icon}
-                      size={ICON_SIZE}
-                      strokeWidth={1.75}
-                    />
+                    <HugeiconsIcon icon={item.icon} size={ICON_SIZE} strokeWidth={1.75} />
                   </span>
-                  {item.label}
-                </button>
-              ))}
+                );
+                if (shell === "app") {
+                  const href = hrefForView(item.view);
+                  const active = activeView === item.view;
+                  // Migrated targets: client-side <Link>. Legacy targets: plain anchor —
+                  // a full page load hands over to the audit-bot shell.
+                  return MIGRATED_VIEWS.has(item.view) ? (
+                    <Link
+                      key={item.view}
+                      href={href}
+                      data-view={item.view}
+                      className={active ? "active" : undefined}
+                    >
+                      {icon}
+                      {item.label}
+                    </Link>
+                  ) : (
+                    <a key={item.view} href={href} data-view={item.view}>
+                      {icon}
+                      {item.label}
+                    </a>
+                  );
+                }
+                return (
+                  <button
+                    key={item.view}
+                    type="button"
+                    data-view={item.view}
+                    className={item.view === "dashboard" ? "active" : undefined}
+                  >
+                    {icon}
+                    {item.label}
+                  </button>
+                );
+              })}
             </div>
           );
         })}
@@ -160,6 +190,7 @@ export default function SidebarNav({ user }: SidebarNavProps) {
         <div className="sidebar-profile-head">
           <div className="sidebar-profile-avatar" aria-hidden="true">
             {user.photo ? (
+              // eslint-disable-next-line @next/next/no-img-element -- data-URL avatar
               <img src={user.photo} alt="" className="sidebar-profile-avatar-img" />
             ) : (
               initials(user.name)
@@ -169,35 +200,27 @@ export default function SidebarNav({ user }: SidebarNavProps) {
             <div className="sidebar-profile-name">{user.name}</div>
             <div className="sidebar-profile-role">{formatRole(user.role)}</div>
           </div>
-          {isHead ? (
+          {user.role === "head_of_audit" ? (
             <div className="sidebar-profile-dropdown">
               <div className="sidebar-profile-dropdown-panel">
-              <button
-                type="button"
-                className="sidebar-profile-dropdown-item"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={(e) => onProfileNav(e, "settings")}
-              >
-                <HugeiconsIcon
-                  icon={Settings01Icon}
-                  size={16}
-                  strokeWidth={1.75}
-                />
-                Settings
-              </button>
-              <button
-                type="button"
-                className="sidebar-profile-dropdown-item"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={(e) => onProfileNav(e, "auditlog")}
-              >
-                <HugeiconsIcon
-                  icon={TransactionHistoryIcon}
-                  size={16}
-                  strokeWidth={1.75}
-                />
-                Audit log
-              </button>
+                <button
+                  type="button"
+                  className="sidebar-profile-dropdown-item"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={(e) => onProfileNav(e, "settings")}
+                >
+                  <HugeiconsIcon icon={Settings01Icon} size={16} strokeWidth={1.75} />
+                  Settings
+                </button>
+                <button
+                  type="button"
+                  className="sidebar-profile-dropdown-item"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={(e) => onProfileNav(e, "auditlog")}
+                >
+                  <HugeiconsIcon icon={TransactionHistoryIcon} size={16} strokeWidth={1.75} />
+                  Audit log
+                </button>
               </div>
             </div>
           ) : null}

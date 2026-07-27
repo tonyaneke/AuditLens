@@ -324,6 +324,13 @@ function reportObs(r){ return r.observations; }
 
 /* ============================ ROUTER ============================ */
 function go(v,opts={}){
+  // Route bridge: views migrated to the React shell live at real URLs now. Flush any
+  // debounced save first so a full page load never loses a write.
+  if(window.AMS_ROUTES && window.AMS_ROUTES.migrated.indexOf(v)>=0){
+    const nav=()=>{ try{ location.assign(window.AMS_ROUTES.url(v,opts||{})); }catch(e){} };
+    if(_pendingSave){ clearTimeout(_saveTimer); saveNow().catch(()=>{}).then(nav,nav); } else nav();
+    return;
+  }
   if(v==="newobs"){ modalNewObs(); return; }
   if(v==="insights"){ trackerMode="insights"; v="tracker"; }
   const gated=["dashboard","audits","tracker","auditra","fraud","process","external","iasa","approvals","myobs","settings","auditlog","guide"];
@@ -6980,6 +6987,28 @@ function exportCaeReport(){
 /* ============================ INIT ============================ */
 function initAuditBot(){
   window.go = go;
+  // URL boot: the legacy shell is deep-linkable as /legacy?view=x&audit=…&obs=… — the React
+  // shell links here for views that haven't been migrated yet.
+  try{
+    const qs=new URLSearchParams(location.search);
+    const v=qs.get("view");
+    if(v){
+      if(qs.get("audit")) curAudit=qs.get("audit");
+      if(qs.get("report")) curReport=qs.get("report");
+      if(qs.get("obs")) curObs=qs.get("obs");
+      if(qs.get("ext")) curExt=qs.get("ext");
+      if(qs.get("unit")) curRaUnit=qs.get("unit");
+      if(qs.get("fraud")) curFraud=qs.get("fraud");
+      if(qs.get("proc")) curProc=qs.get("proc");
+      const mode=qs.get("mode"), tab=qs.get("tab");
+      if(v==="tracker"&&mode==="insights") trackerMode="insights";
+      if(v==="tracker"&&mode==="recent") trackerRecentOpen=true;
+      if(v==="external"&&mode) extMode=mode;
+      if(v==="iasa"&&tab) iasaMode=tab;
+      if(v==="newobs"){ view="dashboard"; setTimeout(()=>{ try{ modalNewObs(); }catch(e){} },500); }
+      else view=v;
+    }
+  }catch(e){}
   window.addEventListener("ams-navigate", (e) => {
     const view = e.detail?.view;
     if (view) go(view);

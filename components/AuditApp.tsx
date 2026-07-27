@@ -3,6 +3,13 @@
 import Script from "next/script";
 import AuthGate from "./AuthGate";
 import SidebarNav from "./SidebarNav";
+import { legacyBridgeRoutes } from "@/lib/routes";
+
+// Route bridge for the legacy script: go() consults this and redirects migrated views to their
+// real URLs. Assigned at module load (client) so it exists before the afterInteractive script runs.
+if (typeof window !== "undefined") {
+  (window as AuditBotWindow).AMS_ROUTES = legacyBridgeRoutes();
+}
 
 export default function AuditApp() {
   return (
@@ -19,7 +26,7 @@ export default function AuditApp() {
                 <div className="brand-tagline">Audit Management System</div>
               </div>
 
-              <SidebarNav user={user} />
+              <SidebarNav user={user} shell="legacy" />
             </aside>
 
             <main className="main">
@@ -69,7 +76,7 @@ export default function AuditApp() {
             </div>
           </div>
 
-          <Script src="/audit-bot.js?v=20260722c" strategy="afterInteractive" />
+          <Script src="/audit-bot.js?v=20260726a" strategy="afterInteractive" />
         </>
       )}
     </AuthGate>
@@ -78,4 +85,5 @@ export default function AuditApp() {
 
 type AuditBotWindow = Window & {
   closeModal?: () => void;
+  AMS_ROUTES?: ReturnType<typeof legacyBridgeRoutes>;
 };
