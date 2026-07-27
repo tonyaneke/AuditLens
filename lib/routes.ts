@@ -54,6 +54,9 @@ export const MIGRATED_VIEWS: ReadonlySet<ViewKey> = new Set<ViewKey>([
   "dashboard",
   "tracker",
   "insights",
+  "auditra",
+  "raunit",
+  "iasa",
 ]);
 
 // Where the legacy shell lives. Stage B (dashboard takes "/") moved it to /legacy.

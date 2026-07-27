@@ -4,7 +4,13 @@
 // styles them without changes.
 
 import Link from "next/link";
-import type { CSSProperties, ReactNode } from "react";
+import {
+  useState,
+  type CSSProperties,
+  type InputHTMLAttributes,
+  type ReactNode,
+  type TextareaHTMLAttributes,
+} from "react";
 import { ck, hx2rgba } from "@/lib/workspace/selectors";
 
 /* ---- criticality pill: `<span class="pill c-…">` ---- */
@@ -143,6 +149,66 @@ export function BackButton({ href, onClick }: { href?: string; onClick?: () => v
     <button className="btn-back" type="button" onClick={onClick} title="Back">
       {inner}
     </button>
+  );
+}
+
+/* ---- write-on-commit text controls ----
+   The legacy shell wrote straight into the workspace on the DOM `change` event (i.e. on blur).
+   These keep the keystrokes local and commit the same way, so typing never re-renders — and
+   never fights — a whole page bound to the workspace blob. */
+
+function useCommitValue(value: string) {
+  const [draft, setDraft] = useState(value);
+  const [seen, setSeen] = useState(value);
+  const [focused, setFocused] = useState(false);
+  // Adopt external changes (a poll adoption, an AI generate) during render, but only while the
+  // user isn't typing in this field — the React "adjust state when a prop changes" pattern.
+  if (value !== seen && !focused) {
+    setSeen(value);
+    setDraft(value);
+  }
+  return { draft, setDraft, setFocused };
+}
+
+type CommitInputProps = Omit<
+  InputHTMLAttributes<HTMLInputElement>,
+  "value" | "onChange" | "onBlur" | "onFocus"
+> & { value: string; onCommit: (v: string) => void };
+
+export function CommitInput({ value, onCommit, ...rest }: CommitInputProps) {
+  const { draft, setDraft, setFocused } = useCommitValue(value);
+  return (
+    <input
+      {...rest}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => {
+        setFocused(false);
+        if (draft !== value) onCommit(draft);
+      }}
+    />
+  );
+}
+
+type CommitTextareaProps = Omit<
+  TextareaHTMLAttributes<HTMLTextAreaElement>,
+  "value" | "onChange" | "onBlur" | "onFocus"
+> & { value: string; onCommit: (v: string) => void };
+
+export function CommitTextarea({ value, onCommit, ...rest }: CommitTextareaProps) {
+  const { draft, setDraft, setFocused } = useCommitValue(value);
+  return (
+    <textarea
+      {...rest}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => {
+        setFocused(false);
+        if (draft !== value) onCommit(draft);
+      }}
+    />
   );
 }
 

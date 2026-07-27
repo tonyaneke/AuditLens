@@ -198,7 +198,49 @@ export type AuditUniverseUnit = {
   engStatus?: string;
   occDone?: string[];
   linkedAuditIds?: string[];
+  /** Pre-multi-link shape kept for reads; writes always use linkedAuditIds. */
+  linkedAuditId?: string;
+  ratingOverride?: string;
+  frequencyOverride?: string;
+  rationale?: string;
+  /** Plan year this engagement slipped from (set by the rollover). */
+  carryOverFrom?: string | number;
   createdAt?: string;
+  [k: string]: unknown;
+};
+
+/* ---- IA self-assessment against the IIA Global Internal Audit Standards ---- */
+
+export type IaSaStandard = {
+  conf?: string;
+  evidence?: string;
+  gap?: string;
+  action?: string;
+  owner?: string;
+  target?: string;
+};
+
+export type IaSaPrinciple = {
+  /** Legacy principle-level rating; the rollup from standards supersedes it. */
+  conformance?: string;
+  maturity?: number;
+  notes?: string;
+  action?: string;
+};
+
+export type IaSaRecord = {
+  id: string;
+  period?: string;
+  assessor?: string;
+  scope?: string;
+  approach?: string;
+  lastEQA?: string;
+  commentary?: string;
+  items: Record<string, IaSaPrinciple>;
+  std: Record<string, IaSaStandard>;
+  status?: "in_progress" | "completed" | string;
+  startedAt?: string;
+  completedAt?: string;
   [k: string]: unknown;
 };
 
@@ -285,8 +327,10 @@ export type WorkspaceDb = {
   processReviews?: unknown[];
   extFindings?: ExtFinding[];
   extCommentary?: string;
-  iaSAList?: unknown[];
+  iaSAList?: IaSaRecord[];
   iaSACurrentId?: string;
+  /** Plan years opened from "New audit plan" (planYear is the one currently in view). */
+  planYears?: (string | number)[];
   departments?: Department[];
   notifications?: NotificationItem[];
   approvals?: Approval[];
