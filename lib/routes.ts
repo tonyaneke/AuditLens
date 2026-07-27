@@ -58,6 +58,21 @@ export const MIGRATED_VIEWS: ReadonlySet<ViewKey> = new Set<ViewKey>([
   "raunit",
   "iasa",
   "audits",
+  "audit",
+  "report",
+  "observation",
+  "sopupdate",
+  "fraud",
+  "fraudrisk",
+  "process",
+  "external",
+  "extfinding",
+  "approvals",
+  "myobs",
+  "myext",
+  "myfraud",
+  "settings",
+  "newobs",
 ]);
 
 // Where the legacy shell lives. Stage B (dashboard takes "/") moved it to /legacy.

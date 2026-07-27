@@ -120,6 +120,25 @@ export type Report = {
   [k: string]: unknown;
 };
 
+export type AuditTest = {
+  id: string;
+  ref: string;
+  name: string;
+  objective?: string;
+  control?: string;
+  result?: "Not Tested" | "Passed" | "Exception" | "Partial" | "N/A";
+  notes?: string;
+  [k: string]: unknown;
+};
+
+export type AuditPlan = {
+  scope?: string;
+  objectives?: string[];
+  keyRisks?: string[];
+  tests?: AuditTest[];
+  [k: string]: unknown;
+};
+
 export type Audit = {
   id: string;
   name: string;
@@ -131,8 +150,11 @@ export type Audit = {
   status?: string;
   createdAt?: string;
   reports: Report[];
+  plan?: AuditPlan;
+  tor?: Record<string, string | undefined>;
   [k: string]: unknown;
 };
+
 
 export type FraudAction = {
   id: string;
