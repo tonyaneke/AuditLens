@@ -432,8 +432,8 @@ export function UserDialog({
       </div>
       {isEdit ? null : (
         <p className="hint" style={{ margin: "10px 0 0" }}>
-          A welcome email with a temporary password will be sent. The user sets their own password
-          on first sign-in.
+          A welcome email is sent automatically — the user signs in with their Microsoft
+          (organisation) account; there is no separate password.
         </p>
       )}
       {role === "audit_staff" ? (
