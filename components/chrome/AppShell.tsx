@@ -55,17 +55,26 @@ export default function AppShell({ children }: { children: ReactNode }) {
             {ready ? (
               children
             ) : (
-              // The workspace document is still downloading — show a real loading state so
-              // pages never flash their "no data yet" empties with the chrome already up.
-              <div className="card anim-fade-in">
-                <div className="empty" style={{ padding: "48px 12px" }}>
-                  <span
-                    className="btn-spin"
-                    aria-hidden="true"
-                    style={{ width: 22, height: 22, display: "inline-block", marginBottom: 10 }}
-                  />
-                  <br />
-                  Loading your workspace…
+              // The workspace document is still downloading — shimmer skeletons shaped like a
+              // typical page (KPI row + content cards) so pages never flash premature empties.
+              <div className="skel-page anim-fade-in" aria-busy="true" aria-label="Loading">
+                <div className="skel-kpis">
+                  <div className="skel skel-kpi" />
+                  <div className="skel skel-kpi" />
+                  <div className="skel skel-kpi" />
+                  <div className="skel skel-kpi" />
+                </div>
+                <div className="card">
+                  <div className="skel skel-title" />
+                  <div className="skel skel-row" />
+                  <div className="skel skel-row" />
+                  <div className="skel skel-row" />
+                </div>
+                <div className="card">
+                  <div className="skel skel-title" />
+                  <div className="skel skel-line w80" />
+                  <div className="skel skel-line w60" />
+                  <div className="skel skel-line w40" />
                 </div>
               </div>
             )}

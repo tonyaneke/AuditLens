@@ -4538,3 +4538,39 @@ a.btn-back {
 .role-switcher-option-label { font-size: 13px; font-weight: 600; color: var(--ink, #19302a); }
 .role-switcher-option-desc { font-size: 11px; color: var(--muted, #64807a); margin-top: 2px; }
 .role-switcher-option.active .role-switcher-option-label { color: var(--accent, #1f8a5b); }
+
+/* ---- Loading skeletons (workspace still downloading) ---- */
+.skel {
+  position: relative;
+  overflow: hidden;
+  background: #e8eef1;
+  border-radius: 8px;
+}
+.skel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.65), transparent);
+  animation: skel-shimmer 1.4s infinite;
+}
+@keyframes skel-shimmer {
+  100% { transform: translateX(100%); }
+}
+.skel-page { display: flex; flex-direction: column; gap: 16px; }
+.skel-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+.skel-kpi { height: 96px; border-radius: 14px; }
+.skel-line { height: 13px; margin: 10px 0; }
+.skel-line.w25 { width: 25%; }
+.skel-line.w40 { width: 40%; }
+.skel-line.w60 { width: 60%; }
+.skel-line.w80 { width: 80%; }
+.skel-title { height: 18px; width: 30%; margin-bottom: 14px; }
+.skel-row { height: 44px; border-radius: 10px; margin: 8px 0; }
+@media (max-width: 900px) {
+  .skel-kpis { grid-template-columns: repeat(2, 1fr); }
+}
