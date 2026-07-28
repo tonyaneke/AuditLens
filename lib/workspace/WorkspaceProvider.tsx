@@ -38,6 +38,43 @@ const store: Store = {
   saveTimer: null,
 };
 
+/* ---- fast boot: session snapshot + eager first fetch ----
+   The workspace document takes seconds to download from the remote DB. Two tricks keep the
+   skeleton short: (1) the last known copy is cached in sessionStorage and adopted instantly
+   on reload (stale-while-revalidate — the fresh copy replaces it when it lands); (2) the
+   first fetch starts at script-eval time, before React has even hydrated. */
+
+const WS_CACHE_KEY = "al_ws_cache_v1";
+type WsPayload = { data?: WorkspaceDb; updatedAt?: string };
+
+function readCachedSnapshot(): { data: WorkspaceDb; updatedAt: string } | null {
+  try {
+    const raw = sessionStorage.getItem(WS_CACHE_KEY);
+    if (!raw) return null;
+    const j = JSON.parse(raw) as { data?: WorkspaceDb; updatedAt?: string };
+    if (j && j.data && Array.isArray(j.data.audits))
+      return { data: j.data, updatedAt: String(j.updatedAt || "") };
+  } catch {
+    /* corrupt / absent */
+  }
+  return null;
+}
+
+function persistSnapshot(db: WorkspaceDb, updatedAt: string): void {
+  try {
+    sessionStorage.setItem(WS_CACHE_KEY, JSON.stringify({ data: db, updatedAt }));
+  } catch {
+    /* quota — skip; boot falls back to the network */
+  }
+}
+
+let bootFetch: Promise<WsPayload | null> | null =
+  typeof window !== "undefined"
+    ? fetch("/api/data")
+        .then((r) => (r.ok ? (r.json() as Promise<WsPayload>) : null))
+        .catch(() => null)
+    : null;
+
 type WorkspaceApi = {
   /** The live workspace blob. Mutate only via mutate(). */
   db: WorkspaceDb;
@@ -78,6 +115,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       if (res.ok) {
         const j = await res.json().catch(() => null);
         if (j && j.updatedAt) store.lastUpdatedAt = j.updatedAt;
+        persistSnapshot(store.db, store.lastUpdatedAt);
       }
     } catch {
       store.pendingSave = false;
@@ -117,21 +155,42 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, [bump]);
 
-  // Initial load
+  // Initial load: adopt the session snapshot immediately (if any), then swap in the fresh
+  // copy the moment the network delivers it.
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/data");
-        if (res.ok) {
-          const json = await res.json();
-          if (!cancelled && json && json.data && Array.isArray(json.data.audits)) {
-            store.db = json.data as WorkspaceDb;
-            if (json.updatedAt) store.lastUpdatedAt = json.updatedAt;
-          }
+    const cached = readCachedSnapshot();
+    if (cached) {
+      store.db = cached.data;
+      store.lastUpdatedAt = cached.updatedAt;
+      setTimeout(() => {
+        if (!cancelled) {
+          setReady(true);
+          bump();
         }
-      } catch {
-        /* default workspace stays */
+      }, 0);
+    }
+    (async () => {
+      let json: WsPayload | null = null;
+      if (bootFetch) {
+        json = await bootFetch;
+        bootFetch = null;
+      }
+      if (json == null) {
+        try {
+          const res = await fetch("/api/data");
+          if (res.ok) json = (await res.json()) as WsPayload;
+        } catch {
+          /* cached/default copy stays */
+        }
+      }
+      if (!cancelled && json && json.data && Array.isArray(json.data.audits)) {
+        // Never clobber typing/edits that began on the cached copy — the poll adopts later.
+        if (!(cached && (store.pendingSave || isSyncPaused()))) {
+          store.db = json.data;
+          if (json.updatedAt) store.lastUpdatedAt = String(json.updatedAt);
+          persistSnapshot(json.data, String(json.updatedAt || ""));
+        }
       }
       if (!cancelled) {
         setReady(true);
@@ -167,6 +226,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         ) {
           store.lastUpdatedAt = json.updatedAt;
           store.db = json.data as WorkspaceDb;
+          persistSnapshot(store.db, store.lastUpdatedAt);
           bump();
         }
       } catch {
