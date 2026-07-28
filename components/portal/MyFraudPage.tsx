@@ -123,68 +123,84 @@ export default function MyFraudPage() {
       {risks.map((f) => {
         const res = fraudResidualBand(f);
         const A = myFraudActionsFor(f, user.id);
+        const done = A.filter((a) => a.status === "Implemented").length;
+        const pct = A.length ? Math.round((done / A.length) * 100) : 0;
         return (
-          <div className="card anim-fade-in" key={f.id}>
-            <div className="row" style={{ alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <div className="seclabel" style={{ margin: 0 }}>{f.scheme}</div>
+          <div
+            className="card anim-fade-in mft-card"
+            key={f.id}
+            style={{ borderLeftColor: BAND_HEX[res] }}
+          >
+            <div className="mft-head">
+              <span className="mft-scheme">{f.scheme}</span>
               <TintPill hex={BAND_HEX[res]} bold>{res} residual</TintPill>
               {f.category ? <span className="tag">{f.category}</span> : null}
               <div className="spacer" />
-              <span className="hint">{fraudRollupStatus(f)}</span>
+              {A.length ? (
+                <div className="mft-progress">
+                  <div className="mft-track">
+                    <div className="mft-fill" style={{ width: pct + "%" }} />
+                  </div>
+                  <span className="mft-progress-label">
+                    {done}/{A.length} implemented
+                  </span>
+                </div>
+              ) : (
+                <span className="hint">{fraudRollupStatus(f)}</span>
+              )}
             </div>
+            {f.description ? (
+              <div className="hint" style={{ margin: "6px 0 2px", maxWidth: 760 }}>
+                {String(f.description).slice(0, 220)}
+                {String(f.description).length > 220 ? "…" : ""}
+              </div>
+            ) : null}
             {A.length ? (
-              <table style={{ marginTop: 10 }}>
-                <thead>
-                  <tr>
-                    <th>Prevention / response action</th>
-                    <th>Type</th>
-                    <th>Target</th>
-                    <th style={{ width: 150 }}>Status</th>
-                    <th>Latest update</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {A.map((a) => {
-                    const last = (a.ownerUpdates || [])[0];
-                    return (
-                      <tr key={a.id}>
-                        <td>{a.text}</td>
-                        <td><span className="tag">{a.type || "—"}</span></td>
-                        <td>{a.targetDate || "—"}</td>
-                        <td>
-                          <select
-                            className="field-select field-select-sm"
-                            value={a.status || "Planned"}
-                            onChange={(e) => void setStatus(f.id, a.id, e.target.value)}
-                          >
-                            {ACTION_STATUS.map((s) => (
-                              <option key={s}>{s}</option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="hint">
-                          {last ? (
-                            <>
-                              {last.text}
-                              <div style={{ marginTop: 2 }}>
-                                {last.byName || ""} · {fmtDateTime(last.at)}
-                              </div>
-                            </>
-                          ) : (
-                            "—"
-                          )}
-                        </td>
-                        <td className="ra-actions-cell">
-                          <button className="btn sec sm" type="button" onClick={() => openUpdate(f, a.id)}>
-                            + Update
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <div style={{ marginTop: 8 }}>
+                {A.map((a) => {
+                  const last = (a.ownerUpdates || [])[0];
+                  return (
+                    <div className="mft-action-row" key={a.id}>
+                      <div className="mft-action-main">
+                        <div className="mft-action-text">{a.text}</div>
+                        <div className="mft-action-tags">
+                          <span className="tag">{a.type || "Preventive"}</span>
+                          {a.targetDate ? (
+                            <span className="hint">🎯 Target: {a.targetDate}</span>
+                          ) : null}
+                        </div>
+                        {last ? (
+                          <div className="mft-update">
+                            {last.text}
+                            <div className="mft-update-meta">
+                              {last.byName || ""} · {fmtDateTime(last.at)}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="mft-update" style={{ color: "#94a3b8" }}>
+                            No progress update posted yet — use <b>+ Post update</b> to report
+                            implementation progress.
+                          </div>
+                        )}
+                      </div>
+                      <div className="mft-action-side">
+                        <select
+                          className="field-select field-select-sm"
+                          value={a.status || "Planned"}
+                          onChange={(e) => void setStatus(f.id, a.id, e.target.value)}
+                        >
+                          {ACTION_STATUS.map((s) => (
+                            <option key={s}>{s}</option>
+                          ))}
+                        </select>
+                        <button className="btn sm" type="button" onClick={() => openUpdate(f, a.id)}>
+                          + Post update
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             ) : (
               <div className="hint" style={{ marginTop: 8 }}>
                 No prevention actions defined for this risk yet.
