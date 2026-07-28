@@ -300,8 +300,12 @@ export type ProcessReview = {
   unit?: string;
   sopTitle?: string;
   sopFileName?: string;
-  /** Original SOP PDF (base64, no data: prefix) kept for AI redesign context. */
+  /** Original SOP PDF (base64, no data: prefix) kept for AI redesign context. Stored
+   * server-side only — /api/data GET strips it (and sets sopPdfStored) so the multi-MB
+   * PDFs never ride in the workspace payload; /api/data PUT grafts it back. */
   sopPdfBase64?: string;
+  /** True when a SOP PDF is stored for this review (the base64 itself is server-side). */
+  sopPdfStored?: boolean;
   period?: string;
   overallRating?: string;
   summary?: string;

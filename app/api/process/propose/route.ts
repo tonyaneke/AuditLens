@@ -44,7 +44,22 @@ export async function POST(request: Request) {
     defaultWorkspaceData().org ||
     "Internal Audit";
 
-  const pdfBase64 = String(form.get("pdfBase64") || "").trim();
+  // The client no longer holds the stored SOP PDF (/api/data strips it) — when it sends a
+  // reviewId instead, extract the base64 for just that review inside Postgres.
+  let pdfBase64 = String(form.get("pdfBase64") || "").trim();
+  const reviewId = String(form.get("reviewId") || "").trim();
+  if (!pdfBase64 && reviewId) {
+    try {
+      const rows = await prisma.$queryRaw<{ pdf: string | null }[]>`
+        SELECT r->>'sopPdfBase64' AS pdf
+        FROM "WorkspaceData", jsonb_array_elements(data::jsonb->'processReviews') AS r
+        WHERE id = 'default' AND r->>'id' = ${reviewId}
+        LIMIT 1`;
+      pdfBase64 = rows[0]?.pdf || "";
+    } catch {
+      /* proceed without the PDF — the prompt falls back to findings only */
+    }
+  }
   let pdfBuffer: Buffer | null = null;
 
   if (pdfBase64) {

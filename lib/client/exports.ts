@@ -3,6 +3,8 @@
 // Download / Office-export cores (ports of legacy dl(), wordDoc(), csv helpers). Per-feature
 // export builders live with their feature components and call these.
 
+import { orgLogoDataUrl } from "./logo";
+
 export function dl(content: string, name: string, type: string): void {
   const blob = new Blob([content], { type });
   const a = document.createElement("a");
@@ -46,10 +48,12 @@ const WORD_CSS = `body{font-family:'Calibri',sans-serif;font-size:11pt;color:#1c
     .findings td{font-size:9pt} .findings .sn{text-align:center;font-weight:bold} .findings ul{margin:3pt 0;padding-left:14pt}
     .rate{margin-top:4pt;font-weight:bold} .sign{margin-top:12pt}`;
 
-/** MS-Word-flavoured HTML document, downloaded as .doc (same technique as legacy wordDoc). */
+/** MS-Word-flavoured HTML document, downloaded as .doc (same technique as legacy wordDoc).
+ * When no logo is passed, the cached static org logo (public/org-logo.png) is embedded. */
 export function wordDoc(title: string, inner: string, logoDataUrl?: string): void {
-  const header = logoDataUrl
-    ? `<div style="text-align:center;margin-bottom:8pt"><img src="${logoDataUrl}" style="max-height:64pt"></div>`
+  const lg = logoDataUrl || orgLogoDataUrl();
+  const header = lg
+    ? `<div style="text-align:center;margin-bottom:8pt"><img src="${lg}" style="max-height:64pt"></div>`
     : "";
   const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word'>
     <head><meta charset="utf-8"><style>${WORD_CSS}</style></head><body>${header}${inner}</body></html>`;

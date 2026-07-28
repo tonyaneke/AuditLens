@@ -8,6 +8,46 @@ import { authorizeWorkspaceWrite } from "@/lib/workspace-authz";
 
 const WORKSPACE_ID = "default";
 
+type AnyRec = Record<string, unknown>;
+
+// The stored SOP PDFs (processReviews[].sopPdfBase64) are by far the heaviest part of the
+// workspace document (~70% of the payload). They stay server-side: GET replaces each with a
+// sopPdfStored flag, and PUT grafts the stored base64 back so a client save never loses them.
+function slimForClient(data: WorkspaceDb): WorkspaceDb {
+  const reviews = data.processReviews as AnyRec[] | undefined;
+  if (!reviews || !reviews.some((r) => r && typeof r === "object" && r.sopPdfBase64)) return data;
+  return {
+    ...data,
+    processReviews: reviews.map((r) => {
+      if (!r || typeof r !== "object" || !r.sopPdfBase64) return r;
+      const { sopPdfBase64: _dropped, ...rest } = r;
+      void _dropped;
+      return { ...rest, sopPdfStored: true };
+    }),
+  };
+}
+
+function graftStoredPdfs(current: WorkspaceDb, next: WorkspaceDb): WorkspaceDb {
+  const nextReviews = next.processReviews as AnyRec[] | undefined;
+  if (!nextReviews || !nextReviews.length) return next;
+  const curReviews = (current.processReviews as AnyRec[] | undefined) || [];
+  const byId = new Map(
+    curReviews
+      .filter((r) => r && typeof r === "object" && r.id)
+      .map((r) => [String(r.id), r]),
+  );
+  return {
+    ...next,
+    processReviews: nextReviews.map((r) => {
+      if (!r || typeof r !== "object" || r.sopPdfBase64) return r; // fresh upload rides in
+      const cur = byId.get(String(r.id));
+      if (cur && cur.sopPdfBase64)
+        return { ...r, sopPdfBase64: cur.sopPdfBase64, sopPdfStored: true };
+      return r;
+    }),
+  };
+}
+
 export async function GET(request: Request) {
   try {
     await requireActiveSession();
@@ -32,7 +72,7 @@ export async function GET(request: Request) {
 
   const row = await prisma.workspaceData.findUnique({ where: { id: WORKSPACE_ID } });
   const data = (row?.data as WorkspaceDb) || defaultWorkspaceData();
-  return NextResponse.json({ data, updatedAt: row?.updatedAt ?? null });
+  return NextResponse.json({ data: slimForClient(data), updatedAt: row?.updatedAt ?? null });
 }
 
 export async function PUT(request: Request) {
@@ -61,6 +101,10 @@ export async function PUT(request: Request) {
     );
   }
 
+  // The org logo is a static asset now (public/org-logo.png) — never let a client write a
+  // base64 logo back into the document.
+  delete (body.data as AnyRec).logo;
+
   // Authorize the write against the stored workspace: non-head users may only make the changes their
   // role permits (raise observations, request approvals, comment, remediate). Anything else — editing/
   // deleting/withdrawing/closing observations directly, deciding approvals, touching head-only
@@ -75,7 +119,7 @@ export async function PUT(request: Request) {
     session.activeRole,
   );
 
-  const payload = authorized as Prisma.InputJsonValue;
+  const payload = graftStoredPdfs(current, authorized) as Prisma.InputJsonValue;
 
   const row = await prisma.workspaceData.upsert({
     where: { id: WORKSPACE_ID },
@@ -95,7 +139,7 @@ export async function PUT(request: Request) {
   }
 
   return NextResponse.json({
-    data: row.data as WorkspaceDb,
+    data: slimForClient(row.data as WorkspaceDb),
     updatedAt: row.updatedAt,
   });
 }

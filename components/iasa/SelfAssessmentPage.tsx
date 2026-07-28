@@ -76,6 +76,86 @@ function GenerateContextDialog({ rec }: { rec: IaSaRecord }) {
   );
 }
 
+// "+ New assessment" flow: the context comes FIRST — the Head of Audit describes the IA
+// function, the record is created with that context, the AI fills every standard from it,
+// and the assessment stays fully editable until it is marked complete.
+function NewAssessmentDialog() {
+  const { db, mutate } = useWorkspace();
+  const modal = useModal();
+  const router = useRouter();
+  const [ctx, setCtx] = useState("");
+  const [err, setErr] = useState("");
+
+  function createRecord(context: string): string {
+    let id = "";
+    mutate((d) => {
+      id = newIaSa(d, iasaPeriodForDate(new Date()));
+      const r = ensureIaSaList(d).find((x) => x.id === id);
+      if (r) r.aiContext = context;
+    });
+    return id;
+  }
+
+  return (
+    <ModalFrame
+      title="New self-assessment"
+      footer={
+        <>
+          <button className="btn sec" type="button" onClick={modal.close}>
+            Cancel
+          </button>
+          <button
+            className="btn ghost"
+            type="button"
+            onClick={() => {
+              createRecord("");
+              modal.close();
+              router.replace("/self-assessment?tab=assessment");
+            }}
+          >
+            Start blank
+          </button>
+          <BusyButton
+            className="btn dark ai-generate-btn"
+            busyLabel="Generating…"
+            onClick={async () => {
+              const context = ctx.trim();
+              if (!context) {
+                setErr("Describe the IA function first — the AI evaluates against this context.");
+                return;
+              }
+              const id = createRecord(context);
+              modal.close();
+              router.replace("/self-assessment?tab=assessment");
+              await generateIASA(db, id, mutate, context);
+            }}
+          >
+            Create &amp; generate assessment
+          </BusyButton>
+        </>
+      }
+    >
+      <label>Context about the IA function</label>
+      <p className="hint" style={{ margin: "2px 0 6px" }}>
+        The AI analyses this context and fills the assessment against every standard and
+        principle. Everything it generates stays editable — review, adjust, then mark the
+        assessment complete.
+      </p>
+      <textarea
+        style={{ minHeight: 150 }}
+        value={ctx}
+        onChange={(e) => setCtx(e.target.value)}
+        placeholder="e.g. one-person in-house function (Head of Internal Audit); board-approved IA charter; functionally reports to the Board Audit Committee; risk-based annual plan approved; uses IIA methodology; whistleblowing programme; no external quality assessment yet; …"
+      />
+      {err ? (
+        <div style={{ marginTop: 8 }}>
+          <div className="ai-err">{err}</div>
+        </div>
+      ) : null}
+    </ModalFrame>
+  );
+}
+
 export default function SelfAssessmentPage() {
   const { db, mutate, version, ready } = useWorkspace();
   const modal = useModal();
@@ -109,8 +189,7 @@ export default function SelfAssessmentPage() {
     router.replace(t === "overview" ? "/self-assessment" : `/self-assessment?tab=${t}`);
 
   function startNew() {
-    mutate((d) => void newIaSa(d, iasaPeriodForDate(new Date())));
-    goTab("assessment");
+    modal.open(<NewAssessmentDialog />);
   }
   function openRecord(s: IaSaRecord) {
     mutate((d) => {

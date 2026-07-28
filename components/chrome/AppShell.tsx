@@ -4,29 +4,31 @@
 // (sidebar + topbar + content), with the topbar driven by the PageChrome slots instead of
 // innerHTML writes.
 
-import { type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import SidebarNav from "@/components/SidebarNav";
+import { ORG_LOGO_URL, preloadOrgLogo } from "@/lib/client/logo";
+import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 import { useChrome } from "./PageChrome";
 import NotifBell from "./NotifBell";
 import { useUser } from "./UserContext";
-import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 
 export default function AppShell({ children }: { children: ReactNode }) {
   const user = useUser();
   const { chrome } = useChrome();
-  const { db } = useWorkspace();
-  // Fall back to the bundled brand icon when no org logo is uploaded (legacy logoSrc behavior).
-  const logo = typeof db.logo === "string" && db.logo ? db.logo : "/icon.png";
+  const { ready } = useWorkspace();
+
+  // Warm the data-URL conversion of the static logo so Word exports embed it instantly.
+  useEffect(() => {
+    void preloadOrgLogo();
+  }, []);
 
   return (
     <div className="app">
       <aside className="side">
         <div className="brand">
           <div className="brand-logo-row">
-            {logo ? (
-              // eslint-disable-next-line @next/next/no-img-element -- org logo is a data URL
-              <img alt="" className="brand-logo" src={logo} />
-            ) : null}
+            {/* eslint-disable-next-line @next/next/no-img-element -- small static brand asset */}
+            <img alt="" className="brand-logo" src={ORG_LOGO_URL} />
             <span className="brand-name">AuditLens</span>
           </div>
           <div className="brand-tagline">Audit Management System</div>
@@ -49,7 +51,25 @@ export default function AppShell({ children }: { children: ReactNode }) {
               <NotifBell />
             </div>
           </div>
-          <div className="content">{children}</div>
+          <div className="content">
+            {ready ? (
+              children
+            ) : (
+              // The workspace document is still downloading — show a real loading state so
+              // pages never flash their "no data yet" empties with the chrome already up.
+              <div className="card anim-fade-in">
+                <div className="empty" style={{ padding: "48px 12px" }}>
+                  <span
+                    className="btn-spin"
+                    aria-hidden="true"
+                    style={{ width: 22, height: 22, display: "inline-block", marginBottom: 10 }}
+                  />
+                  <br />
+                  Loading your workspace…
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </main>
     </div>

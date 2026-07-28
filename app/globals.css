@@ -90,7 +90,7 @@ a {
 .brand-logo {
   width: 40px;
   height: 40px;
-  display: none;
+  display: block;
   background: #fff;
   padding: 4px;
   border-radius: 10px;

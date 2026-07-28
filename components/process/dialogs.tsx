@@ -524,7 +524,7 @@ export function ProposeProcessDialog({ pid }: { pid: string }) {
   // Legacy generateProcessProposal note: the stored SOP PDF (sopPdfBase64) grounds the redesign.
   const sopNote = p.sopFileName ? (
     <div className="note" style={{ marginBottom: 8 }}>
-      {p.sopPdfBase64 ? (
+      {p.sopPdfBase64 || p.sopPdfStored ? (
         <>
           Original SOP PDF on file: <b>{p.sopFileName}</b> — Gemini will use it for context.
         </>
@@ -553,6 +553,7 @@ export function ProposeProcessDialog({ pid }: { pid: string }) {
     fd.append("sopTitle", p.sopTitle || "");
     fd.append("findings", findingsList);
     if (p.sopPdfBase64) fd.append("pdfBase64", p.sopPdfBase64);
+    else if (p.sopPdfStored) fd.append("reviewId", p.id); // server pulls the stored PDF itself
     try {
       const parsed = await withAiBusy(async () => {
         const res = await fetch("/api/process/propose", { method: "POST", body: fd });
