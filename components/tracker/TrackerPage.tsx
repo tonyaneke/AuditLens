@@ -4,11 +4,17 @@
 // ?mode=actions|insights|recent as URL state.
 
 import { useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useUser } from "@/components/chrome/UserContext";
 import { toast } from "@/components/feedback/ToastHost";
+import { useModal } from "@/components/modals/ModalProvider";
 import { CritPill, Empty, Kpi, StatusPill } from "@/components/ui";
+import { effectiveRole } from "@/lib/permissions";
+
+// Modal-only: bulk owner reminders load on first open.
+const RemindersDialog = dynamic(() => import("./RemindersDialog"), { loading: () => null });
 import { esc, excelDoc, stamp, wordDoc } from "@/lib/client/exports";
 import { hrefForView, isLegacyPath } from "@/lib/routes";
 import {
@@ -61,6 +67,8 @@ type TrackerFilter = { crit: string; tl: string; status: string; repeat: boolean
 export default function TrackerPage() {
   const { db } = useWorkspace();
   const user = useUser();
+  const modal = useModal();
+  const isHead = effectiveRole(user) === "head_of_audit";
   const router = useRouter();
   const search = useSearchParams();
   const mode = search.get("mode") === "insights" ? "insights" : search.get("mode") === "recent" ? "recent" : "actions";
@@ -206,6 +214,15 @@ export default function TrackerPage() {
       title: "Remediation Tracker",
       actions: (
         <>
+          {isHead ? (
+            <button
+              className="btn sm"
+              type="button"
+              onClick={() => modal.open(<RemindersDialog />)}
+            >
+              🔔 Remind owners
+            </button>
+          ) : null}
           <button className="btn sec sm" type="button" onClick={mode === "insights" ? exportInsightsDoc : exportTracker}>
             ⤓ Export {mode === "insights" ? "insights" : "tracker"}
           </button>
@@ -215,7 +232,7 @@ export default function TrackerPage() {
         </>
       ),
     },
-    [mode, obs.length],
+    [mode, obs.length, isHead],
   );
 
   /* ---- header tabs ---- */
