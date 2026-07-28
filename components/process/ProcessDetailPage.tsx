@@ -31,7 +31,7 @@ import {
   ProcStepDialog,
   ProposeProcessDialog,
   RaiseProcFindingDialog,
-} from "./dialogs";
+} from "./lazy";
 import { exportProc } from "./exports";
 
 const TRASH = (

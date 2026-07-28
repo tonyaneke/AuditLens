@@ -15,7 +15,7 @@ import {
   ModalReportDialog,
   ModalTestDialog,
   ModalTORDialog,
-} from "./dialogs";
+} from "./lazy";
 
 export default function AuditDetailPage({ auditId }: { auditId: string }) {
   const { db } = useWorkspace();

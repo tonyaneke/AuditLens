@@ -5,7 +5,13 @@
 import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useUser } from "@/components/chrome/UserContext";
 import { useModal } from "@/components/modals/ModalProvider";
-import CaeReportDialog from "@/components/dashboard/CaeReportDialog";
+import dynamic from "next/dynamic";
+
+// Modal-only: the quarterly-report dialog (and its Word-export machinery) loads on first open,
+// keeping it out of the dashboard's initial bundle.
+const CaeReportDialog = dynamic(() => import("@/components/dashboard/CaeReportDialog"), {
+  loading: () => null,
+});
 import OwnerDashboard from "@/components/dashboard/OwnerDashboard";
 import StaffDashboard from "@/components/dashboard/StaffDashboard";
 import { effectiveRole } from "@/lib/permissions";

@@ -6,7 +6,10 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useModal } from "@/components/modals/ModalProvider";
-import RaiseFlow from "@/components/obs/RaiseFlow";
+import dynamic from "next/dynamic";
+
+// Modal-only two-step raise wizard — loads on first open, not with the report page.
+const RaiseFlow = dynamic(() => import("@/components/obs/RaiseFlow"), { loading: () => null });
 import RichText from "@/components/ui/RichText";
 import { exportReportWord } from "@/lib/client/word";
 import { CRITS, ck } from "@/lib/workspace/selectors";
@@ -15,7 +18,7 @@ import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 import {
   ModalFrontMatterDialog,
   ModalReportDialog,
-} from "./dialogs";
+} from "./lazy";
 
 const STATUSES = ["Open", "In Progress", "Closed"];
 

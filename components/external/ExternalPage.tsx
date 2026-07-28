@@ -14,7 +14,7 @@ import {
   ExtEditDialog,
   ExtImportDialog,
   ExtRaiseDialog,
-} from "./dialogs";
+} from "./lazy";
 import { exportAllExtFindingsCsv } from "./exports";
 
 export default function ExternalPage() {

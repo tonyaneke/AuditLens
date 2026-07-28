@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { usePageChrome } from "@/components/chrome/PageChrome";
-import { ModalAuditDialog } from "@/components/audits/dialogs";
+import { ModalAuditDialog } from "@/components/audits/lazy";
 import { useModal } from "@/components/modals/ModalProvider";
 
 export default function NewAuditPage() {

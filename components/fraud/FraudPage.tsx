@@ -34,7 +34,7 @@ import {
   FraudPlanDialog,
   FraudUpdateDialog,
   GenerateFraudRisksDialog,
-} from "./dialogs";
+} from "./lazy";
 
 const TRASH = (
   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true">

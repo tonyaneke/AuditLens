@@ -20,7 +20,7 @@ import {
   DepartmentDialog,
   ExcoRecipientDialog,
   UserDialog,
-} from "./dialogs";
+} from "./lazy";
 import { fetchUsers, roleLabel, type ManagedUser } from "./staff";
 
 const TRASH = (

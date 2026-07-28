@@ -111,7 +111,7 @@ export function Avatar({
   const style: CSSProperties = { width: size, height: size };
   if (user?.photo) {
     // eslint-disable-next-line @next/next/no-img-element -- data-URL avatars, not optimizable
-    return <img src={user.photo} alt="" className="al-avatar" style={style} />;
+    return <img src={user.photo} alt="" className="al-avatar" style={style} loading="lazy" decoding="async" />;
   }
   const initials =
     String(user?.name || "")

@@ -32,7 +32,7 @@ import { fmtDateTime, hx2rgba, uid } from "@/lib/workspace/selectors";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 import AuditLinks from "./AuditLinks";
 import EngagementStatusPill from "./EngagementStatusPill";
-import { RaUnitDialog } from "./dialogs";
+import { RaUnitDialog } from "./lazy";
 
 export default function RaUnitPage({ unitId }: { unitId: string }) {
   const { db, mutate, ready } = useWorkspace();

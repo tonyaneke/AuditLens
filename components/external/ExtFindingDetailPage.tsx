@@ -9,7 +9,7 @@ import RichText from "@/components/ui/RichText";
 import { ensureExtList } from "@/lib/workspace/external";
 import { ck, fmtDate, isoToDate } from "@/lib/workspace/selectors";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
-import { ExtAssignDialog, ExtEditDialog } from "./dialogs";
+import { ExtAssignDialog, ExtEditDialog } from "./lazy";
 
 export default function ExtFindingDetailPage({ fid }: { fid: string }) {
   const { db } = useWorkspace();

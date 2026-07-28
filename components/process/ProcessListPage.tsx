@@ -17,7 +17,7 @@ import {
 } from "@/lib/workspace/process";
 import { hx2rgba } from "@/lib/workspace/selectors";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
-import { ProcNewDialog } from "./dialogs";
+import { ProcNewDialog } from "./lazy";
 
 export default function ProcessListPage() {
   const { db } = useWorkspace();
