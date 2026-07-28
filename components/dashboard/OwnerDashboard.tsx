@@ -21,7 +21,8 @@ import {
   today0,
   type ObsWithContext,
 } from "@/lib/workspace/selectors";
-import type { ExtFinding } from "@/lib/workspace/types";
+import { myFraudActionsFor, myFraudRisks } from "@/lib/workspace/portal";
+import type { ExtFinding, FraudAction, FraudRisk } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 
 const EXT_SEV_HEX: Record<string, string> = { High: "#b00020", Medium: "#c9a300", Low: "#2e7d32" };
@@ -34,7 +35,9 @@ function extDueSoon(f: ExtFinding): boolean {
   return days >= 0 && days <= 14;
 }
 
-type AttentionItem = { kind: "Internal" | "External"; o: ObsWithContext | ExtFinding };
+type AttentionItem =
+  | { kind: "Internal" | "External"; o: ObsWithContext | ExtFinding }
+  | { kind: "Fraud"; f: FraudRisk; a: FraudAction };
 
 export default function OwnerDashboard() {
   const { db } = useWorkspace();
@@ -62,6 +65,12 @@ export default function OwnerDashboard() {
   });
   const extSoon = extOpen.filter(extDueSoon);
 
+  // Fraud prevention actions assigned to me (risk-level or per-action assignment).
+  const fraudMine = myFraudRisks(db, user.id).flatMap((f) =>
+    myFraudActionsFor(f, user.id).map((a) => ({ f, a })),
+  );
+  const fraudOpen = fraudMine.filter((x) => x.a.status !== "Implemented");
+
   const totalMine = intMine.length + extMine.length;
   const totalOpen = intOpen.length + extOpen.length;
   const totalOverdue = intOverdue.length + extOverdueL.length;
@@ -72,17 +81,22 @@ export default function OwnerDashboard() {
     ...intSoon.filter((o) => !intOverdue.includes(o)).map((o) => ({ kind: "Internal" as const, o })),
     ...extOverdueL.map((o) => ({ kind: "External" as const, o })),
     ...extSoon.filter((o) => !extOverdueL.includes(o)).map((o) => ({ kind: "External" as const, o })),
+    // Open fraud prevention actions always need attention — their targets are free-text
+    // ("Q3 2026"), so there is no computable due date to filter on.
+    ...fraudOpen.map(({ f, a }) => ({ kind: "Fraud" as const, f, a })),
   ];
 
   function openItem(x: AttentionItem) {
     const href =
-      x.kind === "External"
-        ? hrefForView("extfinding", { ext: (x.o as ExtFinding).id })
-        : hrefForView("observation", {
-            audit: (x.o as ObsWithContext)._a.id,
-            report: (x.o as ObsWithContext)._r.id,
-            obs: x.o.id,
-          });
+      x.kind === "Fraud"
+        ? hrefForView("myfraud")
+        : x.kind === "External"
+          ? hrefForView("extfinding", { ext: (x.o as ExtFinding).id })
+          : hrefForView("observation", {
+              audit: (x.o as ObsWithContext)._a.id,
+              report: (x.o as ObsWithContext)._r.id,
+              obs: x.o.id,
+            });
     if (isLegacyPath(href)) window.location.assign(href);
     else router.push(href);
   }
@@ -100,7 +114,12 @@ export default function OwnerDashboard() {
         </a>
       </div>
       <div className="dash-kpis" style={{ gridTemplateColumns: "repeat(4,1fr)" }}>
-        <Kpi tone="accent" label="Assigned to me" value={totalMine} sub="internal + external" />
+        <Kpi
+          tone="accent"
+          label="Assigned to me"
+          value={totalMine}
+          sub={`${intMine.length} Internal · ${extMine.length} External${fraudMine.length ? ` · ${fraudMine.length} Fraud action${fraudMine.length !== 1 ? "s" : ""}` : ""}`}
+        />
         <Kpi tone="warn" label="Open" value={totalOpen} sub="awaiting your action" />
         <Kpi tone="warn" label="Overdue" value={totalOverdue} sub="past expected close" />
         <Kpi tone="good" label="Closed" value={totalClosed} sub="resolved" icon="check" />
@@ -109,8 +128,8 @@ export default function OwnerDashboard() {
       <div className="card">
         <div className="seclabel">Needs your attention</div>
         {!attention.length ? (
-          <Empty big={totalMine > 0 ? "✅" : "📭"}>
-            {totalMine > 0 ? (
+          <Empty big={totalMine + fraudMine.length > 0 ? "✅" : "📭"}>
+            {totalMine + fraudMine.length > 0 ? (
               "Nothing overdue or due within 2 weeks — you're on track."
             ) : (
               <>
@@ -136,6 +155,34 @@ export default function OwnerDashboard() {
             </thead>
             <tbody>
               {attention.map((x) => {
+                if (x.kind === "Fraud") {
+                  return (
+                    <tr
+                      className="tracker-row"
+                      key={`Fraud-${x.f.id}-${x.a.id}`}
+                      onClick={() => openItem(x)}
+                      title="Open Fraud Risk Control Tracker"
+                    >
+                      <td>
+                        <span className="tag">Fraud action</span>
+                      </td>
+                      <td>
+                        <span className="tag">{x.a.type || "Preventive"}</span>
+                      </td>
+                      <td>
+                        <b>{x.a.text}</b>
+                      </td>
+                      <td>
+                        {x.f.scheme}
+                        <div className="hint">{x.f.category || ""}</div>
+                      </td>
+                      <td>{x.a.targetDate || "—"}</td>
+                      <td>
+                        <StatusPill status={x.a.status || "Planned"} />
+                      </td>
+                    </tr>
+                  );
+                }
                 const ext = x.kind === "External";
                 const o = x.o as ObsWithContext & ExtFinding;
                 const sv = EXT_SEV_HEX[String(o.severity || "")] || "#64748b";

@@ -11,7 +11,7 @@ import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import { aiGenerate, parseAiJson, runAiJson, runAiText } from "@/lib/client/ai";
 import { logAudit } from "@/lib/client/audit-log";
-import { directory, loadDirectory } from "@/lib/client/directory";
+import { directory, loadDirectory, ownerEmailFor as dirOwnerEmailFor } from "@/lib/client/directory";
 import { emailNotify } from "@/lib/client/notify";
 import { notifyBoth } from "@/lib/workspace/observations";
 import {
@@ -720,7 +720,16 @@ export function FraudActionDialog({ riskId, actionId }: { riskId: string; action
         actionId: actionId || "",
       });
     modal.close();
-    if (assignedNew) toast("Action saved. The owner has been notified.", "success");
+    if (assignedNew) {
+      // Same resolution notifyBoth uses: directory first, then the department's headEmail.
+      const email = dirOwnerEmailFor(db, a.ownerUserId);
+      if (email) toast("Action saved. The owner has been notified by email.", "success");
+      else
+        toast(
+          `Action saved — ${a.owner || "the owner"} got an in-app notification, but has no email on file (link their login in Settings → Departments).`,
+          "error",
+        );
+    }
   }
 
   return (

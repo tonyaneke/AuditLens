@@ -17,6 +17,7 @@ import {
   fraudActionsView,
   fraudResidualBand,
   fraudRollupStatus,
+  myFraudActionsFor,
   myFraudRisks,
   pushNotification,
   resolveFraudAction,
@@ -62,7 +63,9 @@ export default function MyFraudPage() {
     );
   }
 
-  const acts = risks.flatMap((f) => fraudActionsView(f).map((a) => ({ f, a })));
+  // Only the actions this owner is responsible for: all of a risk's actions when the risk
+  // itself is theirs, otherwise just the individually-assigned ones.
+  const acts = risks.flatMap((f) => myFraudActionsFor(f, user.id).map((a) => ({ f, a })));
   const impl = acts.filter((x) => x.a.status === "Implemented").length;
   const unmit = acts.length - impl;
   const hiRes = risks.filter((f) => {
@@ -119,7 +122,7 @@ export default function MyFraudPage() {
       </div>
       {risks.map((f) => {
         const res = fraudResidualBand(f);
-        const A = fraudActionsView(f);
+        const A = myFraudActionsFor(f, user.id);
         return (
           <div className="card anim-fade-in" key={f.id}>
             <div className="row" style={{ alignItems: "center", gap: 8, flexWrap: "wrap" }}>

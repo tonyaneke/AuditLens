@@ -59,7 +59,19 @@ export function myExtList(db: WorkspaceDb, userId: string | undefined): ExtFindi
 
 /** Fraud risks whose prevention actions this owner implements (primary owner only). */
 export function myFraudRisks(db: WorkspaceDb, userId: string | undefined): FraudRisk[] {
-  return fraudList(db).filter((f) => f.ownerUserId === userId);
+  // A risk is "mine" when it is assigned to me at risk level OR any of its prevention
+  // actions is individually assigned to me (per-action assignment via the action dialog).
+  return fraudList(db).filter(
+    (f) =>
+      f.ownerUserId === userId || fraudActionsView(f).some((a) => a.ownerUserId === userId),
+  );
+}
+
+/** The actions an owner works on within a risk: all of them when the risk itself is theirs,
+ * otherwise only the actions assigned to them directly. */
+export function myFraudActionsFor(f: FraudRisk, userId: string | undefined): FraudAction[] {
+  const acts = fraudActionsView(f);
+  return f.ownerUserId === userId ? acts : acts.filter((a) => a.ownerUserId === userId);
 }
 
 /* ---------------- fraud actions: pure view + lazy legacy migration ---------------- */
