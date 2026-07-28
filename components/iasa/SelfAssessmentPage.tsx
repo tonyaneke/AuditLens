@@ -136,11 +136,7 @@ function NewAssessmentDialog() {
       }
     >
       <label>Context about the IA function</label>
-      <p className="hint" style={{ margin: "2px 0 6px" }}>
-        The AI analyses this context and fills the assessment against every standard and
-        principle. Everything it generates stays editable — review, adjust, then mark the
-        assessment complete.
-      </p>
+      
       <textarea
         style={{ minHeight: 150 }}
         value={ctx}

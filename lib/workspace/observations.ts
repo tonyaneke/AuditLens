@@ -10,6 +10,7 @@ import { effectiveRole, isAdmin } from "@/lib/permissions";
 import type {
   Approval,
   Audit,
+  AuditTest,
   Observation,
   ObsUpdate,
   Report,
@@ -86,6 +87,24 @@ export function obsWithdrawStage(o: Observation | undefined | null): string {
 export function obsUpdates(o: Observation): ObsUpdate[] {
   o.updates = o.updates || [];
   return o.updates;
+}
+
+/* ---------------- audit-plan test accessors ----------------
+   Legacy audit-bot.js writes `title` / `controlTested` / `resultNotes`; an earlier React
+   dialog wrote `name` / `control` / `notes`. Read legacy-first with fallback so both eras
+   of data render. */
+
+export function testTitle(t: AuditTest): string {
+  return String(t.title || t.name || "");
+}
+export function testControl(t: AuditTest): string {
+  return String(t.controlTested || t.control || "");
+}
+export function testResultNotes(t: AuditTest): string {
+  return String(t.resultNotes || t.notes || "");
+}
+export function testIsException(t: AuditTest): boolean {
+  return t.result === "Exception" || t.result === "Partial";
 }
 
 /* ---------------- role & verification checks ---------------- */

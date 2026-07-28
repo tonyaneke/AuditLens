@@ -13,6 +13,7 @@ import RichText from "@/components/ui/RichText";
 import { logAudit } from "@/lib/client/audit-log";
 import {
   canVerifyItem,
+  isHead,
   isPrimaryOwner,
   obsUpdates,
 } from "@/lib/workspace/observations";
@@ -20,6 +21,7 @@ import { effectiveRole } from "@/lib/permissions";
 import { ck, fmtDate, fmtDateTime, isoToDate } from "@/lib/workspace/selectors";
 import type { ObsUpdate } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
+import { ModalReassignObsDialog } from "./lazy";
 
 export default function ObsDetailPage({
   auditId,
@@ -57,6 +59,15 @@ export default function ObsDetailPage({
           <Link href={`/audits/${a.id}/reports/${r.id}/observations/${o.id}/sop`} className="btn sec sm">
             SOP Update
           </Link>
+        ) : null}
+        {a && r && o && (isHead(user) || canVerify) ? (
+          // Legacy modalReassignObs — Head of Audit, lead auditor, or the auditor who raised it.
+          <button
+            className="btn sec sm"
+            onClick={() => modal.open(<ModalReassignObsDialog auditId={a.id} reportId={r.id} obsId={o.id} />)}
+          >
+            Reassign owner
+          </button>
         ) : null}
         {isOwner && o && o.status !== "Closed" ? (
           <button className="btn pri sm" onClick={handleReadyForClosure}>

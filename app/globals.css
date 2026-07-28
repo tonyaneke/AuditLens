@@ -290,6 +290,7 @@ a {
   font-weight: 500;
   margin-bottom: 2px;
   text-decoration: none;
+  white-space: nowrap;
   box-sizing: border-box;
   cursor: pointer;
   transition: background 0.18s ease-out, color 0.18s ease-out, transform 0.18s ease-out;
@@ -390,11 +391,10 @@ a {
   min-width: 0;
 }
 
-/* Titles must always be fully readable — wrap onto a second line instead of
-   ellipsis-truncating (which could squeeze "Fraud Risk Assessment" down to "F…"). */
+/* Titles must always be fully readable — one complete line, never wrapped or
+   ellipsis-truncated. */
 .topbar-title-wrap h2 {
-  white-space: normal;
-  overflow-wrap: break-word;
+  white-space: nowrap;
 }
 
 .topbar-center {

@@ -5,11 +5,13 @@
 // and modalRADownload in audit-bot.js.
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import BusyButton from "@/components/feedback/BusyButton";
 import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import { runAiJson } from "@/lib/client/ai";
 import { logAudit } from "@/lib/client/audit-log";
+import { urlForView } from "@/lib/routes";
 import {
   ENG_STATUS,
   ensureUniverse,
@@ -250,10 +252,12 @@ export function RaUnitDialog({ unitId }: { unitId?: string }) {
 export function NewPlanDialog() {
   const { db, mutate } = useWorkspace();
   const modal = useModal();
+  const router = useRouter();
   const U = universe(db)
     .slice()
     .sort((a, b) => raComposite(b.factors) - raComposite(a.factors));
-  const [year, setYear] = useState(String(new Date().getFullYear()));
+  const cur = new Date().getFullYear();
+  const [year, setYear] = useState(String(cur));
   const [picked, setPicked] = useState<Set<string>>(() => new Set(U.map((e) => e.id)));
   const [err, setErr] = useState("");
 
@@ -262,16 +266,29 @@ export function NewPlanDialog() {
       <ModalFrame
         title="New annual audit plan"
         footer={
-          <button className="btn sec" type="button" onClick={modal.close}>
-            Close
-          </button>
+          <>
+            <button className="btn sec" type="button" onClick={modal.close}>
+              Close
+            </button>
+            <button
+              className="btn"
+              type="button"
+              onClick={() => {
+                modal.close();
+                router.push(urlForView("auditra"));
+              }}
+            >
+              Go to Audit Risk Assessment
+            </button>
+          </>
         }
       >
         <div className="empty">
           <div className="big">🗂</div>
           Your audit universe is empty.
           <br />
-          Add or generate auditable units first — the annual plan is built from them.
+          Add or generate auditable units in <b>Audit Risk Assessment</b> first — the annual plan
+          is built from them.
         </div>
       </ModalFrame>
     );
@@ -347,6 +364,7 @@ export function NewPlanDialog() {
         min="2000"
         max="2100"
         value={year}
+        placeholder={`e.g. ${cur}`}
         onChange={(e) => setYear(e.target.value)}
       />
       {err ? (

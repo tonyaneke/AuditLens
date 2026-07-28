@@ -5,13 +5,15 @@
 // saveFraudAction, modalFraudPrompt/generateFraudRisks/doImportFraud, modalFraudPlan,
 // modalFraudUpdate/generateFraudUpdateCommentary and modalFraudDownload in audit-bot.js.
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import BusyButton from "@/components/feedback/BusyButton";
 import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import { aiGenerate, parseAiJson, runAiJson, runAiText } from "@/lib/client/ai";
 import { logAudit } from "@/lib/client/audit-log";
+import { directory, loadDirectory } from "@/lib/client/directory";
 import { emailNotify } from "@/lib/client/notify";
+import { notifyBoth } from "@/lib/workspace/observations";
 import {
   ACTION_STATUS,
   ACTION_TYPES,
@@ -631,12 +633,46 @@ export function FraudActionDialog({ riskId, actionId }: { riskId: string; action
     text: existing?.text || "",
     type: existing?.type || "Preventive",
     owner: existing ? existing.owner || "" : f?.owner || "",
+    ownerUserId: String(existing?.ownerUserId || (existing ? "" : f?.ownerUserId || "")),
     targetDate: existing?.targetDate || "",
     status: existing?.status || "Planned",
     update: existing?.update || "",
   }));
+  const [dirVersion, setDirVersion] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    loadDirectory().then(() => {
+      if (!cancelled) setTimeout(() => setDirVersion((v) => v + 1), 0);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  void dirVersion;
   if (!f) return null;
   const res = fraudResidual(f);
+
+  // Assignable owners = department heads with an active login (same rule as the raise flow);
+  // a legacy free-text owner that matches no head stays selectable so old rows don't break.
+  const dir = directory();
+  const ownerDepts = (db.departments || [])
+    .filter((d) => d.headUserId)
+    .filter((d) => {
+      const u = dir.find((x) => x.id === d.headUserId);
+      return !u || u.active !== false || d.headUserId === a.ownerUserId;
+    });
+  const freeTextOwner =
+    a.owner && !ownerDepts.some((d) => d.headName === a.owner) ? a.owner : "";
+
+  function pickOwner(v: string) {
+    if (v.startsWith("uid:")) {
+      const id = v.slice(4);
+      const dept = ownerDepts.find((d) => d.headUserId === id);
+      setA((c) => ({ ...c, ownerUserId: id, owner: dept?.headName || "" }));
+    } else {
+      setA((c) => ({ ...c, ownerUserId: "", owner: v === "__free" ? freeTextOwner : "" }));
+    }
+  }
 
   function save() {
     const text = a.text.trim();
@@ -644,6 +680,8 @@ export function FraudActionDialog({ riskId, actionId }: { riskId: string; action
       toast("Action description required");
       return;
     }
+    const prevOwnerId = String(existing?.ownerUserId || "");
+    const assignedNew = !!a.ownerUserId && a.ownerUserId !== prevOwnerId;
     mutate((d) => {
       const r = (d.fraudRisks || []).find((x) => x.id === riskId);
       if (!r) return;
@@ -652,6 +690,7 @@ export function FraudActionDialog({ riskId, actionId }: { riskId: string; action
         text,
         type: a.type,
         owner: a.owner,
+        ownerUserId: a.ownerUserId,
         targetDate: a.targetDate,
         status: a.status,
         update: a.update,
@@ -663,8 +702,25 @@ export function FraudActionDialog({ riskId, actionId }: { riskId: string; action
         r.actions.push({ id: uid(), ...data });
       }
       rollupFraud(r);
+      if (assignedNew) {
+        notifyBoth(
+          d,
+          a.ownerUserId,
+          "assigned",
+          "Fraud prevention action assigned to you: " + text.slice(0, 120),
+          "myfraud",
+          "AuditLens — fraud prevention action assigned",
+          `A fraud prevention action on the risk "${r.scheme}" has been assigned to you:\n\n"${text}"\n\nSign in to AuditLens (Fraud Risk Control Tracker) to post progress updates.`,
+        );
+      }
     });
+    if (assignedNew)
+      logAudit("fraud.action_assigned", "Assigned fraud prevention action owner: " + (a.owner || ""), {
+        fraudRiskId: riskId,
+        actionId: actionId || "",
+      });
     modal.close();
+    if (assignedNew) toast("Action saved. The owner has been notified.", "success");
   }
 
   return (
@@ -696,8 +752,19 @@ export function FraudActionDialog({ riskId, actionId }: { riskId: string; action
           </select>
         </div>
         <div>
-          <label>Owner</label>
-          <input value={a.owner} onChange={(e) => setA((c) => ({ ...c, owner: e.target.value }))} />
+          <label>Owner {existing?.ownerUserId ? <span className="hint">(reassign)</span> : null}</label>
+          <select
+            value={a.ownerUserId ? "uid:" + a.ownerUserId : freeTextOwner ? "__free" : ""}
+            onChange={(e) => pickOwner(e.target.value)}
+          >
+            <option value="">— select owner —</option>
+            {ownerDepts.map((d) => (
+              <option key={d.id} value={"uid:" + d.headUserId}>
+                {d.headName} · {d.name}
+              </option>
+            ))}
+            {freeTextOwner ? <option value="__free">{freeTextOwner} (unlinked)</option> : null}
+          </select>
         </div>
         <div>
           <label>Target date</label>

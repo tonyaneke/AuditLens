@@ -1,122 +1,231 @@
 "use client";
 
-// Approvals inbox & history view for Head of Audit and staff.
+// Approvals inbox & history for the Head of Audit — React port of legacy viewApprovals in
+// audit-bot.js (KPI row, pending queue with inline Approve/Reject, recent-decisions history,
+// click-a-row for details) plus the React shell's extras: pending/approved/rejected/all tabs
+// and the details dialog. Decision logic lives in ./decisions and is unchanged.
 
 import { useState } from "react";
 import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useUser } from "@/components/chrome/UserContext";
 import { useModal } from "@/components/modals/ModalProvider";
+import { Kpi } from "@/components/ui";
 import { approvalItemTitle, approvalKindLabel } from "@/lib/workspace/approvals";
 import { approvals, fmtDateTime } from "@/lib/workspace/selectors";
+import type { Approval } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 import { effectiveRole } from "@/lib/permissions";
 import { useApprovalDecisions } from "./decisions";
 import { ApprovalDetailsDialog } from "./dialogs";
+
+/** Decision pill — legacy uses `pill c-Low` / `pill c-Critical`; Pending only shows on the All tab. */
+function DecisionPill({ status }: { status: string }) {
+  if (status === "approved") return <span className="pill c-Low">Approved</span>;
+  if (status === "rejected") return <span className="pill c-Critical">Rejected</span>;
+  if (status === "pending") return <span className="pill c-High">Pending</span>;
+  return <span className="pill">{status}</span>;
+}
+
+type Tab = "pending" | "approved" | "rejected" | "all";
 
 export default function ApprovalsPage() {
   const { db } = useWorkspace();
   const user = useUser();
   const modal = useModal();
   const { approveAny, rejectAny } = useApprovalDecisions();
-  const [tab, setTab] = useState<"pending" | "approved" | "rejected" | "all">("pending");
+  const [tab, setTab] = useState<Tab>("pending");
   const isHead = effectiveRole(user) === "head_of_audit";
 
-  usePageChrome({ title: "Approvals Inbox" });
+  usePageChrome({ title: "Approvals" });
 
-  const allList = approvals(db).slice().sort((a, b) => {
-    const ta = a.requestedAt ? new Date(a.requestedAt).getTime() : 0;
-    const tb = b.requestedAt ? new Date(b.requestedAt).getTime() : 0;
-    return tb - ta;
-  });
+  // Legacy sort: newest request first (ISO-string compare).
+  const all = approvals(db)
+    .slice()
+    .sort((a, b) => String(b.requestedAt || "").localeCompare(String(a.requestedAt || "")));
+  const pend = all.filter((a) => a.status === "pending");
+  const approved = all.filter((a) => a.status === "approved");
+  const rejected = all.filter((a) => a.status === "rejected");
+  const recentDecided = all.filter((a) => a.status !== "pending").slice(0, 25);
 
-  const filtered = allList.filter((a) => {
-    if (tab === "pending") return a.status === "pending";
-    if (tab === "approved") return a.status === "approved";
-    if (tab === "rejected") return a.status === "rejected";
-    return true;
-  });
+  if (!isHead) {
+    // Legacy gate — the queue is the Head of Audit's sign-off inbox.
+    return (
+      <div className="card">
+        <div className="empty">Approvals are only available to the Head of Audit.</div>
+      </div>
+    );
+  }
 
-  const pendingCount = allList.filter((a) => a.status === "pending").length;
+  function openDetails(ap: Approval) {
+    modal.open(<ApprovalDetailsDialog aid={ap.id} />);
+  }
+
+  /** Legacy pending-queue row: Type / Item / Requested by / Requested / Decision buttons. */
+  function pendingRow(ap: Approval) {
+    return (
+      <tr className="tracker-row" key={ap.id} title="View details" onClick={() => openDetails(ap)}>
+        <td>
+          <span className="tag">{approvalKindLabel(ap.kind)}</span>
+        </td>
+        <td>
+          <b>{approvalItemTitle(db, ap)}</b>
+          {ap.newStatus ? <div className="hint">→ {ap.newStatus}</div> : null}
+        </td>
+        <td>{ap.requestedByName || "—"}</td>
+        <td>{ap.requestedAt ? fmtDateTime(ap.requestedAt) : "—"}</td>
+        <td
+          style={{ textAlign: "right", whiteSpace: "nowrap" }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button className="btn sm" type="button" onClick={() => void approveAny(ap.id)}>
+            Approve
+          </button>{" "}
+          <button className="btn ghost sm danger" type="button" onClick={() => void rejectAny(ap.id)}>
+            Reject
+          </button>
+        </td>
+      </tr>
+    );
+  }
+
+  /** Legacy decided-history row: Type / Item / Requested by / Decision / Decided by / When. */
+  function decidedRow(ap: Approval, withRequested?: boolean) {
+    return (
+      <tr className="tracker-row" key={ap.id} title="View details" onClick={() => openDetails(ap)}>
+        <td>
+          <span className="tag">{approvalKindLabel(ap.kind)}</span>
+        </td>
+        <td>
+          <b>{approvalItemTitle(db, ap)}</b>
+        </td>
+        <td>{ap.requestedByName || "—"}</td>
+        {withRequested ? <td>{ap.requestedAt ? fmtDateTime(ap.requestedAt) : "—"}</td> : null}
+        <td>
+          <DecisionPill status={ap.status} />
+        </td>
+        <td>{ap.decidedByName || "—"}</td>
+        <td>{ap.decidedAt ? fmtDateTime(ap.decidedAt) : "—"}</td>
+      </tr>
+    );
+  }
 
   return (
     <div>
-      <div className="tab-bar">
-        <button className={`tab ${tab === "pending" ? "act" : ""}`} onClick={() => setTab("pending")}>
-          Pending {pendingCount > 0 ? `(${pendingCount})` : ""}
-        </button>
-        <button className={`tab ${tab === "approved" ? "act" : ""}`} onClick={() => setTab("approved")}>
-          Approved
-        </button>
-        <button className={`tab ${tab === "rejected" ? "act" : ""}`} onClick={() => setTab("rejected")}>
-          Rejected
-        </button>
-        <button className={`tab ${tab === "all" ? "act" : ""}`} onClick={() => setTab("all")}>
-          All History
-        </button>
+      <div className="dash-kpis" style={{ gridTemplateColumns: "repeat(3,1fr)" }}>
+        <Kpi tone="warn" label="Pending" value={pend.length} sub="awaiting your decision" />
+        <Kpi tone="good" label="Approved" value={approved.length} sub="signed off" />
+        <Kpi tone="base" label="Rejected" value={rejected.length} sub="sent back" />
       </div>
 
-      {filtered.length === 0 ? (
-        <div className="card" style={{ padding: 40, textAlign: "center" }}>
-          <div className="hint">No approval requests found in this view.</div>
+      <div className="iasa-tabs">
+        <div className="iasa-tab-group">
+          {(
+            [
+              ["pending", pend.length ? `Pending (${pend.length})` : "Pending"],
+              ["approved", "Approved"],
+              ["rejected", "Rejected"],
+              ["all", "All history"],
+            ] as [Tab, string][]
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              className={`iasa-tab${tab === key ? " active" : ""}`}
+              type="button"
+              onClick={() => setTab(key)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {tab === "pending" ? (
+        <>
+          <div className="card">
+            <div className="seclabel">Pending approvals</div>
+            {!pend.length ? (
+              <div className="empty">
+                Nothing awaiting approval. Observations raised by staff, plan completions and
+                status changes appear here for your sign-off.
+              </div>
+            ) : (
+              <table style={{ marginTop: 6 }}>
+                <thead>
+                  <tr>
+                    <th>Type</th>
+                    <th>Item</th>
+                    <th>Requested by</th>
+                    <th>Requested</th>
+                    <th style={{ textAlign: "right" }}>Decision</th>
+                  </tr>
+                </thead>
+                <tbody>{pend.map((ap) => pendingRow(ap))}</tbody>
+              </table>
+            )}
+          </div>
+          {recentDecided.length ? (
+            <div className="card">
+              <div className="seclabel">Recent decisions</div>
+              <table style={{ marginTop: 6 }}>
+                <thead>
+                  <tr>
+                    <th>Type</th>
+                    <th>Item</th>
+                    <th>Requested by</th>
+                    <th>Decision</th>
+                    <th>Decided by</th>
+                    <th>When</th>
+                  </tr>
+                </thead>
+                <tbody>{recentDecided.map((ap) => decidedRow(ap))}</tbody>
+              </table>
+            </div>
+          ) : null}
+        </>
+      ) : tab === "all" ? (
+        <div className="card">
+          <div className="seclabel">All requests</div>
+          {!all.length ? (
+            <div className="empty">No approval requests yet.</div>
+          ) : (
+            <table style={{ marginTop: 6 }}>
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Item</th>
+                  <th>Requested by</th>
+                  <th>Requested</th>
+                  <th>Decision</th>
+                  <th>Decided by</th>
+                  <th>When</th>
+                </tr>
+              </thead>
+              <tbody>{all.map((ap) => decidedRow(ap, true))}</tbody>
+            </table>
+          )}
         </div>
       ) : (
-        <div className="card" style={{ padding: 0 }}>
-          <table className="dt-table">
-            <thead>
-              <tr>
-                <th>Type</th>
-                <th>Item</th>
-                <th>Requested By</th>
-                <th>Requested At</th>
-                <th>Status</th>
-                <th style={{ textAlign: "right" }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((ap) => (
-                <tr key={ap.id}>
-                  <td>
-                    <span className="tag">{approvalKindLabel(ap.kind)}</span>
-                  </td>
-                  <td>
-                    <b>{approvalItemTitle(db, ap)}</b>
-                  </td>
-                  <td>{ap.requestedByName || "—"}</td>
-                  <td className="meta">{ap.requestedAt ? fmtDateTime(ap.requestedAt) : "—"}</td>
-                  <td>
-                    {ap.status === "pending" ? (
-                      <span className="pill c-High">Pending</span>
-                    ) : ap.status === "approved" ? (
-                      <span className="pill c-Low">Approved</span>
-                    ) : ap.status === "rejected" ? (
-                      <span className="pill c-Critical">Rejected</span>
-                    ) : (
-                      <span className="pill">{ap.status}</span>
-                    )}
-                  </td>
-                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                    <button
-                      className="btn sec sm"
-                      style={{ marginRight: 6 }}
-                      onClick={() => modal.open(<ApprovalDetailsDialog aid={ap.id} />)}
-                    >
-                      View Details
-                    </button>
-                    {isHead && ap.status === "pending" ? (
-                      <>
-                        <button className="btn pri sm" style={{ marginRight: 6 }} onClick={() => approveAny(ap.id)}>
-                          Approve
-                        </button>
-                        <button className="btn sec sm" onClick={() => rejectAny(ap.id)}>
-                          Reject
-                        </button>
-                      </>
-                    ) : null}
-                  </td>
+        <div className="card">
+          <div className="seclabel">{tab === "approved" ? "Approved requests" : "Rejected requests"}</div>
+          {(tab === "approved" ? approved : rejected).length === 0 ? (
+            <div className="empty">
+              {tab === "approved" ? "No approved requests yet." : "No rejected requests yet."}
+            </div>
+          ) : (
+            <table style={{ marginTop: 6 }}>
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Item</th>
+                  <th>Requested by</th>
+                  <th>Decision</th>
+                  <th>Decided by</th>
+                  <th>When</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>{(tab === "approved" ? approved : rejected).map((ap) => decidedRow(ap))}</tbody>
+            </table>
+          )}
         </div>
       )}
     </div>

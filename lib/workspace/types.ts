@@ -123,11 +123,26 @@ export type Report = {
 export type AuditTest = {
   id: string;
   ref: string;
-  name: string;
+  /** Legacy field name for the test name (audit-bot.js writes `title`). */
+  title?: string;
+  /** Earlier React shell wrote `name`; kept mirrored for old rows. */
+  name?: string;
   objective?: string;
+  procedure?: string;
+  /** Legacy field name (audit-bot.js writes `controlTested`). */
+  controlTested?: string;
+  /** Earlier React shell wrote `control`; kept mirrored for old rows. */
   control?: string;
+  population?: string;
+  sampleBasis?: string;
   result?: "Not Tested" | "Passed" | "Exception" | "Partial" | "N/A";
+  /** Legacy fieldwork-result fields. */
+  resultNotes?: string;
+  /** Earlier React shell wrote `notes`; kept mirrored for old rows. */
   notes?: string;
+  evidenceRef?: string;
+  testedBy?: string;
+  testedDate?: string;
   [k: string]: unknown;
 };
 
@@ -161,6 +176,8 @@ export type FraudAction = {
   text: string;
   type?: string;
   owner?: string;
+  /** Assigned action owner's user id (department head) — set via the action dialog. */
+  ownerUserId?: string;
   targetDate?: string;
   status?: "Planned" | "In Progress" | "Implemented" | string;
   update?: string;

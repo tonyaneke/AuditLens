@@ -6,9 +6,9 @@ import { Fragment, useState } from "react";
 import { useUser } from "@/components/chrome/UserContext";
 import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
+import NewObsDialog from "@/components/obs/NewObsDialog";
 import { CritPill, Empty, Kpi, StatusPill } from "@/components/ui";
 import { effectiveRole } from "@/lib/permissions";
-import { hrefForView } from "@/lib/routes";
 import {
   allObs,
   ck,
@@ -262,9 +262,13 @@ export default function StaffDashboard() {
           <p className="dash-welcome-role">{roleTitle}</p>
         </div>
         <div className="spacer" />
-        <a className="btn" href={hrefForView("newobs")}>
+        <button
+          className="btn"
+          type="button"
+          onClick={() => modal.open(<NewObsDialog />, { wide: true })}
+        >
           + New Observation
-        </a>
+        </button>
       </div>
 
       <div className="dash-kpis">
