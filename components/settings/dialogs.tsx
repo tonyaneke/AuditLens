@@ -292,7 +292,9 @@ export function UserDialog({
 
   const roleOpts: [string, string][] = [
     ["audit_staff", "Audit Staff"],
-    ...(u && u.role !== "audit_staff" ? ([[u.role, roleLabel(u.role)]] as [string, string][]) : []),
+    ["head_of_audit", "Head of Audit"],
+    ["action_owner", "Action Owner"],
+    ["admin", "Admin"],
   ];
 
   function applyPick(v: string) {
@@ -461,7 +463,9 @@ export function UserDialog({
         <div className="hint" style={{ marginTop: 10 }}>
           {role === "head_of_audit"
             ? "Sidebar access: all sections, including Settings and the Audit log."
-            : "Sidebar access: the Action Owner portal (their assigned observations) only."}
+            : role === "admin"
+              ? "Full access to all sections. Can switch between any role."
+              : "Sidebar access: the Action Owner portal (their assigned observations) only."}
         </div>
       )}
       <ErrHint>{err}</ErrHint>

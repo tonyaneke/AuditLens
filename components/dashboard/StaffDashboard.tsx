@@ -7,6 +7,7 @@ import { useUser } from "@/components/chrome/UserContext";
 import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import { CritPill, Empty, Kpi, StatusPill } from "@/components/ui";
+import { effectiveRole } from "@/lib/permissions";
 import { hrefForView } from "@/lib/routes";
 import {
   allObs,
@@ -245,7 +246,7 @@ export default function StaffDashboard() {
 
   const firstName = (user.name || db.signOffName || "there").trim().split(/\s+/)[0] || "there";
   const roleTitle =
-    user.role === "head_of_audit"
+    effectiveRole(user) === "head_of_audit"
       ? "Head of Audit"
       : user.department || db.signOffTitle || "Head, Internal Audit";
 

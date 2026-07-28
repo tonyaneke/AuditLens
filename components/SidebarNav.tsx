@@ -21,7 +21,8 @@ import {
   WorkflowSquare01Icon,
 } from "@hugeicons/core-free-icons";
 import type { SessionUser } from "@/lib/permissions";
-import { visibleViews } from "@/lib/permissions";
+import { effectiveRole, isAdmin, visibleViews } from "@/lib/permissions";
+import RoleSwitcher from "./RoleSwitcher";
 import {
   hrefForView,
   MIGRATED_VIEWS,
@@ -83,6 +84,7 @@ type SidebarNavProps = {
 function formatRole(role: string) {
   if (role === "head_of_audit") return "Head of Audit";
   if (role === "action_owner") return "Action Owner";
+  if (role === "admin") return "Admin";
   return "Audit Staff";
 }
 
@@ -198,9 +200,14 @@ export default function SidebarNav({ user, shell = "legacy" }: SidebarNavProps) 
           </div>
           <div className="sidebar-profile-meta">
             <div className="sidebar-profile-name">{user.name}</div>
-            <div className="sidebar-profile-role">{formatRole(user.role)}</div>
+            <div className="sidebar-profile-role">
+              {isAdmin(user) && user.activeRole
+                ? `${formatRole(user.activeRole)} (Admin)`
+                : formatRole(user.role)}
+            </div>
           </div>
-          {user.role === "head_of_audit" ? (
+          {isAdmin(user) && <RoleSwitcher user={user} />}
+          {effectiveRole(user) === "head_of_audit" ? (
             <div className="sidebar-profile-dropdown">
               <div className="sidebar-profile-dropdown-panel">
                 <button

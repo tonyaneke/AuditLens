@@ -45,7 +45,8 @@ export function dirUser(userId: string | undefined): DirectoryUser | undefined {
 }
 
 export function headUsers(): DirectoryUser[] {
-  return cache.filter((u) => u.role === "head_of_audit");
+  // Admins act as Head of Audit (default view), so they receive head notifications too.
+  return cache.filter((u) => u.role === "head_of_audit" || u.role === "admin");
 }
 
 /** Email for a user id — directory first, then department-head fallback (legacy ownerEmailFor). */

@@ -252,3 +252,98 @@ function escapeHtml(value: string) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
+
+// Consolidated email for admin users who are both Head of Audit and Action Owner
+export async function sendAdminConsolidatedEmail(params: {
+  to: string;
+  name: string;
+  headNotifications: { title: string; link: string }[];
+  ownerNotifications: { title: string; link: string }[];
+}) {
+  const apiKey = process.env.SENDGRID_API_KEY?.trim();
+  const from = SENDER_EMAIL;
+
+  if (!apiKey) {
+    return { sent: false as const, error: "Email is not configured." };
+  }
+
+  const appUrl = (process.env.APP_URL?.trim() || "http://localhost:3000").replace(/\/$/, "");
+  
+  // Build sections for each role
+  let headSection = "";
+  if (params.headNotifications.length > 0) {
+    const items = params.headNotifications
+      .map(n => `<li style="margin:6px 0"><a href="${escapeHtml(appUrl + '/' + n.link)}" style="color:#0d5a47;font-weight:600">${escapeHtml(n.title)}</a></li>`)
+      .join("");
+    headSection = `
+      <div style="margin:16px 0;padding:14px;background:#f2f7f5;border-radius:8px;border-left:4px solid #0d5a47">
+        <div style="font-size:13px;font-weight:700;color:#0d5a47;margin-bottom:8px">📋 As Head of Audit — Approvals Needed</div>
+        <ol style="margin:0;padding-left:20px;color:#19302a;font-size:13px;line-height:1.6">${items}</ol>
+      </div>`;
+  }
+
+  let ownerSection = "";
+  if (params.ownerNotifications.length > 0) {
+    const items = params.ownerNotifications
+      .map(n => `<li style="margin:6px 0"><a href="${escapeHtml(appUrl + '/' + n.link)}" style="color:#0d5a47;font-weight:600">${escapeHtml(n.title)}</a></li>`)
+      .join("");
+    ownerSection = `
+      <div style="margin:16px 0;padding:14px;background:#fdf6e3;border-radius:8px;border-left:4px solid #c98a00">
+        <div style="font-size:13px;font-weight:700;color:#a67c00;margin-bottom:8px">👤 As Action Owner — Observations Assigned</div>
+        <ol style="margin:0;padding-left:20px;color:#19302a;font-size:13px;line-height:1.6">${items}</ol>
+      </div>`;
+  }
+
+  const subject = `AuditLens — ${params.headNotifications.length + params.ownerNotifications.length} new notification(s)`;
+  
+  const html = brandedEmail({
+    heading: "Consolidated Notification",
+    bodyHtml: `
+      <p>Hello ${escapeHtml(params.name)},</p>
+      <p>You have new notifications in AuditLens as both Head of Audit and Action Owner:</p>
+      ${headSection}
+      ${ownerSection}
+      <p style="color:#64807a;font-size:12px;margin-top:16px">Sign in to AuditLens to review and take action on these items.</p>`,
+    ctaLabel: "Sign in to AuditLens",
+    ctaUrl: appUrl + "/login",
+  });
+
+  const text = [
+    `Hello ${params.name},`,
+    "",
+    "You have new notifications in AuditLens:",
+    "",
+    params.headNotifications.length > 0
+      ? `As Head of Audit (${params.headNotifications.length} approval needed):\n${params.headNotifications.map(n => `- ${n.title}`).join("\n")}`
+      : "",
+    params.ownerNotifications.length > 0
+      ? `As Action Owner (${params.ownerNotifications.length} assigned):\n${params.ownerNotifications.map(n => `- ${n.title}`).join("\n")}`
+      : "",
+    "",
+    `Sign in: ${appUrl}/login`,
+  ].filter(Boolean).join("\n");
+
+  const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      personalizations: [{ to: [{ email: params.to, name: params.name }] }],
+      from: { email: from, name: "AuditLens" },
+      subject,
+      content: [
+        { type: "text/plain", value: text },
+        { type: "text/html", value: html },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    return { sent: false as const, error: detail || `SendGrid returned ${res.status}.` };
+  }
+
+  return { sent: true as const };
+}

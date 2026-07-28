@@ -78,7 +78,10 @@ export function staffPick(name: string): [string, string, string] | undefined {
 }
 
 export function roleLabel(r: string | undefined): string {
-  return r === "head_of_audit" ? "Head of Audit" : r === "action_owner" ? "Action Owner" : "Audit Staff";
+  if (r === "head_of_audit") return "Head of Audit";
+  if (r === "action_owner") return "Action Owner";
+  if (r === "admin") return "Admin";
+  return "Audit Staff";
 }
 
 /** Sidebar sections a Head of Audit can grant to audit staff (audit-bot.js ASSESSMENT_NAV). */

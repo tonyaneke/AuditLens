@@ -8,11 +8,12 @@ import { useModal } from "@/components/modals/ModalProvider";
 import CaeReportDialog from "@/components/dashboard/CaeReportDialog";
 import OwnerDashboard from "@/components/dashboard/OwnerDashboard";
 import StaffDashboard from "@/components/dashboard/StaffDashboard";
+import { effectiveRole } from "@/lib/permissions";
 
 export default function DashboardPage() {
   const user = useUser();
   const modal = useModal();
-  const isOwner = user.role === "action_owner";
+  const isOwner = effectiveRole(user) === "action_owner";
   usePageChrome({
     title: "Dashboard",
     actions: isOwner ? undefined : (

@@ -3,6 +3,7 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { prisma } from "./prisma";
 import {
+  effectiveRole,
   normalizeSidebarAccess,
   type SessionUser,
 } from "./permissions";
@@ -36,6 +37,7 @@ export async function signSessionToken(user: SessionUser): Promise<string> {
     role: user.role,
     sidebarAccess: user.sidebarAccess,
     mustChangePassword: user.mustChangePassword,
+    activeRole: user.activeRole || "",
   })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
@@ -86,6 +88,7 @@ export async function getSession(): Promise<SessionUser | null> {
       mustChangePassword: effectiveMustChangePassword(
         Boolean(payload.mustChangePassword),
       ),
+      activeRole: String(payload.activeRole || "") || undefined,
     };
   } catch {
     return null;
@@ -100,7 +103,11 @@ export async function getSessionWithFlags(): Promise<SessionUser | null> {
   // A deactivated user's existing session is invalid immediately — same as a deleted one.
   if (!user || user.active === false) return null;
 
-  return userToSession(user);
+  // activeRole lives only in the JWT (it's a per-session view state, not a DB fact) — carry it
+  // over from the token, but only while the DB still says the user is an admin.
+  const fresh = userToSession(user);
+  if (user.role === "admin" && session.activeRole) fresh.activeRole = session.activeRole;
+  return fresh;
 }
 
 export async function requireSession() {
@@ -117,7 +124,7 @@ export async function requireActiveSession() {
 
 export async function requireHeadOfAudit() {
   const session = await requireActiveSession();
-  if (session.role !== "head_of_audit") throw new Error("Forbidden");
+  if (effectiveRole(session) !== "head_of_audit") throw new Error("Forbidden");
   return session;
 }
 

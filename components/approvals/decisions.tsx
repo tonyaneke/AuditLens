@@ -26,6 +26,7 @@ import {
 import { parseQuarters } from "@/lib/workspace/ra";
 import { approvals } from "@/lib/workspace/selectors";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
+import { effectiveRole } from "@/lib/permissions";
 
 type LogEntry = { action: string; summary: string; metadata?: Record<string, unknown> };
 
@@ -33,7 +34,7 @@ export function useApprovalDecisions() {
   const { db, mutate } = useWorkspace();
   const user = useUser();
   const modal = useModal();
-  const isHead = user.role === "head_of_audit";
+  const isHead = effectiveRole(user) === "head_of_audit";
 
   /** Per-kind decision for every kind except observation_withdraw (which needs a reason dialog). */
   async function decide(aid: string, approve: boolean): Promise<void> {

@@ -58,9 +58,14 @@ export function authorizeWorkspaceWrite(
   userId: string,
   current: WorkspaceDb,
   incoming: WorkspaceDb,
+  activeRole?: string,
 ): AuthzResult {
+  // Effective role: an admin acts as their switched activeRole, defaulting to head until
+  // they pick one (mirrors effectiveRole() in lib/permissions.ts).
+  const effective = role === "admin" ? activeRole || HEAD_ROLE : role;
+
   // The Head of Audit is fully trusted with the workspace document.
-  if (role === HEAD_ROLE) return { data: incoming, violations: [] };
+  if (effective === HEAD_ROLE) return { data: incoming, violations: [] };
 
   const cur = (current || {}) as Obj;
   const inc = (incoming || {}) as Obj;
@@ -72,7 +77,7 @@ export function authorizeWorkspaceWrite(
   // ...then re-apply only the sections a non-head user is allowed to touch.
   next.notifications = inc.notifications ?? cur.notifications ?? [];
   next.extFindings = inc.extFindings ?? cur.extFindings ?? []; // remediation-writable (owners respond)
-  next.audits = reconcileAudits(asArray(cur.audits), asArray(inc.audits), role, userId, violations);
+  next.audits = reconcileAudits(asArray(cur.audits), asArray(inc.audits), effective, userId, violations);
   next.approvals = reconcileApprovals(asArray(cur.approvals), asArray(inc.approvals), violations);
 
   // Note any attempt to change a locked section (informational — the change is already discarded).

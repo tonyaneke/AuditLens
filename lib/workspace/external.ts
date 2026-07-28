@@ -242,7 +242,7 @@ export function extNormalize(
 
 /** Verbatim port of the legacy CSV parser (quoted fields, doubled quotes, CR/LF). */
 export function parseCSV(input: string): string[][] {
-  let text = input.replace(/^﻿/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const text = input.replace(/^﻿/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const rows: string[][] = [];
   let row: string[] = [];
   let field = "";

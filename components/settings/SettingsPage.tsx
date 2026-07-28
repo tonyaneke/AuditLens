@@ -13,6 +13,7 @@ import { useModal } from "@/components/modals/ModalProvider";
 import { Avatar, Empty } from "@/components/ui";
 import { logAudit } from "@/lib/client/audit-log";
 import { loadDirectory, type DirectoryUser } from "@/lib/client/directory";
+import { effectiveRole } from "@/lib/permissions";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 import {
   DeleteUserDialog,
@@ -57,7 +58,7 @@ export default function SettingsPage() {
 
   usePageChrome({ title: "Settings" });
 
-  if (me.role !== "head_of_audit") return null; // legacy viewSettings renders nothing for non-heads
+  if (effectiveRole(me) !== "head_of_audit") return null; // legacy viewSettings renders nothing for non-heads
 
   const departments = db.departments || [];
   const recipients = db.exco?.recipientList || [];

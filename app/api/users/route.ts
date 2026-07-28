@@ -64,7 +64,7 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  if (role === "head_of_audit" && session.role !== "head_of_audit") {
+  if (role === "head_of_audit" && session.role !== "head_of_audit" && session.role !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

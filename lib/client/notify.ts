@@ -33,3 +33,23 @@ export function emailNotify(
     /* best effort */
   }
 }
+
+/** Consolidated digest for an admin who is both Head of Audit and Action Owner — sent
+ * server-side by /api/notify (SendGrid credentials never reach the client). Best effort. */
+export function emailAdminConsolidated(params: {
+  to: string;
+  name: string;
+  headNotifications: { title: string; link: string }[];
+  ownerNotifications: { title: string; link: string }[];
+}): void {
+  if (!params.to) return;
+  try {
+    fetch("/api/notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ consolidated: params }),
+    }).catch(() => {});
+  } catch {
+    /* best effort */
+  }
+}

@@ -16,6 +16,7 @@ import {
   isPrimaryOwner,
   obsUpdates,
 } from "@/lib/workspace/observations";
+import { effectiveRole } from "@/lib/permissions";
 import { ck, fmtDate, fmtDateTime, isoToDate } from "@/lib/workspace/selectors";
 import type { ObsUpdate } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
@@ -91,7 +92,7 @@ export default function ObsDetailPage({
       id: "upd_" + Date.now(),
       by: user.id || "",
       byName: user.name || "User",
-      role: user.role || "",
+      role: effectiveRole(user) || "",
       at: new Date().toISOString(),
       text: commentText.trim(),
       evidence: [],

@@ -72,6 +72,7 @@ export async function PUT(request: Request) {
     session.id,
     current,
     body.data,
+    session.activeRole,
   );
 
   const payload = authorized as Prisma.InputJsonValue;

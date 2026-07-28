@@ -9,6 +9,7 @@ import { useModal } from "@/components/modals/ModalProvider";
 import { approvalItemTitle, approvalKindLabel } from "@/lib/workspace/approvals";
 import { approvals, fmtDateTime } from "@/lib/workspace/selectors";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
+import { effectiveRole } from "@/lib/permissions";
 import { useApprovalDecisions } from "./decisions";
 import { ApprovalDetailsDialog } from "./dialogs";
 
@@ -18,7 +19,7 @@ export default function ApprovalsPage() {
   const modal = useModal();
   const { approveAny, rejectAny } = useApprovalDecisions();
   const [tab, setTab] = useState<"pending" | "approved" | "rejected" | "all">("pending");
-  const isHead = user.role === "head_of_audit";
+  const isHead = effectiveRole(user) === "head_of_audit";
 
   usePageChrome({ title: "Approvals Inbox" });
 

@@ -68,7 +68,7 @@ export default function SopUpdatePage({
         curO.sopUpdate = sopText.trim();
       }
     });
-    logAudit("sop.updated", "Updated SOP for observation: " + o.title);
+    logAudit("sop.updated", "Updated SOP for observation: " + (o?.title || ""));
     toast("Proposed SOP update saved", "success");
   }
 
@@ -76,7 +76,7 @@ export default function SopUpdatePage({
     setLoading(true);
     try {
       const text = await runAiText(
-        `Draft a clear, actionable Standard Operating Procedure (SOP) clause revision to remediate the following audit observation.\n\nObservation Title: ${o.title}\nDescription: ${String(o.description || "")}\nRoot Cause: ${String(o.rootCause || "")}\nRecommendation: ${String(o.recommendation || "")}\n\nDraft the exact SOP clause text to be inserted or updated:`,
+        `Draft a clear, actionable Standard Operating Procedure (SOP) clause revision to remediate the following audit observation.\n\nObservation Title: ${o?.title || ""}\nDescription: ${String(o?.description || "")}\nRoot Cause: ${String(o?.rootCause || "")}\nRecommendation: ${String(o?.recommendation || "")}\n\nDraft the exact SOP clause text to be inserted or updated:`,
       );
       if (text) {
         setSopText(text.trim());

@@ -5,10 +5,12 @@
 // hands over to /legacy until those views migrate.
 
 import { useState } from "react";
+import Link from "next/link";
 import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useUser } from "@/components/chrome/UserContext";
 import { Empty } from "@/components/ui";
 import { hrefForView } from "@/lib/routes";
+import { effectiveRole } from "@/lib/permissions";
 import {
   ck,
   CRITS,
@@ -121,7 +123,7 @@ function ReportCard({ a, r }: { a: Audit; r: Report }) {
 export default function AuditsListPage() {
   const { db } = useWorkspace();
   const user = useUser();
-  const isStaff = user.role !== "head_of_audit" && user.role !== "action_owner";
+  const isStaff = effectiveRole(user) !== "head_of_audit" && effectiveRole(user) !== "action_owner";
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("All");
   const [period, setPeriod] = useState("All");
@@ -142,11 +144,10 @@ export default function AuditsListPage() {
         />
       ),
       actions:
-        user.role === "head_of_audit" ? (
-          // The create-audit dialog is still legacy — deep-link opens it directly.
-          <a className="btn sm" href="/audits/new">
+        effectiveRole(user) === "head_of_audit" ? (
+          <Link className="btn sm" href="/audits/new">
             + New audit
-          </a>
+          </Link>
         ) : undefined,
     },
     [q],
@@ -162,9 +163,9 @@ export default function AuditsListPage() {
           {isStaff ? (
             "Ask your Head of Audit to create an audit and assign you as lead."
           ) : (
-            <a className="btn" href="/audits/new">
+            <Link className="btn" href="/audits/new">
               + Create your first audit
-            </a>
+            </Link>
           )}
         </Empty>
       </div>

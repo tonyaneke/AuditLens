@@ -12,7 +12,7 @@ import { UserProvider } from "@/components/chrome/UserContext";
 import AiBusyOverlay from "@/components/feedback/AiBusyOverlay";
 import ToastHost from "@/components/feedback/ToastHost";
 import { ModalProvider } from "@/components/modals/ModalProvider";
-import { canAccessView, type SessionUser } from "@/lib/permissions";
+import { canAccessView, effectiveRole, type SessionUser } from "@/lib/permissions";
 import { hrefForView, isLegacyPath, viewForPathname } from "@/lib/routes";
 import { WorkspaceProvider } from "@/lib/workspace/WorkspaceProvider";
 
@@ -24,11 +24,11 @@ function PermissionGuard({ user, children }: { user: SessionUser; children: Reac
 
   useEffect(() => {
     if (!allowed) {
-      const fallback = user.role === "action_owner" ? hrefForView("myobs") : "/";
+      const fallback = effectiveRole(user) === "action_owner" ? hrefForView("myobs") : "/";
       if (isLegacyPath(fallback)) window.location.assign(fallback);
       else router.replace(fallback);
     }
-  }, [allowed, router, user.role]);
+  }, [allowed, router, user.role, user.activeRole]);
 
   if (!allowed) return null;
   return <>{children}</>;

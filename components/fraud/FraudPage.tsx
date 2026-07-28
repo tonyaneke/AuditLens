@@ -12,6 +12,7 @@ import { toast } from "@/components/feedback/ToastHost";
 import { useModal } from "@/components/modals/ModalProvider";
 import { Empty, Kpi } from "@/components/ui";
 import { logAudit } from "@/lib/client/audit-log";
+import { effectiveRole } from "@/lib/permissions";
 import { urlForView } from "@/lib/routes";
 import {
   actStatusClass,
@@ -127,7 +128,7 @@ export default function FraudPage() {
   const user = useUser();
   const modal = useModal();
   const router = useRouter();
-  const isStaff = user.role !== "head_of_audit";
+  const isStaff = effectiveRole(user) !== "head_of_audit";
   const [planExpanded, setPlanExpanded] = useState(false);
 
   // Legacy requireHead(): the add/generate/edit/delete controls are visible but refuse to act

@@ -60,12 +60,28 @@ export const KNOWN_ROLES = [
   "head_of_audit",
   "audit_staff",
   "action_owner",
+  "admin",
 ] as const;
 
 export function normalizeRole(raw: unknown): string {
   return (KNOWN_ROLES as readonly string[]).includes(String(raw))
     ? String(raw)
     : "audit_staff";
+}
+
+/** Effective role for permission checks: an admin acts as their chosen activeRole, and as the
+ * Head of Audit until they pick one. Everyone else is just their role. */
+export function effectiveRole(user: SessionUser): string {
+  if (user.role === "admin") return user.activeRole || "head_of_audit";
+  return user.role;
+}
+
+export function isAdmin(user: SessionUser): boolean {
+  return user.role === "admin";
+}
+
+export function canSwitchRole(user: SessionUser): boolean {
+  return user.role === "admin";
 }
 
 export type SessionUser = {
@@ -79,6 +95,8 @@ export type SessionUser = {
   // Microsoft profile photo (data URL). Present on DB-sourced sessions (/api/auth/me, directory),
   // not carried in the session cookie/JWT to keep it small.
   photo?: string | null;
+  // For admin users: the role they are currently viewing as (head_of_audit, audit_staff, action_owner)
+  activeRole?: string;
 };
 
 export function normalizeSidebarAccess(raw: unknown): string[] {
@@ -94,10 +112,11 @@ export function normalizeSidebarAccess(raw: unknown): string[] {
 // portal + shared detail pages; the head gets everything; staff get the main sections, their
 // granted assessment sections, and detail pages — never settings/audit log.
 export function canAccessView(user: SessionUser, view: string): boolean {
-  if (user.role === "action_owner") {
+  const role = effectiveRole(user);
+  if (role === "action_owner") {
     return (OWNER_VIEWS as readonly string[]).includes(view);
   }
-  if (user.role === "head_of_audit") {
+  if (role === "head_of_audit") {
     return (ALL_VIEWS as readonly string[]).includes(view);
   }
   if ((MAIN_VIEWS as readonly string[]).includes(view)) return true;
@@ -107,8 +126,9 @@ export function canAccessView(user: SessionUser, view: string): boolean {
 }
 
 export function allowedViews(user: SessionUser): string[] {
-  if (user.role === "action_owner") return [...OWNER_VIEWS];
-  if (user.role === "head_of_audit") return [...ALL_VIEWS];
+  const role = effectiveRole(user);
+  if (role === "action_owner") return [...OWNER_VIEWS];
+  if (role === "head_of_audit") return [...ALL_VIEWS];
   const views: string[] = [...MAIN_VIEWS, ...DETAIL_VIEWS];
   for (const v of user.sidebarAccess) {
     if ((ASSESSMENT_VIEWS as readonly string[]).includes(v)) views.push(v);
@@ -118,8 +138,9 @@ export function allowedViews(user: SessionUser): string[] {
 
 // Sidebar sections a user actually sees (nav only — detail views are reached from lists).
 export function visibleViews(user: SessionUser): string[] {
-  if (user.role === "action_owner") return ["dashboard", "myobs", "myext", "myfraud"];
-  if (user.role === "head_of_audit") {
+  const role = effectiveRole(user);
+  if (role === "action_owner") return ["dashboard", "myobs", "myext", "myfraud"];
+  if (role === "head_of_audit") {
     return [...MAIN_VIEWS, ...ASSESSMENT_VIEWS, ...OVERSIGHT_VIEWS];
   }
   return [

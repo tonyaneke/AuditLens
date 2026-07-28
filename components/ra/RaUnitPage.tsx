@@ -12,6 +12,7 @@ import { toast } from "@/components/feedback/ToastHost";
 import { useModal } from "@/components/modals/ModalProvider";
 import { BackButton } from "@/components/ui";
 import { logAudit } from "@/lib/client/audit-log";
+import { effectiveRole } from "@/lib/permissions";
 import { urlForView } from "@/lib/routes";
 import {
   engIsComplete,
@@ -38,7 +39,7 @@ export default function RaUnitPage({ unitId }: { unitId: string }) {
   const user = useUser();
   const modal = useModal();
   const router = useRouter();
-  const isHead = user.role === "head_of_audit";
+  const isHead = effectiveRole(user) === "head_of_audit";
 
   const e = universe(db).find((x) => x.id === unitId);
   const backHref = urlForView("auditra");

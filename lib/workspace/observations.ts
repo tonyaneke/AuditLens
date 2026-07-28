@@ -3,9 +3,10 @@
 // withdrawal stage machine, repeat-detection heuristics, CSV import parsing and the AI-draft
 // normalizer. All pure over the db + explicit user/directory args — no globals.
 
-import { emailNotify } from "@/lib/client/notify";
-import { headUsers, ownerEmailFor, ownerNameFor } from "@/lib/client/directory";
+import { emailAdminConsolidated, emailNotify } from "@/lib/client/notify";
+import { headUsers, ownerEmailFor, ownerNameFor, dirUser } from "@/lib/client/directory";
 import type { SessionUser } from "@/lib/permissions";
+import { effectiveRole, isAdmin } from "@/lib/permissions";
 import type {
   Approval,
   Audit,
@@ -52,7 +53,10 @@ export function statusClass(s: string | undefined): string {
   return s === "Closed" ? "s-Closed" : s === "In Progress" ? "s-InProgress" : "s-Open";
 }
 export function roleLabel(r: string | undefined): string {
-  return r === "head_of_audit" ? "Head of Audit" : r === "action_owner" ? "Action Owner" : "Audit Staff";
+  if (r === "head_of_audit") return "Head of Audit";
+  if (r === "action_owner") return "Action Owner";
+  if (r === "admin") return "Admin";
+  return "Audit Staff";
 }
 export function hasExecSummary(r: Report | undefined): boolean {
   return !!(
@@ -87,10 +91,25 @@ export function obsUpdates(o: Observation): ObsUpdate[] {
 /* ---------------- role & verification checks ---------------- */
 
 export function isHead(user: SessionUser): boolean {
-  return user.role === "head_of_audit";
+  return effectiveRole(user) === "head_of_audit";
 }
 export function isActionOwner(user: SessionUser): boolean {
-  return user.role === "action_owner";
+  return effectiveRole(user) === "action_owner";
+}
+
+// Check if user is admin with specific active role
+export function isAdminWithRole(user: SessionUser, role: string): boolean {
+  return isAdmin(user) && user.activeRole === role;
+}
+
+// Check if user is admin who should receive head notifications
+export function isAdminHead(user: SessionUser): boolean {
+  return isAdmin(user) && (!user.activeRole || user.activeRole === "head_of_audit");
+}
+
+// Check if user is admin who should receive owner notifications
+export function isAdminOwner(user: SessionUser): boolean {
+  return isAdmin(user) && (!user.activeRole || user.activeRole === "action_owner");
 }
 export function isPrimaryOwner(user: SessionUser, o: Observation | undefined): boolean {
   return !!(o && o.ownerUserId && o.ownerUserId === user.id);
@@ -200,6 +219,8 @@ export function notifyBoth(
 export function notifyHeadsApproval(db: WorkspaceDb, title: string): void {
   const heads = headUsers();
   heads.forEach((h) => notify(db, h.id, "approval_needed", "Approval needed: " + title, "approvals"));
+  
+  // Send regular head notifications (including admin users acting as heads)
   emailNotify(
     heads.map((h) => h.email || "").filter(Boolean),
     "AuditLens — approval needed",
@@ -210,25 +231,71 @@ export function notifyHeadsApproval(db: WorkspaceDb, title: string): void {
 export function notifyOwnerAssigned(db: WorkspaceDb, o: Observation): void {
   if (!o) return;
   const primaryName = ownerNameFor(db, o.ownerUserId) || o.owner || "the primary action owner";
+  
+  // Track admin users who need consolidated notifications
+  const adminNotifications: { email: string; name: string; headNotifs: { title: string; link: string }[]; ownerNotifs: { title: string; link: string }[] }[] = [];
+  
   if (o.ownerUserId) {
     notify(db, o.ownerUserId, "assigned", "New action assigned to you: " + o.title, "myobs", o.id);
     const e = ownerEmailFor(db, o.ownerUserId);
-    if (e)
+    const u = dirUser(o.ownerUserId);
+    
+    // Check if this is an admin user
+    if (u && u.role === "admin") {
+      // Find or create admin notification record
+      let adminRec = adminNotifications.find(a => a.email === e);
+      if (!adminRec && e) {
+        adminRec = { email: e, name: u.name, headNotifs: [], ownerNotifs: [] };
+        adminNotifications.push(adminRec);
+      }
+      if (adminRec) {
+        adminRec.ownerNotifs.push({ title: o.title, link: "myobs" });
+      }
+    } else if (e) {
+      // Regular owner notification
       emailNotify(
         [e],
         "AuditLens — An Observation was raised against your department",
         `An audit observation "${o.title}" has been raised against your department and assigned to you as the primary action owner. Sign in to AuditLens to view the details, respond and close the observation.`,
       );
+    }
   }
+  
   if (o.secondaryOwnerUserId && o.secondaryOwnerUserId !== o.ownerUserId) {
     notify(db, o.secondaryOwnerUserId, "assigned", "You have oversight on: " + o.title, "myobs", o.id);
     const e2 = ownerEmailFor(db, o.secondaryOwnerUserId);
-    if (e2)
+    const u2 = dirUser(o.secondaryOwnerUserId);
+    
+    // Check if this is an admin user
+    if (u2 && u2.role === "admin") {
+      let adminRec = adminNotifications.find(a => a.email === e2);
+      if (!adminRec && e2) {
+        adminRec = { email: e2, name: u2.name, headNotifs: [], ownerNotifs: [] };
+        adminNotifications.push(adminRec);
+      }
+      if (adminRec) {
+        adminRec.ownerNotifs.push({ title: o.title + " (oversight)", link: "myobs" });
+      }
+    } else if (e2) {
+      // Regular owner notification
       emailNotify(
         [e2],
         "AuditLens — observation raised (oversight)",
         `An audit observation "${o.title}" has been raised against your department and assigned to ${primaryName}. You have oversight of the remediation — sign in to AuditLens to follow progress and add comments.`,
       );
+    }
+  }
+  
+  // Send consolidated emails to admin users (server-side via /api/notify)
+  for (const admin of adminNotifications) {
+    if (admin.ownerNotifs.length > 0) {
+      emailAdminConsolidated({
+        to: admin.email,
+        name: admin.name,
+        headNotifications: admin.headNotifs,
+        ownerNotifications: admin.ownerNotifs,
+      });
+    }
   }
 }
 
