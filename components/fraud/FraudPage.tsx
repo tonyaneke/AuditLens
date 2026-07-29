@@ -10,7 +10,7 @@ import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useUser } from "@/components/chrome/UserContext";
 import { toast } from "@/components/feedback/ToastHost";
 import { useModal } from "@/components/modals/ModalProvider";
-import { Empty, Kpi } from "@/components/ui";
+import { Empty, Kpi, RowOpen } from "@/components/ui";
 import { logAudit } from "@/lib/client/audit-log";
 import { effectiveRole } from "@/lib/permissions";
 import { urlForView } from "@/lib/routes";
@@ -295,16 +295,16 @@ export default function FraudPage() {
         <table style={{ marginTop: 6 }}>
           <thead>
             <tr>
-              <th>Scheme</th>
-              <th>Category</th>
-              <th>Process</th>
-              <th>L×I</th>
-              <th>Inherent</th>
-              <th>Controls</th>
-              <th>Residual</th>
-              <th>Owner</th>
-              <th>Status</th>
-              <th></th>
+              <th scope="col">Scheme</th>
+              <th scope="col">Category</th>
+              <th scope="col">Process</th>
+              <th scope="col">L×I</th>
+              <th scope="col">Inherent</th>
+              <th scope="col">Controls</th>
+              <th scope="col">Residual</th>
+              <th scope="col">Owner</th>
+              <th scope="col">Status</th>
+              <th scope="col"></th>
             </tr>
           </thead>
           <tbody>
@@ -316,7 +316,12 @@ export default function FraudPage() {
                 onClick={() => router.push(urlForView("fraudrisk", { fraud: f.id }))}
               >
                 <td>
-                  <b>{f.scheme}</b>
+                  <RowOpen
+                    onOpen={() => router.push(urlForView("fraudrisk", { fraud: f.id }))}
+                    label={`Open fraud risk: ${f.scheme}`}
+                  >
+                    <b>{f.scheme}</b>
+                  </RowOpen>
                   {f.year ? <div className="hint">{f.year}</div> : null}
                 </td>
                 <td>{f.category}</td>
@@ -441,12 +446,12 @@ export default function FraudPage() {
                 <table style={{ marginTop: 8 }}>
                   <thead>
                     <tr>
-                      <th>Prevention / response action</th>
-                      <th>Type</th>
-                      <th>Owner</th>
-                      <th>Target</th>
-                      <th>Status</th>
-                      <th></th>
+                      <th scope="col">Prevention / response action</th>
+                      <th scope="col">Type</th>
+                      <th scope="col">Owner</th>
+                      <th scope="col">Target</th>
+                      <th scope="col">Status</th>
+                      <th scope="col"></th>
                     </tr>
                   </thead>
                   <tbody>

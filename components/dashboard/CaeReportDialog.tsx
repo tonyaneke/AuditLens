@@ -107,11 +107,11 @@ export function exportCaeReport(db: WorkspaceDb): void {
     ${u.commentary ? `<h2>Executive Commentary</h2><div>${esc(u.commentary).replace(/\n/g, "<br>")}</div>` : ""}
     <h2>1. Annual Audit Plan Progress</h2>
     <div class="note"><b>${pDoneOcc} of ${pTotOcc} quarter-reviews completed (${pPct}%)</b> across ${plan.length} engagement(s) — ${pUnitsDone} fully complete, ${pUnitsProg} in progress.</div>
-    ${plan.length ? `<table><tr><th>Auditable unit</th><th>Rating</th><th>Timing</th><th>Status</th></tr>${plan.map((e) => `<tr><td>${esc(e.name)}</td><td>${e.band}</td><td>${esc(e.plannedPeriod || "")}</td><td>${esc(engStatusText(e))}</td></tr>`).join("")}</table>` : `<div>No engagements selected into the plan.</div>`}
+    ${plan.length ? `<table><tr><th scope="col">Auditable unit</th><th scope="col">Rating</th><th scope="col">Timing</th><th scope="col">Status</th></tr>${plan.map((e) => `<tr><td>${esc(e.name)}</td><td>${e.band}</td><td>${esc(e.plannedPeriod || "")}</td><td>${esc(engStatusText(e))}</td></tr>`).join("")}</table>` : `<div>No engagements selected into the plan.</div>`}
     <h2>2. Audit Observations</h2>
     <div class="note">${obs.length} observation(s): ${CRITS.filter((k) => c[k]).map((k) => `<span class="pill ${ck(k)}">${c[k]} ${k}</span>`).join(" ") || "none"}. ${open} open · ${closed} closed (remediation rate <b>${remRate}%</b>) · ${overdue} overdue · ${watch.length} due within 2 weeks · ${reps} repeat finding(s).</div>
     <h2>3. Overdue &amp; Watchlist (due within 2 weeks)</h2>
-    ${watch.length ? `<table><tr><th>Criticality</th><th>Observation</th><th>Audit</th><th>Owner</th><th>Expected close</th></tr>${watch.slice(0, 25).map(({ o, d }) => { const ec = effectiveClose(o, o._r); return `<tr><td><span class="pill ${ck(o.criticality)}">${o.criticality}</span></td><td>${esc(o.title)}</td><td>${esc(o._a.name)}</td><td>${esc(o.owner || "—")}</td><td>${ec ? esc(fmtDate(ec)) : "—"}${(d as number) < 0 ? " (overdue)" : ""}</td></tr>`; }).join("")}</table>` : `<div>No overdue or near-due open items.</div>`}
+    ${watch.length ? `<table><tr><th scope="col">Criticality</th><th scope="col">Observation</th><th scope="col">Audit</th><th scope="col">Owner</th><th scope="col">Expected close</th></tr>${watch.slice(0, 25).map(({ o, d }) => { const ec = effectiveClose(o, o._r); return `<tr><td><span class="pill ${ck(o.criticality)}">${o.criticality}</span></td><td>${esc(o.title)}</td><td>${esc(o._a.name)}</td><td>${esc(o.owner || "—")}</td><td>${ec ? esc(fmtDate(ec)) : "—"}${(d as number) < 0 ? " (overdue)" : ""}</td></tr>`; }).join("")}</table>` : `<div>No overdue or near-due open items.</div>`}
     <h2>4. Fraud Risk Management</h2>
     <div class="note">${F.length} fraud risk(s); <b>${fHighX}</b> at Extreme/High residual exposure. Prevention plan: ${fImpl} of ${fA.length} action(s) implemented (${fA.length ? Math.round((fImpl / fA.length) * 100) : 0}%).</div>`;
 
@@ -123,7 +123,7 @@ export function exportCaeReport(db: WorkspaceDb): void {
       withActions.forEach((f) => {
         const res = fraudResidual(f);
         inner += `<div class="note" style="margin-top:8pt"><b>${esc(f.scheme)}</b> · ${esc(f.category || "—")} · residual <b>${esc(res)}</b> · ${esc(f.status || "Identified")}${f.owner ? " · owner: " + esc(f.owner) : ""}</div>
-        <table><tr><th>Prevention / response action</th><th>Type</th><th>Target</th><th>Status</th><th>Latest update</th></tr>
+        <table><tr><th scope="col">Prevention / response action</th><th scope="col">Type</th><th scope="col">Target</th><th scope="col">Status</th><th scope="col">Latest update</th></tr>
         ${(f.actions || [])
           .map((a) => {
             const last = (a.ownerUpdates || [])[0];

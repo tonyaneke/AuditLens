@@ -10,7 +10,7 @@ import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useUser } from "@/components/chrome/UserContext";
 import { toast } from "@/components/feedback/ToastHost";
 import { useModal } from "@/components/modals/ModalProvider";
-import { CritPill, Empty, Kpi, StatusPill } from "@/components/ui";
+import { CritPill, Empty, Kpi, RowOpen, StatusPill } from "@/components/ui";
 import { effectiveRole } from "@/lib/permissions";
 
 // Modal-only: bulk owner reminders load on first open.
@@ -100,7 +100,7 @@ export default function TrackerPage() {
         return da - dbb || crank(a) - crank(b);
       });
       inner += `<h2>${g === "No date" ? "No expected close date" : g} (${rows.length})</h2>
-      <table><tr><th>Criticality</th><th>Action / observation</th><th>Audit · Report</th><th>Owner</th><th>Expected close</th><th>Age</th><th>Repeat</th><th>Status</th></tr>
+      <table><tr><th scope="col">Criticality</th><th scope="col">Action / observation</th><th scope="col">Audit · Report</th><th scope="col">Owner</th><th scope="col">Expected close</th><th scope="col">Age</th><th scope="col">Repeat</th><th scope="col">Status</th></tr>
       ${rows
         .map((o) => {
           const ec = effectiveClose(o, o._r);
@@ -174,7 +174,7 @@ export default function TrackerPage() {
       .join("");
     const table = `<table>
       <tr><th colspan="${headers.length}" style="background:#0d5a47;color:#ffffff;font-size:13pt;text-align:left;padding:8pt">${esc(db.org || "AuditLens")} — All Audit Observations (${list.length}) · exported ${esc(fmtDate(new Date()))}</th></tr>
-      <tr>${headers.map((h) => `<th>${esc(h)}</th>`).join("")}</tr>
+      <tr>${headers.map((h) => `<th scope="col">${esc(h)}</th>`).join("")}</tr>
       ${rowsHtml}</table>`;
     excelDoc("AuditLens-observations-" + stamp(), table);
   }
@@ -195,9 +195,9 @@ export default function TrackerPage() {
     });
     const inner = `<h1>Audit Insights</h1><div class="meta">${esc(db.org)} — Internal Audit · thematic analysis across ${obs.length} observation(s)</div>
     <h2>Recurring Root-Cause Themes</h2>
-    <table><tr><th>Theme</th><th>Count</th></tr>${themeRows.map(([t, v]) => `<tr><td>${esc(t)}</td><td>${v}</td></tr>`).join("")}</table>
+    <table><tr><th scope="col">Theme</th><th scope="col">Count</th></tr>${themeRows.map(([t, v]) => `<tr><td>${esc(t)}</td><td>${v}</td></tr>`).join("")}</table>
     <h2>Risk Heat Map — Process/Department × Criticality</h2>
-    <table><tr><th>Area</th>${CRITS.map((c) => `<th>${c}</th>`).join("")}<th>Total</th></tr>
+    <table><tr><th scope="col">Area</th>${CRITS.map((c) => `<th scope="col">${c}</th>`).join("")}<th scope="col">Total</th></tr>
     ${Object.entries(areas)
       .sort((a, b) => CRITS.reduce((s, c) => s + b[1][c], 0) - CRITS.reduce((s, c) => s + a[1][c], 0))
       .map(([k, v]) => {
@@ -440,12 +440,12 @@ export default function TrackerPage() {
             <table>
               <thead>
                 <tr>
-                  <th>Criticality</th>
-                  <th>Action / observation</th>
-                  <th>Audit · Report</th>
-                  <th>Owner</th>
-                  <th>{g === "Ready to Close" ? "Submitted" : g === "Recently Closed" ? "Closed" : "Expected close"}</th>
-                  <th>Status</th>
+                  <th scope="col">Criticality</th>
+                  <th scope="col">Action / observation</th>
+                  <th scope="col">Audit · Report</th>
+                  <th scope="col">Owner</th>
+                  <th scope="col">{g === "Ready to Close" ? "Submitted" : g === "Recently Closed" ? "Closed" : "Expected close"}</th>
+                  <th scope="col">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -465,7 +465,9 @@ export default function TrackerPage() {
                         ) : null}
                       </td>
                       <td>
-                        <b>{o.title}</b>
+                        <RowOpen onOpen={() => goObservation(o)} label={`Open observation: ${o.title}`}>
+                          <b>{o.title}</b>
+                        </RowOpen>
                         {o.recommendation ? <div className="hint">{o.recommendation}</div> : null}
                       </td>
                       <td>
@@ -637,11 +639,11 @@ function InsightsPanel({ obs }: { obs: ObsWithContext[] }) {
         <table className="hm">
           <thead>
             <tr>
-              <th className="axis">Process / Department</th>
+              <th scope="col" className="axis">Process / Department</th>
               {CRITS.map((c) => (
-                <th key={c}>{colLab[c]}</th>
+                <th scope="col" key={c}>{colLab[c]}</th>
               ))}
-              <th>Total</th>
+              <th scope="col">Total</th>
             </tr>
           </thead>
           <tbody>

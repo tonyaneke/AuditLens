@@ -129,7 +129,7 @@ export default function AuditLogPage() {
       toast("Nothing to export.", "info");
       return;
     }
-    const table = `<table><tr><th>When</th><th>User</th><th>Email</th><th>Action</th><th>Summary</th></tr>
+    const table = `<table><tr><th scope="col">When</th><th scope="col">User</th><th scope="col">Email</th><th scope="col">Action</th><th scope="col">Summary</th></tr>
       ${all
         .map(
           (r) =>
@@ -203,10 +203,10 @@ export default function AuditLogPage() {
               <table className="audit-log-table">
                 <thead>
                   <tr>
-                    <th>When</th>
-                    <th>User</th>
-                    <th>Action</th>
-                    <th>Summary</th>
+                    <th scope="col">When</th>
+                    <th scope="col">User</th>
+                    <th scope="col">Action</th>
+                    <th scope="col">Summary</th>
                   </tr>
                 </thead>
                 <tbody>

@@ -4,7 +4,7 @@
 
 import { useRouter } from "next/navigation";
 import { useUser } from "@/components/chrome/UserContext";
-import { CritPill, Empty, Kpi, StatusPill } from "@/components/ui";
+import { CritPill, Empty, Kpi, RowOpen, StatusPill } from "@/components/ui";
 import { hrefForView, isLegacyPath } from "@/lib/routes";
 import {
   allObs,
@@ -145,12 +145,12 @@ export default function OwnerDashboard() {
           <table>
             <thead>
               <tr>
-                <th>Type</th>
-                <th>Priority</th>
-                <th>Item</th>
-                <th>Source / Audit</th>
-                <th>Expected close</th>
-                <th>Status</th>
+                <th scope="col">Type</th>
+                <th scope="col">Priority</th>
+                <th scope="col">Item</th>
+                <th scope="col">Source / Audit</th>
+                <th scope="col">Expected close</th>
+                <th scope="col">Status</th>
               </tr>
             </thead>
             <tbody>
@@ -170,7 +170,9 @@ export default function OwnerDashboard() {
                         <span className="tag">{x.a.type || "Preventive"}</span>
                       </td>
                       <td>
-                        <b>{x.a.text}</b>
+                        <RowOpen onOpen={() => openItem(x)} label={`Open fraud action: ${x.a.text}`}>
+                          <b>{x.a.text}</b>
+                        </RowOpen>
                       </td>
                       <td>
                         {x.f.scheme}
@@ -204,7 +206,9 @@ export default function OwnerDashboard() {
                       )}
                     </td>
                     <td>
-                      <b>{o.title}</b>
+                      <RowOpen onOpen={() => openItem(x)} label={`Open ${x.kind.toLowerCase()}: ${o.title}`}>
+                        <b>{o.title}</b>
+                      </RowOpen>
                     </td>
                     <td>
                       {ext ? (

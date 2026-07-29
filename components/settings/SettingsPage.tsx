@@ -10,7 +10,7 @@ import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useUser } from "@/components/chrome/UserContext";
 import { toast } from "@/components/feedback/ToastHost";
 import { useModal } from "@/components/modals/ModalProvider";
-import { Avatar, Empty } from "@/components/ui";
+import { Avatar, Empty, RowOpen } from "@/components/ui";
 import { logAudit } from "@/lib/client/audit-log";
 import { loadDirectory, type DirectoryUser } from "@/lib/client/directory";
 import { effectiveRole } from "@/lib/permissions";
@@ -194,11 +194,11 @@ export default function SettingsPage() {
             <table>
               <thead>
                 <tr>
-                  <th>Department</th>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Login</th>
-                  <th></th>
+                  <th scope="col">Department</th>
+                  <th scope="col">Name</th>
+                  <th scope="col">Email</th>
+                  <th scope="col">Login</th>
+                  <th scope="col"></th>
                 </tr>
               </thead>
               <tbody>
@@ -273,12 +273,12 @@ export default function SettingsPage() {
             <table>
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>Department</th>
-                  <th>Email</th>
-                  <th>Role</th>
-                  <th>Status</th>
-                  <th></th>
+                  <th scope="col">Name</th>
+                  <th scope="col">Department</th>
+                  <th scope="col">Email</th>
+                  <th scope="col">Role</th>
+                  <th scope="col">Status</th>
+                  <th scope="col"></th>
                 </tr>
               </thead>
               <tbody>
@@ -300,7 +300,9 @@ export default function SettingsPage() {
                       <td>
                         <div className="row" style={{ gap: 8, alignItems: "center" }}>
                           <Avatar user={u} size={28} />
-                          <b>{u.name}</b>
+                          <RowOpen onOpen={openEdit} label={`View details & sidebar access for ${u.name}`}>
+                            <b>{u.name}</b>
+                          </RowOpen>
                         </div>
                       </td>
                       <td>{u.department || "—"}</td>
@@ -387,10 +389,10 @@ export default function SettingsPage() {
             <table>
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>Role</th>
-                  <th>Email</th>
-                  <th></th>
+                  <th scope="col">Name</th>
+                  <th scope="col">Role</th>
+                  <th scope="col">Email</th>
+                  <th scope="col"></th>
                 </tr>
               </thead>
               <tbody>

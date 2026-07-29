@@ -8,7 +8,11 @@
   --navy2: #10745a;
   --steel: #2f9488;
   --ink: #19302a;
-  --muted: #64807a;
+  /* Secondary text everywhere (KPI labels, .hint, table headers). Was #64807a, which is
+     4.15:1 on --card and 3.85:1 on the tinted row backgrounds — below the 4.5:1 AA floor
+     at the 10–12px sizes it is used at. This value clears 4.5:1 on every surface it lands
+     on (worst case 4.81:1 on #f0f4f2). */
+  --muted: #587069;
   --line: #e1eae7;
   --bg: #f2f7f5;
   --card: #fafcfb;
@@ -110,7 +114,7 @@ a {
   margin-top: 8px;
   font-size: 11px;
   font-weight: 500;
-  color: #88b3a6;
+  color: #9ac2b5;
   line-height: 1.35;
 }
 
@@ -182,7 +186,7 @@ a {
 
 .sidebar-profile-role {
   font-size: 11px;
-  color: #88b3a6;
+  color: #9ac2b5;
   margin-top: 1px;
 }
 
@@ -305,10 +309,12 @@ a {
 
 .nav button.active,
 .nav a.active {
-  background: var(--brand-500);
+  background: #00753f;
   color: #fff;
   font-weight: 600;
-  box-shadow: var(--shadow-sm);
+  /* Inset ring keeps the active pill readable against the sidebar now that the fill is
+     dark enough for 4.5:1 white text. */
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4), var(--shadow-sm);
 }
 
 .nav .ic {
@@ -608,7 +614,7 @@ a {
 .b-Critical { background: #7a0012; }
 .c-High { background: #fdecef; color: #b00020; }
 .b-High { background: #b00020; }
-.c-Moderate { background: #fdefe6; color: #e8590c; }
+.c-Moderate { background: #fdefe6; color: #a84300; }
 .b-Moderate { background: #e8590c; }
 .c-Low { background: #eaf5eb; color: #2e7d32; }
 .b-Low { background: #2e7d32; }
@@ -761,7 +767,7 @@ select.mini:focus {
 
 .status-select.status-progress {
   background-color: #fff3e6;
-  color: #c98a00;
+  color: #8a5e00;
   border-color: #f5c89a;
 }
 
@@ -1501,7 +1507,7 @@ td.timeline-cell {
 }
 
 .timeline-pill.short {
-  background: #c98a00;
+  background: #7d5500;
   color: #fff;
 }
 
@@ -1575,7 +1581,7 @@ td.timeline-cell {
 
 .status-pill.progress {
   background: #fdf6e3;
-  color: #9a7200;
+  color: #856200;
 }
 
 .status-pill.closed {
@@ -1627,7 +1633,7 @@ td.timeline-cell {
 
 .obs-close-stat.watch {
   background: #fdefe6;
-  color: #c45a00;
+  color: #a84300;
   border-color: #f5d4b8;
 }
 
@@ -2755,7 +2761,7 @@ td.timeline-cell {
 
 .sop-pending-pill {
   background: #eef2f7;
-  color: #64748b;
+  color: #556377;
 }
 
 .split-btn-wrap {
@@ -3455,6 +3461,41 @@ td.timeline-cell {
 }
 
 /* Tracker table rows */
+/* Keyboard entry point for a clickable row (see <RowOpen>). Looks like the plain text it
+   replaces; becomes a visible target only on hover/keyboard focus. */
+.row-open {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.row-open:hover {
+  text-decoration: underline;
+}
+
+.row-open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 3px;
+  /* 2.4.11 — keep the focused row clear of the sticky topbar. */
+  scroll-margin: 90px 0 24px;
+}
+
+/* The row a focused control sits in gets the same highlight as hover, so the whole row
+   reads as the active target rather than just the title. */
+.tracker-row:focus-within > td,
+.watch-row:focus-within > td,
+.ext-row-clickable:focus-within > td,
+.ra-plan-row:focus-within > td {
+  background: color-mix(in oklch, var(--accent) 13%, #fff);
+}
+
 .tracker-row {
   cursor: pointer;
   transition: background 0.12s ease-out;
@@ -3737,7 +3778,7 @@ td.timeline-cell {
   height: 20px;
   border-radius: 50%;
   background: #eef2f7;
-  color: #94a3b8;
+  color: #556377;
   border: 1px solid #dbe3ea;
   font-size: 12px;
   font-weight: 700;
@@ -3753,7 +3794,7 @@ td.timeline-cell {
 /* Milestone reached but unwound by a Head rejection — shown, not hidden. */
 .verify-step.returned .verify-dot {
   background: #fdefe6;
-  color: #c05621;
+  color: #9e4419;
   border-color: #f0c9a8;
 }
 

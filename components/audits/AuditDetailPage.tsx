@@ -228,12 +228,12 @@ export default function AuditDetailPage({ auditId }: { auditId: string }) {
               <table style={{ marginTop: 6 }}>
                 <thead>
                   <tr>
-                    <th>Ref</th>
-                    <th>Test</th>
-                    <th>Objective</th>
-                    <th>Control / population</th>
-                    <th>Result</th>
-                    <th></th>
+                    <th scope="col">Ref</th>
+                    <th scope="col">Test</th>
+                    <th scope="col">Objective</th>
+                    <th scope="col">Control / population</th>
+                    <th scope="col">Result</th>
+                    <th scope="col"></th>
                   </tr>
                 </thead>
                 <tbody>

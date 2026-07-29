@@ -100,6 +100,52 @@ export function Kpi({
   );
 }
 
+/* ---- keyboard-activatable table row (WCAG 2.1.1 Level A) ----
+   Our data tables put the click handler on the <tr>, which is unreachable by keyboard.
+   The fix is NOT role="button" + tabindex on the row: a <tr> that claims the button role
+   drops out of the table's row/cell structure, so screen-reader table navigation breaks
+   for the whole table. Instead the row keeps its native semantics and the primary cell
+   carries a real <button> — focusable, Enter/Space-activatable and correctly named for
+   free. The <tr> onClick stays on as a pointer-only convenience.
+
+   Render this around the cell content that names the row (the title), and give the row
+   itself `aria-hidden`-free plain markup:
+
+     <tr className="tracker-row" onClick={open}>
+       <td><RowOpen onOpen={open} label={`Open ${o.title}`}><b>{o.title}</b></RowOpen></td> */
+export function RowOpen({
+  onOpen,
+  label,
+  expanded,
+  controls,
+  children,
+}: {
+  onOpen: () => void;
+  label?: string;
+  /* For rows that toggle an inline detail row rather than navigating. */
+  expanded?: boolean;
+  controls?: string;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className="row-open"
+      aria-label={label}
+      aria-expanded={expanded}
+      // The detail row only exists while open, so only reference it while open.
+      aria-controls={expanded ? controls : undefined}
+      onClick={(e) => {
+        // The row's own onClick would otherwise fire this a second time.
+        e.stopPropagation();
+        onOpen();
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 /* ---- avatar (port of avatarHTML) ---- */
 export function Avatar({
   user,

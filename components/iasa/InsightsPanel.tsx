@@ -77,11 +77,11 @@ export default function InsightsPanel({ rec }: { rec: IaSaRecord }) {
           <table className="hm">
             <thead>
               <tr>
-                <th className="axis">Domain</th>
+                <th scope="col" className="axis">Domain</th>
                 {CMAP.map(([k]) => (
-                  <th key={k}>{COL_LABEL[k] || k}</th>
+                  <th scope="col" key={k}>{COL_LABEL[k] || k}</th>
                 ))}
-                <th>Total</th>
+                <th scope="col">Total</th>
               </tr>
             </thead>
             <tbody>
@@ -218,11 +218,11 @@ export default function InsightsPanel({ rec }: { rec: IaSaRecord }) {
         <table>
           <thead>
             <tr>
-              <th style={{ width: 48 }}>Std</th>
-              <th>Standard</th>
-              <th style={{ width: 150 }}>Conformance</th>
-              <th>Action</th>
-              <th>Target</th>
+              <th scope="col" style={{ width: 48 }}>Std</th>
+              <th scope="col">Standard</th>
+              <th scope="col" style={{ width: 150 }}>Conformance</th>
+              <th scope="col">Action</th>
+              <th scope="col">Target</th>
             </tr>
           </thead>
           <tbody>

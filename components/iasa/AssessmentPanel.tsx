@@ -4,7 +4,7 @@
 // domain & principle, the principle rollup table, and the overall-conclusion card.
 
 import { useModal } from "@/components/modals/ModalProvider";
-import { CommitTextarea } from "@/components/ui";
+import { CommitTextarea, RowOpen } from "@/components/ui";
 import {
   CONF_HEX,
   GIAS,
@@ -92,11 +92,11 @@ export default function AssessmentPanel({ rec }: { rec: IaSaRecord }) {
                 <table className="iasa-std-table">
                   <thead>
                     <tr>
-                      <th className="iasa-std-num">Std</th>
-                      <th>Standard</th>
-                      <th className="iasa-std-conf">Conformance</th>
-                      <th>Evidence / gap / action</th>
-                      <th className="iasa-std-act"></th>
+                      <th scope="col" className="iasa-std-num">Std</th>
+                      <th scope="col">Standard</th>
+                      <th scope="col" className="iasa-std-conf">Conformance</th>
+                      <th scope="col">Evidence / gap / action</th>
+                      <th scope="col" className="iasa-std-act"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -112,7 +112,12 @@ export default function AssessmentPanel({ rec }: { rec: IaSaRecord }) {
                           onClick={() => modal.open(<StandardDialog rec={rec} num={num} />)}
                         >
                           <td className="iasa-std-num">
-                            <b>{num}</b>
+                            <RowOpen
+                              onOpen={() => modal.open(<StandardDialog rec={rec} num={num} />)}
+                              label={`Open standard ${num}: ${title}`}
+                            >
+                              <b>{num}</b>
+                            </RowOpen>
                           </td>
                           <td>{title}</td>
                           <td onClick={(e) => e.stopPropagation()}>
@@ -165,12 +170,12 @@ export default function AssessmentPanel({ rec }: { rec: IaSaRecord }) {
         <table className="iasa-std-table">
           <thead>
             <tr>
-              <th className="iasa-std-num">#</th>
-              <th>Principle</th>
-              <th>Domain</th>
-              <th className="iasa-std-conf">Conformance (rollup)</th>
-              <th>Maturity</th>
-              <th className="iasa-std-act"></th>
+              <th scope="col" className="iasa-std-num">#</th>
+              <th scope="col">Principle</th>
+              <th scope="col">Domain</th>
+              <th scope="col" className="iasa-std-conf">Conformance (rollup)</th>
+              <th scope="col">Maturity</th>
+              <th scope="col" className="iasa-std-act"></th>
             </tr>
           </thead>
           <tbody>
@@ -186,7 +191,12 @@ export default function AssessmentPanel({ rec }: { rec: IaSaRecord }) {
                   onClick={() => modal.open(<PrincipleDialog rec={rec} pn={p.n} />)}
                 >
                   <td className="iasa-std-num">
-                    <b>P{p.n}</b>
+                    <RowOpen
+                      onOpen={() => modal.open(<PrincipleDialog rec={rec} pn={p.n} />)}
+                      label={`Open principle ${p.n}: ${p.t}`}
+                    >
+                      <b>P{p.n}</b>
+                    </RowOpen>
                   </td>
                   <td>
                     <b>{p.t}</b>

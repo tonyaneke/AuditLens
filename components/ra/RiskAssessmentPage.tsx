@@ -9,7 +9,7 @@ import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useUser } from "@/components/chrome/UserContext";
 import { toast } from "@/components/feedback/ToastHost";
 import { useModal } from "@/components/modals/ModalProvider";
-import { Empty, Kpi } from "@/components/ui";
+import { Empty, Kpi, RowOpen } from "@/components/ui";
 import { logAudit } from "@/lib/client/audit-log";
 import { effectiveRole } from "@/lib/permissions";
 import { urlForView } from "@/lib/routes";
@@ -217,14 +217,14 @@ export default function RiskAssessmentPage() {
         <table className="ra-universe-table" style={{ marginTop: 6 }}>
           <thead>
             <tr>
-              <th>Auditable unit</th>
-              <th>Category</th>
-              <th>Risk score</th>
-              <th>Rating</th>
-              <th>Last audited</th>
-              <th>Frequency</th>
-              <th>Due</th>
-              <th></th>
+              <th scope="col">Auditable unit</th>
+              <th scope="col">Category</th>
+              <th scope="col">Risk score</th>
+              <th scope="col">Rating</th>
+              <th scope="col">Last audited</th>
+              <th scope="col">Frequency</th>
+              <th scope="col">Due</th>
+              <th scope="col"></th>
             </tr>
           </thead>
           <tbody>
@@ -305,12 +305,12 @@ export default function RiskAssessmentPage() {
             <table className="ra-plan-table" style={{ marginTop: 6 }}>
               <thead>
                 <tr>
-                  <th className="ra-plan-num-col">#</th>
-                  <th>Auditable unit</th>
-                  <th className="ra-rating-col">Rating</th>
-                  <th className="ra-timing-col">Timing</th>
-                  <th>Status</th>
-                  <th className="ra-link-col">Linked audit</th>
+                  <th scope="col" className="ra-plan-num-col">#</th>
+                  <th scope="col">Auditable unit</th>
+                  <th scope="col" className="ra-rating-col">Rating</th>
+                  <th scope="col" className="ra-timing-col">Timing</th>
+                  <th scope="col">Status</th>
+                  <th scope="col" className="ra-link-col">Linked audit</th>
                 </tr>
               </thead>
               <tbody>
@@ -323,7 +323,12 @@ export default function RiskAssessmentPage() {
                   >
                     <td className="ra-plan-num-col">{i + 1}</td>
                     <td>
-                      <b>{e.name}</b>
+                      <RowOpen
+                        onOpen={() => router.push(urlForView("raunit", { unit: e.id }))}
+                        label={`Open engagement: ${e.name}`}
+                      >
+                        <b>{e.name}</b>
+                      </RowOpen>
                       <div className="hint">
                         {e.freq}
                         {e.carryOverFrom ? (

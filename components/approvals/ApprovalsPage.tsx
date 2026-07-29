@@ -9,7 +9,7 @@ import { useState } from "react";
 import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useUser } from "@/components/chrome/UserContext";
 import { useModal } from "@/components/modals/ModalProvider";
-import { Kpi } from "@/components/ui";
+import { Kpi, RowOpen } from "@/components/ui";
 import { approvalItemTitle, approvalKindLabel } from "@/lib/workspace/approvals";
 import { approvals, fmtDateTime } from "@/lib/workspace/selectors";
 import type { Approval } from "@/lib/workspace/types";
@@ -68,7 +68,9 @@ export default function ApprovalsPage() {
           <span className="tag">{approvalKindLabel(ap.kind)}</span>
         </td>
         <td>
-          <b>{approvalItemTitle(db, ap)}</b>
+          <RowOpen onOpen={() => openDetails(ap)} label={`View approval details: ${approvalItemTitle(db, ap)}`}>
+            <b>{approvalItemTitle(db, ap)}</b>
+          </RowOpen>
           {ap.newStatus ? <div className="hint">→ {ap.newStatus}</div> : null}
         </td>
         <td>{ap.requestedByName || "—"}</td>
@@ -96,7 +98,9 @@ export default function ApprovalsPage() {
           <span className="tag">{approvalKindLabel(ap.kind)}</span>
         </td>
         <td>
-          <b>{approvalItemTitle(db, ap)}</b>
+          <RowOpen onOpen={() => openDetails(ap)} label={`View approval details: ${approvalItemTitle(db, ap)}`}>
+            <b>{approvalItemTitle(db, ap)}</b>
+          </RowOpen>
         </td>
         <td>{ap.requestedByName || "—"}</td>
         {withRequested ? <td>{ap.requestedAt ? fmtDateTime(ap.requestedAt) : "—"}</td> : null}
@@ -152,11 +156,11 @@ export default function ApprovalsPage() {
               <table style={{ marginTop: 6 }}>
                 <thead>
                   <tr>
-                    <th>Type</th>
-                    <th>Item</th>
-                    <th>Requested by</th>
-                    <th>Requested</th>
-                    <th style={{ textAlign: "right" }}>Decision</th>
+                    <th scope="col">Type</th>
+                    <th scope="col">Item</th>
+                    <th scope="col">Requested by</th>
+                    <th scope="col">Requested</th>
+                    <th scope="col" style={{ textAlign: "right" }}>Decision</th>
                   </tr>
                 </thead>
                 <tbody>{pend.map((ap) => pendingRow(ap))}</tbody>
@@ -169,12 +173,12 @@ export default function ApprovalsPage() {
               <table style={{ marginTop: 6 }}>
                 <thead>
                   <tr>
-                    <th>Type</th>
-                    <th>Item</th>
-                    <th>Requested by</th>
-                    <th>Decision</th>
-                    <th>Decided by</th>
-                    <th>When</th>
+                    <th scope="col">Type</th>
+                    <th scope="col">Item</th>
+                    <th scope="col">Requested by</th>
+                    <th scope="col">Decision</th>
+                    <th scope="col">Decided by</th>
+                    <th scope="col">When</th>
                   </tr>
                 </thead>
                 <tbody>{recentDecided.map((ap) => decidedRow(ap))}</tbody>
@@ -191,13 +195,13 @@ export default function ApprovalsPage() {
             <table style={{ marginTop: 6 }}>
               <thead>
                 <tr>
-                  <th>Type</th>
-                  <th>Item</th>
-                  <th>Requested by</th>
-                  <th>Requested</th>
-                  <th>Decision</th>
-                  <th>Decided by</th>
-                  <th>When</th>
+                  <th scope="col">Type</th>
+                  <th scope="col">Item</th>
+                  <th scope="col">Requested by</th>
+                  <th scope="col">Requested</th>
+                  <th scope="col">Decision</th>
+                  <th scope="col">Decided by</th>
+                  <th scope="col">When</th>
                 </tr>
               </thead>
               <tbody>{all.map((ap) => decidedRow(ap, true))}</tbody>
@@ -215,12 +219,12 @@ export default function ApprovalsPage() {
             <table style={{ marginTop: 6 }}>
               <thead>
                 <tr>
-                  <th>Type</th>
-                  <th>Item</th>
-                  <th>Requested by</th>
-                  <th>Decision</th>
-                  <th>Decided by</th>
-                  <th>When</th>
+                  <th scope="col">Type</th>
+                  <th scope="col">Item</th>
+                  <th scope="col">Requested by</th>
+                  <th scope="col">Decision</th>
+                  <th scope="col">Decided by</th>
+                  <th scope="col">When</th>
                 </tr>
               </thead>
               <tbody>{(tab === "approved" ? approved : rejected).map((ap) => decidedRow(ap))}</tbody>

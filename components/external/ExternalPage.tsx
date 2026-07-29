@@ -297,14 +297,14 @@ export default function ExternalPage() {
           <table className="dt-table">
             <thead>
               <tr>
-                <th>Ref</th>
-                <th>Title &amp; Source</th>
-                <th>Theme</th>
-                <th>Severity</th>
-                <th>Status</th>
-                <th>Owner</th>
-                <th>Target Date</th>
-                <th style={{ textAlign: "right" }}>Actions</th>
+                <th scope="col">Ref</th>
+                <th scope="col">Title &amp; Source</th>
+                <th scope="col">Theme</th>
+                <th scope="col">Severity</th>
+                <th scope="col">Status</th>
+                <th scope="col">Owner</th>
+                <th scope="col">Target Date</th>
+                <th scope="col" style={{ textAlign: "right" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -474,11 +474,11 @@ function ExtInsightsPanel({
         <table className="hm">
           <thead>
             <tr>
-              <th className="axis">Theme</th>
+              <th scope="col" className="axis">Theme</th>
               {topSrc.map((s) => (
-                <th key={s}>{s}</th>
+                <th scope="col" key={s}>{s}</th>
               ))}
-              <th>Total</th>
+              <th scope="col">Total</th>
             </tr>
           </thead>
           <tbody>
@@ -512,11 +512,11 @@ function ExtInsightsPanel({
         <table>
           <thead>
             <tr>
-              <th>External body</th>
-              <th>Findings</th>
-              <th>Closed</th>
-              <th>Closure rate</th>
-              <th>Overdue</th>
+              <th scope="col">External body</th>
+              <th scope="col">Findings</th>
+              <th scope="col">Closed</th>
+              <th scope="col">Closure rate</th>
+              <th scope="col">Overdue</th>
             </tr>
           </thead>
           <tbody>
@@ -598,9 +598,9 @@ function ExtInsightsPanel({
             <table>
               <thead>
                 <tr>
-                  <th>Source</th>
-                  <th>Finding</th>
-                  <th>Theme</th>
+                  <th scope="col">Source</th>
+                  <th scope="col">Finding</th>
+                  <th scope="col">Theme</th>
                 </tr>
               </thead>
               <tbody>

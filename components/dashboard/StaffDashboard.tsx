@@ -7,7 +7,7 @@ import { useUser } from "@/components/chrome/UserContext";
 import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import NewObsDialog from "@/components/obs/NewObsDialog";
-import { CritPill, Empty, Kpi, StatusPill } from "@/components/ui";
+import { CritPill, Empty, Kpi, RowOpen, StatusPill } from "@/components/ui";
 import { effectiveRole } from "@/lib/permissions";
 import {
   allObs,
@@ -327,13 +327,13 @@ export default function StaffDashboard() {
             <table style={{ marginTop: -2 }}>
               <thead>
                 <tr>
-                  <th>Area</th>
+                  <th scope="col">Area</th>
                   {CRITS.map((c) => (
-                    <th key={c} style={{ textAlign: "center" }} title={c}>
+                    <th scope="col" key={c} style={{ textAlign: "center" }} title={c}>
                       {({ Critical: "Crit", High: "High", Moderate: "Mod", Low: "Low", "Process Improvement": "PI" } as Record<string, string>)[c]}
                     </th>
                   ))}
-                  <th style={{ textAlign: "right" }}>Total</th>
+                  <th scope="col" style={{ textAlign: "right" }}>Total</th>
                 </tr>
               </thead>
               <tbody>
@@ -407,10 +407,10 @@ export default function StaffDashboard() {
               <table style={{ marginTop: 8 }}>
                 <thead>
                   <tr>
-                    <th>Observation</th>
-                    <th>Audit</th>
-                    <th>Prior ref</th>
-                    <th>Status</th>
+                    <th scope="col">Observation</th>
+                    <th scope="col">Audit</th>
+                    <th scope="col">Prior ref</th>
+                    <th scope="col">Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -450,13 +450,13 @@ export default function StaffDashboard() {
             <table>
               <thead>
                 <tr>
-                  <th>Expected close</th>
-                  <th>Criticality</th>
-                  <th>Observation</th>
-                  <th>Audit / Area</th>
-                  <th>Action owner</th>
-                  <th>Status</th>
-                  <th>Notes</th>
+                  <th scope="col">Expected close</th>
+                  <th scope="col">Criticality</th>
+                  <th scope="col">Observation</th>
+                  <th scope="col">Audit / Area</th>
+                  <th scope="col">Action owner</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Notes</th>
                 </tr>
               </thead>
               <tbody>
@@ -470,7 +470,6 @@ export default function StaffDashboard() {
                         className={`watch-row${isOpen ? " open" : ""}`}
                         onClick={() => setWatchOpen((cur) => ({ ...cur, [o.id]: !cur[o.id] }))}
                         title="Click for details"
-                        aria-expanded={isOpen}
                       >
                         <td>
                           {ec ? fmtDate(ec) : "—"}{" "}
@@ -484,10 +483,17 @@ export default function StaffDashboard() {
                           <CritPill crit={o.criticality} />
                         </td>
                         <td>
-                          <span className="watch-caret" aria-hidden="true">
-                            {isOpen ? "▾" : "▸"}
-                          </span>{" "}
-                          <b>{o.title}</b>
+                          <RowOpen
+                            onOpen={() => setWatchOpen((cur) => ({ ...cur, [o.id]: !cur[o.id] }))}
+                            label={`${isOpen ? "Hide" : "Show"} details for ${o.title}`}
+                            expanded={isOpen}
+                            controls={`watch-detail-${o.id}`}
+                          >
+                            <span className="watch-caret" aria-hidden="true">
+                              {isOpen ? "▾" : "▸"}
+                            </span>{" "}
+                            <b>{o.title}</b>
+                          </RowOpen>
                         </td>
                         <td>
                           {o._a.name}
@@ -516,7 +522,7 @@ export default function StaffDashboard() {
                       </tr>
                       {isOpen ? (
                         <tr className="watch-detail-row">
-                          <td colSpan={7}>
+                          <td colSpan={7} id={`watch-detail-${o.id}`}>
                             <div className="watch-detail anim-fade-in">
                               <div className="watch-detail-meta">
                                 {[
@@ -573,12 +579,12 @@ export default function StaffDashboard() {
             <table>
               <thead>
                 <tr>
-                  <th>Criticality</th>
-                  <th>Observation</th>
-                  <th>Audit / Area</th>
-                  <th>Action owner</th>
-                  <th>Timeline</th>
-                  <th>Status</th>
+                  <th scope="col">Criticality</th>
+                  <th scope="col">Observation</th>
+                  <th scope="col">Audit / Area</th>
+                  <th scope="col">Action owner</th>
+                  <th scope="col">Timeline</th>
+                  <th scope="col">Status</th>
                 </tr>
               </thead>
               <tbody>
