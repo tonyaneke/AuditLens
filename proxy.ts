@@ -18,6 +18,17 @@ function isPublic(pathname: string) {
   );
 }
 
+/* QA-016 — the audit found `Access-Control-Allow-Origin: *` on the document. Nothing in this
+   codebase sets it, so there is no "app shell" occurrence to delete: it is added by the
+   hosting edge. Strip it on the way out so it is gone wherever the app is the source. If a
+   post-deploy header capture still shows it, the remaining source is platform configuration
+   rather than code. The API sets no Allow-Credentials, so the wildcard is not exploitable
+   today — it simply should not be advertised. */
+function harden(response: NextResponse) {
+  response.headers.delete("Access-Control-Allow-Origin");
+  return response;
+}
+
 async function verifySessionToken(token: string) {
   const secret = process.env.AUTH_SECRET;
   if (!secret) return false;
@@ -33,7 +44,7 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (isPublic(pathname)) {
-    return NextResponse.next();
+    return harden(NextResponse.next());
   }
 
   const token = request.cookies.get("ams_session")?.value;
@@ -41,18 +52,18 @@ export async function proxy(request: NextRequest) {
 
   if (!valid) {
     if (pathname.startsWith("/api/")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return harden(NextResponse.json({ error: "Unauthorized" }, { status: 401 }));
     }
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("next", pathname);
-    return NextResponse.redirect(loginUrl);
+    return harden(NextResponse.redirect(loginUrl));
   }
 
   if (pathname === "/login") {
-    return NextResponse.redirect(new URL("/", request.url));
+    return harden(NextResponse.redirect(new URL("/", request.url)));
   }
 
-  return NextResponse.next();
+  return harden(NextResponse.next());
 }
 
 export const config = {
