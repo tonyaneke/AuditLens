@@ -169,7 +169,7 @@ function reconcileObservations(
       violations.push(`obs_delete_blocked:${curO.id}`);
       return curO;
     }
-    return reconcileOneObs(curO, incO, role, violations);
+    return reconcileOneObs(curO, incO, role, userId, violations);
   });
   // New observations: audit staff may add them (forced to pending); action owners cannot.
   for (const incO of incObs) {
@@ -180,7 +180,7 @@ function reconcileObservations(
   return out;
 }
 
-function reconcileOneObs(cur: Obj, inc: Obj, role: string, violations: string[]): Obj {
+function reconcileOneObs(cur: Obj, inc: Obj, role: string, userId: string, violations: string[]): Obj {
   const next: Obj = { ...inc };
   for (const f of CONTROLLED_OBS_FIELDS) {
     if (!jsonEq(inc[f], cur[f])) violations.push(`obs_field:${cur.id}:${f}`);
@@ -192,6 +192,7 @@ function reconcileOneObs(cur: Obj, inc: Obj, role: string, violations: string[])
       forceField(next, f, cur[f]);
     }
   }
+  applyDerivedStageTransition(cur, inc, next, role, userId);
   next.withdrawal = reconcileWithdrawal(
     cur.withdrawal as Obj | undefined,
     inc.withdrawal as Obj | undefined,
@@ -199,6 +200,54 @@ function reconcileOneObs(cur: Obj, inc: Obj, role: string, violations: string[])
     violations,
   );
   return next;
+}
+
+/* The remediation workflow advances through fields a non-head user is NOT allowed to write
+   (`status`, `closedDateISO`, `closureRejection`, `progressReport`). Legacy set them straight
+   from the client; here they are derived on the SERVER from the one field the actor *is*
+   permitted to set, so the legitimate stage advance still happens while an arbitrary
+   "status: Closed" write stays blocked. Head of Audit never reaches this — it returns early
+   as fully trusted.
+
+   Ordering note: this runs AFTER the controlled fields have been forced back to stored values,
+   so it is writing on top of a known-good baseline, not on top of whatever the client sent. */
+function applyDerivedStageTransition(cur: Obj, inc: Obj, next: Obj, role: string, userId: string): void {
+  const rejection = cur.closureRejection as { target?: string } | null | undefined;
+
+  // 1. An action owner (primary OR secondary) submits their closure response. The only field
+  //    they can set is ownerRectifiedAt; everything else about the transition follows from it.
+  const ownerJustResponded = !cur.ownerRectifiedAt && !!inc.ownerRectifiedAt;
+  if (ownerJustResponded) {
+    if (cur.status === "Open") next.status = "In Progress";
+    next.progressReport = null; // the outstanding request is satisfied by this response
+    if (rejection && rejection.target === "owner") next.closureRejection = null;
+  }
+
+  // 2. An auditor verifies the remediation and sends it to the Head for sign-off. Verification
+  //    proposes the closure date; the Head confirms it. Status stays un-Closed either way —
+  //    only the Head can set that, and only via the trusted path above.
+  const auditorJustVerified = role === STAFF_ROLE && !cur.reportVerifiedAt && !!inc.reportVerifiedAt;
+  if (auditorJustVerified) {
+    if (inc.closedDateISO) next.closedDateISO = inc.closedDateISO;
+    if (rejection && rejection.target === "auditor") next.closureRejection = null;
+  }
+
+  // 3. An owner's comment to Internal Audit satisfies an outstanding "update requested" flag
+  //    (legacy addObsUpdate cleared it client-side; owners can't write updateRequestedAt here,
+  //    so derive the clear from the one thing they can do — append a non-private update they
+  //    authored themselves). Private co-owner notes don't count as a response.
+  if (cur.updateRequestedAt && role !== STAFF_ROLE) {
+    const curIds = new Set(
+      asArray(cur.updates).map((u) => u.id as string).filter(Boolean),
+    );
+    const responded = asArray(inc.updates).some(
+      (u) => !curIds.has(u.id as string) && u.by === userId && u.audience !== "owner",
+    );
+    if (responded) {
+      next.updateRequestedAt = "";
+      next.updateRequestedBy = "";
+    }
+  }
 }
 
 function reconcileWithdrawal(

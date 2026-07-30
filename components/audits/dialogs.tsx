@@ -5,16 +5,18 @@
 // (modalPlanPrompt/doImportPlan), Edit plan meta (modalEditPlan), Raise exception from a test
 // (modalRaiseException/generateException), Generate observation from a one-liner
 // (modalGenerateObs), Generate executive summary (modalExecPrompt/doImportExec), Scan for
-// repeats (scanRepeats), bulk SOP drafting (modalSopBulk), CSV bulk import (doBulkImport) and
-// Reassign action owner (modalReassignObs). All ported from public/audit-bot.js.
+// repeats (scanRepeats), bulk SOP drafting (modalSopBulk), CSV bulk import (doBulkImport),
+// Reassign action owner (modalReassignObs) and Observation edit (modalObs/saveObs — edit only:
+// creation goes through NewObsDialog/RaiseFlow). All ported from public/audit-bot.js.
 
 import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { useUser } from "@/components/chrome/UserContext";
 import BusyButton from "@/components/feedback/BusyButton";
 import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import RaiseFlow from "@/components/obs/RaiseFlow";
-import { runAiJson } from "@/lib/client/ai";
+import { runAiJson, runAiText } from "@/lib/client/ai";
 import { logAudit } from "@/lib/client/audit-log";
 import { directory, loadDirectory } from "@/lib/client/directory";
 import { dl } from "@/lib/client/exports";
@@ -26,27 +28,33 @@ import {
   ASSURANCE,
   RESULTS,
   TIMELINES,
+  cancelPendingStatusChange,
   departments,
   findObsIn,
   findOrCreateAudit,
   findOrCreateReport,
   findRepeatCandidates,
   hasExecSummary,
+  isHead,
   normCrit,
   notifyBoth,
+  notifyHeadsApproval,
   obsFromAi,
   parseCSV,
   repLabel,
+  stampClosed,
   statusClass,
+  supersedePendingUpdate,
   testControl,
   testResultNotes,
   testTitle,
   worstCrit,
   zc,
   type AiObsDraft,
+  type RepeatCandidate,
 } from "@/lib/workspace/observations";
-import { CRITS, RUBRIC, STATUSES, isoNow, uid } from "@/lib/workspace/selectors";
-import type { Audit, AuditTest, AuditPlan, Observation, Report, WorkspaceDb } from "@/lib/workspace/types";
+import { CRITS, RUBRIC, STATUSES, approvals, expectedClose, fmtDate, isoNow, reportDateOf, uid } from "@/lib/workspace/selectors";
+import type { Audit, AuditTest, AuditPlan, Criticality, Observation, Report, WorkspaceDb } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 import ResultPill from "./ResultPill";
 
@@ -1639,6 +1647,380 @@ export function ModalReassignObsDialog({
         The newly-assigned owner(s) are notified. Reassignment works on any observation, including recent or past
         (closed) ones.
       </div>
+    </ModalFrame>
+  );
+}
+
+/* ---------------- Observation Edit Modal (legacy modalObs/saveObs) ----------------
+   Edit-only: legacy's add branch is dead — observations are raised through NewObsDialog/
+   RaiseFlow. The Head saves directly; audit staff cannot touch the live observation, so their
+   full proposed change is parked as an `observation_update` approval for the Head to decide
+   (the server enforces the same split — see CONTROLLED_OBS_FIELDS in lib/workspace-authz.ts). */
+
+export function ModalObsDialog({
+  auditId,
+  reportId,
+  obsId,
+}: {
+  auditId: string;
+  reportId: string;
+  obsId: string;
+}) {
+  const { db, mutate } = useWorkspace();
+  const modal = useModal();
+  const user = useUser();
+  const a = (db.audits || []).find((x) => x.id === auditId);
+  const r = a && (a.reports || []).find((x) => x.id === reportId);
+  const o = r && (r.observations || []).find((x) => x.id === obsId);
+
+  const [ref, setRef] = useState(String(o?.ref || ""));
+  const [crit, setCrit] = useState(String(o?.criticality || "Moderate"));
+  const [status, setStatus] = useState(String(o?.status || "Open"));
+  const [title, setTitle] = useState(String(o?.title || ""));
+  const [cat, setCat] = useState(String(o?.category || ""));
+  const [desc, setDesc] = useState(String(o?.description || ""));
+  const [criteria, setCriteria] = useState(String(o?.criteria || ""));
+  const [risk, setRisk] = useState(String(o?.risk || ""));
+  const [root, setRoot] = useState(String(o?.rootCause || ""));
+  const [rec, setRec] = useState(String(o?.recommendation || ""));
+  const [sop, setSop] = useState(String(o?.sopUpdate || ""));
+  const [sopErr, setSopErr] = useState("");
+  const [mgmt, setMgmt] = useState(String(o?.managementResponse || ""));
+  const [mgmtErr, setMgmtErr] = useState("");
+  const [owner, setOwner] = useState(String(o?.owner || ""));
+  const [tl, setTl] = useState(String(o?.timeline || ""));
+  const [due, setDue] = useState(String(o?.dueDate || ""));
+  const [isRep, setIsRep] = useState(!!o?.isRepeat);
+  const [repOf, setRepOf] = useState(String(o?.repeatOf || ""));
+  const [vby, setVby] = useState(String(o?.verifiedBy || ""));
+  const [cev, setCev] = useState(String(o?.closureEvidence || ""));
+  const [cdate, setCdate] = useState(String(o?.closedDateISO || ""));
+  const [cnote, setCnote] = useState(String(o?.closureNote || ""));
+
+  // Repeat auto-suggest (legacy suggestRepeats/markRepeatIdx). Computed at open from the stored
+  // title, recomputed on demand from the edited one.
+  const [sug, setSug] = useState<{ forTitle: string; cands: RepeatCandidate[] }>(() => ({
+    forTitle: String(o?.title || ""),
+    cands: findRepeatCandidates(db, String(o?.title || ""), reportId, obsId),
+  }));
+  const [flagged, setFlagged] = useState("");
+
+  if (!o) return null;
+  const head = isHead(user);
+
+  const base = reportDateOf(r);
+  const ec = expectedClose({ ...o, timeline: tl }, r);
+
+  async function generateSop() {
+    if (!title && !desc && !rec) {
+      toast("Add the observation details (title / description / recommendation) first.", "error");
+      return;
+    }
+    setSopErr("");
+    const prompt = `Act as an internal audit / policy specialist for ${db.org}. For the audit observation below, draft the precise revised Standard Operating Procedure wording that resolves it — i.e. exactly what the procedure should now say (you may reference a clause/section number and quote the new text). Return ONLY the revised SOP wording as plain text (no commentary, no JSON).
+
+Observation: ${title}
+What was found: ${desc || "-"}
+Criteria / expectation: ${criteria || "-"}
+Impact / risk: ${risk || "-"}
+Possible root cause: ${root || "-"}
+Recommendation: ${rec || "-"}`;
+    try {
+      setSop((await runAiText(prompt)).trim());
+    } catch (e) {
+      setSopErr(e instanceof Error ? e.message : "AI request failed.");
+    }
+  }
+
+  async function generateMgmt() {
+    if (!title && !desc) {
+      toast("Add the observation details first.", "error");
+      return;
+    }
+    setMgmtErr("");
+    const prompt = `Act as the process owner / management responding to an internal audit observation at ${db.org}. Enhance the brief management response below into a concise, ACTION-focused response. Guidance:
+- Do NOT over-acknowledge or restate the issue/risk — at most one short clause showing you understand it, then move on. The auditor has already described the issue.
+- Lead with what management is doing: the agreed remediation action, the responsible owner, and a target timeline.
+- Where applicable, state the interim / compensating control(s) applied now to contain the risk while the permanent, preventive fix is implemented.
+- Convey urgency through concrete actions and dates, not through adjectives or assurances of "priority".
+Be specific and concrete; do not over-promise, grovel, or be defensive. Write in the first person on behalf of management and keep it tight (one short paragraph, or two only if compensating + permanent fixes both apply). Return ONLY the enhanced management response as plain text (no commentary, no JSON).
+
+Observation: ${title}
+What was found: ${desc || "-"}
+Criteria / expectation: ${criteria || "-"}
+Impact / risk: ${risk || "-"}
+Possible root cause: ${root || "-"}
+Auditor recommendation: ${rec || "-"}
+Criticality: ${crit || "-"}${owner ? `\nAction owner: ${owner}` : ""}${tl ? `\nResolution timeline: ${tl}` : ""}${due ? `\nTarget date: ${due}` : ""}
+
+Management's current draft response: ${mgmt || "(none provided — draft an appropriate response from scratch)"}`;
+    try {
+      setMgmt((await runAiText(prompt)).trim());
+    } catch (e) {
+      setMgmtErr(e instanceof Error ? e.message : "AI request failed.");
+    }
+  }
+
+  function markRepeat(c: RepeatCandidate) {
+    setIsRep(true);
+    setRepOf(repLabel(c));
+    setFlagged(repLabel(c));
+  }
+
+  function save() {
+    if (!o) return;
+    if (!title.trim()) {
+      toast("Title required.", "error");
+      return;
+    }
+    const data: Partial<Observation> = {
+      ref: ref.trim(),
+      title: title.trim(),
+      category: cat.trim(),
+      description: desc.trim(),
+      criteria: criteria.trim(),
+      risk: risk.trim(),
+      rootCause: root.trim(),
+      recommendation: rec.trim(),
+      sopUpdate: sop.trim(),
+      criticality: crit as Criticality,
+      managementResponse: mgmt.trim(),
+      owner: owner.trim(),
+      timeline: tl,
+      dueDate: due.trim(),
+      status,
+      isRepeat: isRep,
+      repeatOf: repOf.trim(),
+      verifiedBy: vby.trim(),
+      closureEvidence: cev.trim(),
+      closureNote: cnote.trim(),
+    };
+    if (status === "Closed" && cdate) data.closedDateISO = cdate;
+
+    if (!head) {
+      // Audit staff cannot edit an observation directly — the full proposed change is
+      // routed to the Head of Audit for approval. The live observation is left untouched.
+      mutate((d) => {
+        supersedePendingUpdate(d, obsId, user);
+        approvals(d).push({
+          id: uid(),
+          kind: "observation_update",
+          obsId,
+          auditId,
+          reportId,
+          obsTitle: o.title || title.trim(),
+          changes: data,
+          requestedBy: user.id || "",
+          requestedByName: user.name || "",
+          requestedAt: new Date().toISOString(),
+          status: "pending",
+        });
+        notifyHeadsApproval(d, title.trim() + " (edit request)");
+      });
+      logAudit("obs.update_requested", "Requested edit to observation: " + title.trim(), {
+        auditId,
+        reportId,
+        observationId: obsId,
+      });
+      modal.close();
+      toast("Edit submitted to the Head of Audit for approval.", "success");
+      return;
+    }
+
+    mutate((d) => {
+      const cur = findObsIn(d, auditId, reportId, obsId);
+      if (!cur) return;
+      const oldStatus = cur.status || "Open";
+      stampClosed(cur, status);
+      Object.assign(cur, data);
+      if (status !== oldStatus) cancelPendingStatusChange(d, obsId, user); // head applied directly — supersede any pending request
+    });
+    modal.close();
+    toast("Observation updated.", "success");
+  }
+
+  return (
+    <ModalFrame
+      title="Edit observation"
+      footer={
+        <>
+          <button className="btn sec" type="button" onClick={modal.close}>
+            Cancel
+          </button>
+          <button className="btn" type="button" onClick={save}>
+            Save
+          </button>
+        </>
+      }
+    >
+      <div className="f3">
+        <div>
+          <label>Ref</label>
+          <input value={ref} onChange={(e) => setRef(e.target.value)} placeholder="e.g. 1.1" />
+        </div>
+        <div>
+          <label>Criticality *</label>
+          <select value={crit} onChange={(e) => setCrit(e.target.value)}>
+            {CRITS.map((c) => (
+              <option key={c}>{c}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label>Status</label>
+          <select value={status} onChange={(e) => setStatus(e.target.value)}>
+            {STATUSES.map((s) => (
+              <option key={s}>{s}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <label>Title *</label>
+      <input value={title} onChange={(e) => setTitle(e.target.value)} />
+      <label>Category / control theme</label>
+      <input value={cat} onChange={(e) => setCat(e.target.value)} />
+      <label>Detailed description (condition)</label>
+      <textarea value={desc} onChange={(e) => setDesc(e.target.value)} />
+      <label>Criteria / expectation</label>
+      <textarea value={criteria} onChange={(e) => setCriteria(e.target.value)} />
+      <label>Impact / risk (effect)</label>
+      <textarea value={risk} onChange={(e) => setRisk(e.target.value)} />
+      <label>Possible root cause</label>
+      <textarea value={root} onChange={(e) => setRoot(e.target.value)} />
+      <label>Recommendation</label>
+      <textarea value={rec} onChange={(e) => setRec(e.target.value)} />
+      <label>
+        Proposed SOP update <span className="hint">(what the procedure should say)</span>{" "}
+        <BusyButton className="btn sec sm ai-generate-btn" style={{ marginLeft: 6 }} busyLabel="Generating…" onClick={generateSop}>
+          Generate
+        </BusyButton>
+      </label>
+      <textarea value={sop} onChange={(e) => setSop(e.target.value)} />
+      {sopErr ? <div className="ai-err" style={{ marginTop: 6 }}>{sopErr}</div> : null}
+      <label>
+        Management response{" "}
+        <BusyButton className="btn sec sm ai-generate-btn" style={{ marginLeft: 6 }} busyLabel="Generating…" onClick={generateMgmt}>
+          Generate
+        </BusyButton>
+      </label>
+      <textarea value={mgmt} onChange={(e) => setMgmt(e.target.value)} />
+      {mgmtErr ? <div className="ai-err" style={{ marginTop: 6 }}>{mgmtErr}</div> : null}
+      <div className="f3">
+        <div>
+          <label>Action owner</label>
+          <input value={owner} onChange={(e) => setOwner(e.target.value)} placeholder="e.g. Head, Credit Operations" />
+        </div>
+        <div>
+          <label>Resolution timeline</label>
+          <select value={tl} onChange={(e) => setTl(e.target.value)}>
+            <option value="">— select —</option>
+            {TIMELINES.map((t) => (
+              <option key={t}>{t}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label>
+            Closure action <span className="hint">(optional override)</span>
+          </label>
+          <input value={due} onChange={(e) => setDue(e.target.value)} placeholder="blank = auto-compute" />
+        </div>
+      </div>
+      <div className="f2" style={{ marginTop: 4 }}>
+        <div>
+          <label>Repeat observation?</label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 400, marginTop: 4 }}>
+            <input type="checkbox" style={{ width: "auto" }} checked={isRep} onChange={(e) => setIsRep(e.target.checked)} />{" "}
+            Raised in a prior audit / report
+          </label>
+        </div>
+        <div>
+          <label>
+            Repeat of <span className="hint">(prior ref / period)</span>
+          </label>
+          <input value={repOf} onChange={(e) => setRepOf(e.target.value)} placeholder="e.g. IA/2025/014 or FY2025" />
+        </div>
+      </div>
+      <div style={{ marginTop: 10 }}>
+        <button
+          className="btn sec sm"
+          type="button"
+          onClick={() => setSug({ forTitle: title, cands: findRepeatCandidates(db, title, reportId, obsId) })}
+        >
+          🔁 Suggest possible repeats
+        </button>
+      </div>
+      <div style={{ marginTop: 6, fontSize: 13 }}>
+        {flagged ? (
+          <div className="hint" style={{ color: "var(--low)", fontWeight: 600 }}>✓ Flagged as repeat of: {flagged}</div>
+        ) : null}
+        {!sug.forTitle || sug.forTitle.trim().length < 4 ? (
+          <div className="hint">Add a fuller title, then check for repeats.</div>
+        ) : sug.cands.length ? (
+          <>
+            <div className="hint" style={{ marginBottom: 2 }}>
+              Possible repeats from other reports — confirm any that are genuine:
+            </div>
+            {sug.cands.map((c) => (
+              <div
+                className="row"
+                key={c.obs.id}
+                style={{ alignItems: "flex-start", gap: 8, borderTop: "1px solid var(--line)", padding: "7px 0" }}
+              >
+                <div style={{ flex: 1 }}>
+                  <b>{c.obs.title}</b>
+                  <div className="hint">
+                    {c.audit.name} · {c.report.title} ·{" "}
+                    <span className={statusClass(c.obs.status)}>{c.obs.status || "Open"}</span> ·{" "}
+                    {Math.round(c.score * 100)}% match
+                  </div>
+                </div>
+                <button className="btn sec sm" type="button" onClick={() => markRepeat(c)}>
+                  Mark as repeat
+                </button>
+              </div>
+            ))}
+          </>
+        ) : (
+          <div className="hint">No similar observations found in other reports.</div>
+        )}
+      </div>
+      <div className="hint" style={{ marginTop: 10 }}>
+        {base ? (
+          <>
+            Expected close = report date ({fmtDate(base)}) + window
+            {ec ? <>: <b>{fmtDate(ec)}</b></> : <> — set a timeline to compute</>}. Leave Closure action blank to use
+            this.
+          </>
+        ) : (
+          <>
+            Set the <b>report date</b> in the report front matter (Executive Summary → Edit) to enable aging &amp;
+            expected close.
+          </>
+        )}
+      </div>
+      <div style={{ marginTop: 12, paddingTop: 8, borderTop: "1px dashed var(--line)" }}>
+        <div className="ttl">
+          Closure verification{" "}
+          <span className="hint" style={{ textTransform: "none", fontWeight: 400 }}>(used when status = Closed)</span>
+        </div>
+      </div>
+      <div className="f3">
+        <div>
+          <label>Verified by</label>
+          <input value={vby} onChange={(e) => setVby(e.target.value)} placeholder="e.g. J. Auditor" />
+        </div>
+        <div>
+          <label>Closure evidence / WP ref</label>
+          <input value={cev} onChange={(e) => setCev(e.target.value)} />
+        </div>
+        <div>
+          <label>Closed date</label>
+          <input type="date" value={cdate} onChange={(e) => setCdate(e.target.value)} />
+        </div>
+      </div>
+      <label>Closure note</label>
+      <textarea value={cnote} onChange={(e) => setCnote(e.target.value)} />
     </ModalFrame>
   );
 }

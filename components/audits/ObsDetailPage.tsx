@@ -1,27 +1,76 @@
 "use client";
 
-// Observation detail page (/audits/[audit]/reports/[report]/observations/[obs]) —
-// React port of renderObs, comments, closure workflow, and SOP update link from audit-bot.js.
+/* Observation detail page — faithful port of renderObservation() in audit-bot.js.
 
-import { useState } from "react";
+   The previous version of this file was a simplified rewrite rather than a port: it dropped the
+   remediation block entirely, added an SOP button legacy never had, hoisted the closure actions
+   into the topbar, and closed observations by writing `status` directly — a controlled field the
+   server reverts for anyone but the Head (see lib/workspace-authz.ts). All of that is restored
+   to the legacy shape here; the closure chain now runs through ObsRemediation. */
+
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useUser } from "@/components/chrome/UserContext";
 import { toast } from "@/components/feedback/ToastHost";
-import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
+import { useModal } from "@/components/modals/ModalProvider";
+import { BackButton, CritPill, StatusPill } from "@/components/ui";
 import RichText from "@/components/ui/RichText";
 import { logAudit } from "@/lib/client/audit-log";
 import {
   canVerifyItem,
+  cancelPendingDelete,
+  cancelPendingStatusChange,
   isHead,
-  isPrimaryOwner,
-  obsUpdates,
+  isRecentlyCreated,
+  notifyHeadsApproval,
+  obsWithdrawStage,
+  pendingDelete,
+  pendingUpdate,
+  supersedePendingUpdate,
 } from "@/lib/workspace/observations";
-import { effectiveRole } from "@/lib/permissions";
-import { ck, fmtDate, fmtDateTime, isoToDate } from "@/lib/workspace/selectors";
-import type { ObsUpdate } from "@/lib/workspace/types";
+import {
+  approvals,
+  ck,
+  effectiveClose,
+  fmtDate,
+  fmtDateTime,
+  isOverdueObs,
+  isoToDate,
+  obsAge,
+  uid,
+} from "@/lib/workspace/selectors";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
-import { ModalReassignObsDialog } from "./lazy";
+import { ModalObsDialog, ModalReassignObsDialog } from "./lazy";
+import ObsRemediation from "./ObsRemediation";
+
+/* legacy obsApprovalBadge */
+function ApprovalBadge({ approval }: { approval: string | undefined }) {
+  if (approval === "pending") return <span className="pill sop-pending-pill">⏳ Pending Head approval</span>;
+  if (approval === "rejected") return <span className="pill c-Critical">Rejected</span>;
+  return null;
+}
+
+function Section({ title, text }: { title: string; text: string | undefined }) {
+  if (!text) return null;
+  return (
+    <section className="obs-detail-section">
+      <h4 className="obs-detail-label">{title}</h4>
+      <div className="obs-detail-content">
+        <RichText text={text} />
+      </div>
+    </section>
+  );
+}
+
+function Meta({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="obs-meta-item">
+      <span className="obs-meta-label">{label}</span>
+      <span className="obs-meta-value">{children}</span>
+    </div>
+  );
+}
 
 export default function ObsDetailPage({
   auditId,
@@ -35,52 +84,110 @@ export default function ObsDetailPage({
   const { db, mutate } = useWorkspace();
   const modal = useModal();
   const user = useUser();
+  const router = useRouter();
 
   const a = (db.audits || []).find((x) => x.id === auditId);
   const r = a && (a.reports || []).find((x) => x.id === reportId);
   const o = r && (r.observations || []).find((x) => x.id === obsId);
 
-  const [commentText, setCommentText] = useState("");
-  const [commentAudience, setCommentAudience] = useState<"" | "owner" | "ia_only">("");
-  const [closureNote, setClosureNote] = useState("");
-  const [closureEvidence, setClosureEvidence] = useState("");
+  const head = isHead(user);
+  const canEdit = head || canVerifyItem(user, o, a);
+  const backHref = a && r ? `/audits/${a.id}/reports/${r.id}` : "/audits";
+  const changePending = !head && !!o && (!!pendingUpdate(db, o.id) || !!pendingDelete(db, o.id));
 
-  const canVerify = canVerifyItem(user, o ?? undefined, a ?? undefined);
-  const isOwner = isPrimaryOwner(user, o ?? undefined);
+  /* Port of delObs. Non-head deletion is a request, not an act — an `observation_delete`
+     approval is parked for the Head (the server blocks the direct delete anyway, see
+     obs_delete_blocked in lib/workspace-authz.ts). */
+  function requestDelete() {
+    if (!o) return;
+    const title = o.title;
+    if (!head) {
+      void modal.confirm({
+        title: "Request deletion",
+        message: (
+          <>
+            Request deletion of <b>{title}</b>? The Head of Audit must approve before it is removed.
+          </>
+        ),
+        confirmLabel: "Request deletion",
+        onConfirm: () => {
+          if (pendingDelete(db, obsId)) {
+            toast("A deletion request is already awaiting approval.", "info");
+            return;
+          }
+          mutate((d) => {
+            approvals(d).push({
+              id: uid(),
+              kind: "observation_delete",
+              obsId,
+              auditId,
+              reportId,
+              obsTitle: title,
+              requestedBy: user.id || "",
+              requestedByName: user.name || "",
+              requestedAt: new Date().toISOString(),
+              status: "pending",
+            });
+            notifyHeadsApproval(d, title + " (deletion request)");
+          });
+          logAudit("obs.delete_requested", "Requested deletion of observation: " + title, {
+            auditId,
+            reportId,
+            observationId: obsId,
+          });
+          toast("Deletion request submitted to the Head of Audit.", "success");
+        },
+      });
+      return;
+    }
+    void modal.confirm({
+      title: "Delete observation",
+      message: (
+        <>
+          Delete <b>{title}</b>? This cannot be undone.
+        </>
+      ),
+      danger: true,
+      confirmLabel: "Delete",
+      onConfirm: () => {
+        mutate((d) => {
+          const curA = (d.audits || []).find((x) => x.id === auditId);
+          const curR = curA && (curA.reports || []).find((x) => x.id === reportId);
+          if (curR) curR.observations = (curR.observations || []).filter((x) => x.id !== obsId);
+          // Legacy delObs: tidy every pending request that pointed at the deleted observation.
+          supersedePendingUpdate(d, obsId, user);
+          cancelPendingStatusChange(d, obsId, user);
+          cancelPendingDelete(d, obsId, user);
+        });
+        logAudit("obs.deleted", "Deleted observation: " + title, { auditId, reportId, observationId: obsId });
+        router.push(backHref);
+      },
+    });
+  }
 
+  /* Topbar carries only what legacy put there: Reassign / Edit / Delete + the pending pill.
+     The closure actions belong to the remediation block, not up here. */
   usePageChrome({
-    title: o?.title || "Observation Detail",
-    actions: (
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <Link href={a && r ? `/audits/${a.id}/reports/${r.id}` : "/audits"} className="btn sec sm">
-          ← Back to Report
-        </Link>
-        {a && r && o ? (
-          <Link href={`/audits/${a.id}/reports/${r.id}/observations/${o.id}/sop`} className="btn sec sm">
-            SOP Update
-          </Link>
-        ) : null}
-        {a && r && o && (isHead(user) || canVerify) ? (
-          // Legacy modalReassignObs — Head of Audit, lead auditor, or the auditor who raised it.
-          <button
-            className="btn sec sm"
-            onClick={() => modal.open(<ModalReassignObsDialog auditId={a.id} reportId={r.id} obsId={o.id} />)}
-          >
+    title: o ? `${o.ref ? o.ref + " — " : ""}${o.title}` : "Observation",
+    back: <BackButton href={backHref} />,
+    actions: canEdit && a && r && o ? (
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        {head ? (
+          <button className="btn sm" type="button"
+            onClick={() => modal.open(<ModalReassignObsDialog auditId={a.id} reportId={r.id} obsId={o.id} />)}>
             Reassign owner
           </button>
         ) : null}
-        {isOwner && o && o.status !== "Closed" ? (
-          <button className="btn pri sm" onClick={handleReadyForClosure}>
-            Mark Ready for Closure
-          </button>
-        ) : null}
-        {canVerify && o && o.status !== "Closed" ? (
-          <button className="btn pri sm" onClick={openCloseDialog}>
-            Verify &amp; Close
-          </button>
-        ) : null}
+        <button className="btn sec sm" type="button"
+          onClick={() => modal.open(<ModalObsDialog auditId={a.id} reportId={r.id} obsId={o.id} />)}>
+          {head ? "Edit" : "Propose edit"}
+        </button>
+        <button className="btn ghost sm danger" type="button" onClick={requestDelete}>
+          {head ? "Delete" : "Request deletion"}
+        </button>
+        {changePending ? <span className="pill sop-pending-pill">⏳ Change pending approval</span> : null}
       </div>
-    ),
+    ) : null,
   });
 
   if (!a || !r || !o) {
@@ -88,228 +195,80 @@ export default function ObsDetailPage({
       <div className="card" style={{ padding: 40, textAlign: "center" }}>
         <h3>Observation not found</h3>
         <p className="hint">The requested observation could not be found.</p>
-        <Link href={a && r ? `/audits/${a.id}/reports/${r.id}` : "/audits"} className="btn sec" style={{ marginTop: 16 }}>
-          ← Back
-        </Link>
+        <Link href={backHref} className="btn sec" style={{ marginTop: 16 }}>← Back</Link>
       </div>
     );
   }
 
-  const updates = obsUpdates(o);
-
-  function addComment() {
-    if (!commentText.trim()) return;
-    const newUpd: ObsUpdate = {
-      id: "upd_" + Date.now(),
-      by: user.id || "",
-      byName: user.name || "User",
-      role: effectiveRole(user) || "",
-      at: new Date().toISOString(),
-      text: commentText.trim(),
-      evidence: [],
-      audience: commentAudience || undefined,
-    };
-    mutate((d) => {
-      const curA = (d.audits || []).find((x) => x.id === auditId);
-      const curR = curA && (curA.reports || []).find((x) => x.id === reportId);
-      const curO = curR && (curR.observations || []).find((x) => x.id === obsId);
-      if (curO) {
-        curO.updates = curO.updates || [];
-        curO.updates.push(newUpd);
-      }
-    });
-    logAudit("obs.comment_added", "Added comment on: " + o!.title);
-    setCommentText("");
-    toast("Comment added", "success");
-  }
-
-  function handleReadyForClosure() {
-    mutate((d) => {
-      const curA = (d.audits || []).find((x) => x.id === auditId);
-      const curR = curA && (curA.reports || []).find((x) => x.id === reportId);
-      const curO = curR && (curR.observations || []).find((x) => x.id === obsId);
-      if (curO) {
-        curO.status = "In Progress";
-        curO.ownerRectifiedAt = new Date().toISOString();
-        curO.ownerRectifiedByName = user.name || "";
-      }
-    });
-    logAudit("obs.ready_for_closure", "Marked ready for closure: " + o!.title);
-    toast("Marked Ready for Closure and submitted for audit verification", "success");
-  }
-
-  function handleCloseObservation() {
-    mutate((d) => {
-      const curA = (d.audits || []).find((x) => x.id === auditId);
-      const curR = curA && (curA.reports || []).find((x) => x.id === reportId);
-      const curO = curR && (curR.observations || []).find((x) => x.id === obsId);
-      if (curO) {
-        curO.status = "Closed";
-        curO.closedDateISO = new Date().toISOString();
-        curO.verifiedBy = user.name || "";
-        curO.closureNote = closureNote || String(curO.closureNote || "");
-        curO.closureEvidence = closureEvidence || String(curO.closureEvidence || "");
-      }
-    });
-    logAudit("obs.closed", "Closed observation: " + o!.title);
-    toast("Observation closed", "success");
-    modal.close();
-  }
-
-  function openCloseDialog() {
-    modal.open(
-      <ModalFrame
-        title="Verify &amp; Close Observation"
-        footer={
-          <>
-            <button className="btn sec" onClick={modal.close}>
-              Cancel
-            </button>
-            <button className="btn pri" onClick={handleCloseObservation}>
-              Confirm Closure
-            </button>
-          </>
-        }
-      >
-        <label>Closure Note / Sign-off Remarks</label>
-        <textarea
-          rows={3}
-          placeholder="Detail verification steps and evidence relied upon..."
-          value={closureNote}
-          onChange={(e) => setClosureNote(e.target.value)}
-        />
-        <label style={{ marginTop: 10 }}>Closure Evidence Summary</label>
-        <input
-          type="text"
-          placeholder="e.g. Document reference / ticket number"
-          value={closureEvidence}
-          onChange={(e) => setClosureEvidence(e.target.value)}
-        />
-      </ModalFrame>,
-    );
-  }
+  const ec = effectiveClose(o, r);
+  const age = obsAge(o, r);
+  const overdue = isOverdueObs(o, r);
 
   return (
-    <div>
-      <div className="card" style={{ marginBottom: 20 }}>
-        <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}>
-          <span className={`pill ${ck(o.criticality)}`}>{o.criticality} Rating</span>
-          <span className={`pill ${o.status === "Closed" ? "c-Low" : o.status === "In Progress" ? "c-Medium" : "c-High"}`}>
-            Status: {o.status || "Open"}
-          </span>
-          {o.category ? <span className="tag">Category: {String(o.category)}</span> : null}
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 20 }}>
-          <div>
-            <div className="ttl">Action Owner</div>
-            <div>{o.owner ? String(o.owner) : "Unassigned"}</div>
-          </div>
-          <div>
-            <div className="ttl">Timeline</div>
-            <div>{o.timeline ? String(o.timeline) : "Not specified"}</div>
-          </div>
-          <div>
-            <div className="ttl">Due Date</div>
-            <div>{o.dueDate ? String(o.dueDate) : "Not specified"}</div>
-          </div>
-          {o.closedDateISO ? (
-            <div>
-              <div className="ttl">Closed Date</div>
-              <div>{fmtDate(isoToDate(String(o.closedDateISO)))}</div>
-            </div>
+    <div className={`obs-detail-page anim-fade-in${isRecentlyCreated(o) ? " obs-new-highlight" : ""}`}>
+      <header className="obs-detail-hero">
+        <div className="obs-detail-badges">
+          <CritPill crit={o.criticality} />
+          <StatusPill status={o.status} />
+          <ApprovalBadge approval={o.obsApproval} />
+          {o.isRepeat ? (
+            <span className="pill repeat-pill" title={o.repeatOf || "Repeat finding"}>↻ REPEAT</span>
           ) : null}
+          {o.category ? <span className="tag">{String(o.category)}</span> : null}
+          {obsWithdrawStage(o) ? <span className={`pill ${ck(o.criticality)}`}>under review</span> : null}
         </div>
+        <h2 className="obs-detail-title">
+          {o.ref ? o.ref + " — " : ""}
+          {o.title}
+        </h2>
+      </header>
 
-        {o.description ? (
-          <div style={{ marginBottom: 16 }}>
-            <div className="ttl">Detailed Description</div>
-            <div className="txt"><RichText text={o.description} /></div>
-          </div>
+      <div className="obs-detail-meta">
+        {o.owner ? <Meta label="Owner">{String(o.owner)}</Meta> : null}
+        {o.secondaryOwner ? <Meta label="Co-owner">{String(o.secondaryOwner)}</Meta> : null}
+        {o.timeline ? <Meta label="Timeline">{String(o.timeline)}</Meta> : null}
+        {ec ? (
+          <Meta label="Expected close">
+            {fmtDate(ec)}
+            {overdue ? <> <span className="pill c-Critical">OVERDUE</span></> : null}
+          </Meta>
         ) : null}
-
-        {o.criteria ? (
-          <div style={{ marginBottom: 16 }}>
-            <div className="ttl">Criteria / Policy Expectation</div>
-            <div className="txt"><RichText text={o.criteria} /></div>
-          </div>
+        {age != null ? (
+          <Meta label="Age">
+            {age} day{age !== 1 ? "s" : ""}
+            {o.status === "Closed" ? " to close" : ""}
+          </Meta>
         ) : null}
-
-        {o.risk ? (
-          <div style={{ marginBottom: 16 }}>
-            <div className="ttl">Risk / Impact</div>
-            <div className="txt"><RichText text={o.risk} /></div>
-          </div>
-        ) : null}
-
-        {o.rootCause ? (
-          <div style={{ marginBottom: 16 }}>
-            <div className="ttl">Root Cause</div>
-            <div className="txt"><RichText text={o.rootCause} /></div>
-          </div>
-        ) : null}
-
-        {o.recommendation ? (
-          <div style={{ marginBottom: 16 }}>
-            <div className="ttl">Recommendation</div>
-            <div className="txt"><RichText text={o.recommendation} /></div>
-          </div>
-        ) : null}
-
-        {o.managementResponse ? (
-          <div style={{ marginBottom: 16 }}>
-            <div className="ttl">Management Response</div>
-            <div className="txt"><RichText text={o.managementResponse} /></div>
-          </div>
-        ) : null}
+        {o.createdAt ? <Meta label="Created">{fmtDateTime(o.createdAt)}</Meta> : null}
       </div>
 
-      {/* Comments & Updates Section */}
-      <div className="card">
-        <h3 style={{ marginTop: 0, marginBottom: 16 }}>Activity &amp; Comments ({updates.length})</h3>
-
-        {updates.length === 0 ? (
-          <div className="hint" style={{ marginBottom: 16 }}>
-            No comments or progress updates posted yet.
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 20 }}>
-            {updates.map((u) => (
-              <div key={u.id} className="note" style={{ padding: 12 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                  <b>{u.byName || "User"}</b>
-                  <span className="meta">{u.at ? fmtDateTime(u.at) : ""}</span>
-                </div>
-                <div style={{ whiteSpace: "pre-wrap" }}>{u.text}</div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}>
-          <label>Add a comment or progress update</label>
-          <textarea
-            rows={3}
-            placeholder="Type comment or update..."
-            value={commentText}
-            onChange={(e) => setCommentText(e.target.value)}
-          />
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
-            <select
-              value={commentAudience}
-              onChange={(e) => setCommentAudience(e.target.value as "" | "owner" | "ia_only")}
-              style={{ width: 180 }}
-            >
-              <option value="">Public Comment</option>
-              <option value="owner">Owner Note (private)</option>
-              <option value="ia_only">Internal Audit Only</option>
-            </select>
-            <button className="btn pri sm" onClick={addComment}>
-              Post Comment
-            </button>
-          </div>
-        </div>
+      <div className="obs-detail-sections">
+        <Section title="Detailed description" text={o.description} />
+        <Section title="Criteria / expectation" text={o.criteria} />
+        <Section title="Impact / risk" text={o.risk} />
+        <Section title="Possible root cause" text={o.rootCause} />
+        <Section title="Recommendation" text={o.recommendation} />
+        {/* Legacy shows the proposed SOP update as a section here. The SOP page is reached from
+            the report's "Proposed SOP updates" roll-up — never from a button on this page. */}
+        <Section title="Proposed SOP update" text={o.sopUpdate} />
+        <Section title="Management response" text={o.managementResponse} />
       </div>
+
+      <ObsRemediation
+        o={o}
+        a={a}
+        r={r}
+        commentsHref={`/audits/${a.id}/reports/${r.id}/observations/${o.id}/comments`}
+      />
+
+      {o.status === "Closed" ? (
+        <div className="obs-detail-closure hint">
+          ✓ Closed{o.closedDateISO ? " " + fmtDate(isoToDate(o.closedDateISO)) : ""} · Verified by{" "}
+          {o.headVerifiedByName || o.verifiedBy || "—"}
+          {o.raisedByName ? (<><br />Raised by {o.raisedByName}</>) : null}
+          {o.reportVerifiedByName ? " · Verified by auditor " + o.reportVerifiedByName : ""}
+        </div>
+      ) : null}
     </div>
   );
 }

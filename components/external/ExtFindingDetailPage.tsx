@@ -8,9 +8,11 @@ import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useUser } from "@/components/chrome/UserContext";
 import { useModal } from "@/components/modals/ModalProvider";
 import RichText from "@/components/ui/RichText";
+import ObsRemediation from "@/components/audits/ObsRemediation";
 import { ensureExtList } from "@/lib/workspace/external";
 import { isActionOwner, isHead } from "@/lib/workspace/observations";
 import { ck, fmtDate, isoToDate } from "@/lib/workspace/selectors";
+import type { Observation } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 import { ExtAssignDialog, ExtEditDialog } from "./lazy";
 
@@ -177,6 +179,16 @@ export default function ExtFindingDetailPage({ fid }: { fid: string }) {
           <div className="txt"><RichText text={f.closureEvidence} /></div>
         </div>
       ) : null}
+
+      {/* Legacy renderExtFinding called the SAME obsRemediationHTML as observations, keyed by
+          the sentinel ids {id:"ext"} that findObsIn resolves against the external register.
+          ExtFinding carries the identical workflow-chain fields (see types.ts), hence the cast. */}
+      <ObsRemediation
+        o={f as unknown as Observation}
+        a={{ id: "ext" }}
+        r={{ id: "ext" }}
+        commentsHref={`/external/${f.id}/comments`}
+      />
     </div>
   );
 }

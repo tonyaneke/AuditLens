@@ -18,3 +18,4 @@ export const ModalScanRepeatsDialog = dynamic(() => import("./dialogs").then((m)
 export const ModalSopBulkDialog = dynamic(() => import("./dialogs").then((m) => m.ModalSopBulkDialog), { loading: () => null });
 export const ModalBulkImportDialog = dynamic(() => import("./dialogs").then((m) => m.ModalBulkImportDialog), { loading: () => null });
 export const ModalReassignObsDialog = dynamic(() => import("./dialogs").then((m) => m.ModalReassignObsDialog), { loading: () => null });
+export const ModalObsDialog = dynamic(() => import("./dialogs").then((m) => m.ModalObsDialog), { loading: () => null });

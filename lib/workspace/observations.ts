@@ -89,6 +89,59 @@ export function obsUpdates(o: Observation): ObsUpdate[] {
   return o.updates;
 }
 
+export function isWithdrawn(o: Observation | undefined | null): boolean {
+  return !!(o && (o.withdrawn || obsWithdrawStage(o) === "withdrawn"));
+}
+
+/* ---------------- the observation conversation thread ----------------
+   Port of the thread assembly inside legacy renderObservation / obsRemediationHTML. Two rules
+   matter and both were missing from the first React port:
+
+   1. The thread is NOT just `o.updates`. Three closure-stage entries are appended so the
+      closure package reads as part of the conversation rather than a separate panel.
+   2. It is audience-filtered. `audience: "owner"` is a private owner-to-owner note and must
+      never reach Internal Audit or the Head; `audience: "ia_only"` (e.g. a Head→auditor
+      rejection note) must never reach an action owner. Rendering the raw array leaks both. */
+export function obsThread(o: Observation, ownerViewer: boolean): ThreadEntry[] {
+  const closed = o.status === "Closed";
+  const entries: ThreadEntry[] = [...obsUpdates(o)];
+
+  // Owners always see their own closure response; everyone sees it once closed.
+  if (o.ownerResponse && (closed || ownerViewer)) {
+    entries.push({
+      text: o.ownerResponse,
+      byName: o.ownerRectifiedByName || "",
+      role: "action_owner",
+      at: o.ownerRectifiedAt || "",
+      tag: "closure",
+      evidence: o.ownerResponseEvidence || [],
+    });
+  }
+  if (o.closureNote && closed) {
+    entries.push({
+      text: o.closureNote,
+      byName: o.reportVerifiedByName || "",
+      role: "audit_staff",
+      at: o.reportVerifiedAt || "",
+      tag: "closure_update",
+      evidence: o.closureFile ? [o.closureFile] : [],
+    });
+  }
+  if (o.headComment && closed) {
+    entries.push({
+      text: o.headComment,
+      byName: o.headVerifiedByName || "",
+      role: "head_of_audit",
+      at: o.headVerifiedAt || "",
+      tag: "closure_update",
+    });
+  }
+
+  return entries
+    .filter((u) => (u.audience !== "owner" || ownerViewer) && (u.audience !== "ia_only" || !ownerViewer))
+    .sort((x, y) => String(y.at || "").localeCompare(String(x.at || "")));
+}
+
 /* ---------------- audit-plan test accessors ----------------
    Legacy audit-bot.js writes `title` / `controlTested` / `resultNotes`; an earlier React
    dialog wrote `name` / `control` / `notes`. Read legacy-first with fallback so both eras
@@ -135,6 +188,18 @@ export function isPrimaryOwner(user: SessionUser, o: Observation | undefined): b
 }
 export function isSecondaryOwner(user: SessionUser, o: Observation | undefined): boolean {
   return !!(o && o.secondaryOwnerUserId && o.secondaryOwnerUserId === user.id);
+}
+/** Either owner. Gates the owner-side view: private notes, the composer, oversight copy. */
+export function isOwnerViewer(user: SessionUser, o: Observation | undefined): boolean {
+  return isPrimaryOwner(user, o) || isSecondaryOwner(user, o);
+}
+/* DEPARTS FROM LEGACY (deliberate, requested 2026-07-29): legacy gated "Ready for Closure" on
+   isPrimaryOwner alone — a secondary owner could comment but not respond, and the legacy modal
+   hard-refused them. Co-owners now carry the same responsibility as the primary owner. The
+   server already permitted this: workspace-authz reconciles observations by ROLE, never by
+   which user owns the record, so no authz change was needed to enable it. */
+export function canRespondToObs(user: SessionUser, o: Observation | undefined): boolean {
+  return isOwnerViewer(user, o);
 }
 /** The Head or the audit's lead auditor can verify anything on the report. */
 export function canVerifyReport(user: SessionUser, a: Audit | undefined): boolean {

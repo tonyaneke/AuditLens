@@ -22,6 +22,8 @@ import {
 } from "@hugeicons/core-free-icons";
 import type { SessionUser } from "@/lib/permissions";
 import { effectiveRole, isAdmin, visibleViews } from "@/lib/permissions";
+import { pendingApprovalCount } from "@/lib/workspace/selectors";
+import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 import RoleSwitcher from "./RoleSwitcher";
 import {
   hrefForView,
@@ -95,6 +97,17 @@ function initials(name: string) {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
+/* Pending-approvals count on the Approvals item — port of legacy updateApprovalsBadge().
+   Mounted only in the app shell (the legacy shell's script maintains its own badge on the
+   data-view buttons) and only for the Head, who is the one the queue waits on. Split into a
+   component so useWorkspace is called strictly inside the app shell's WorkspaceProvider. */
+function ApprovalsBadge() {
+  const { db } = useWorkspace();
+  const n = pendingApprovalCount(db);
+  if (!n) return null;
+  return <span className="nav-badge">{n}</span>;
+}
+
 // Legacy-shell navigation: prefer window.go (the script's router — its bridge redirects
 // migrated views to real URLs), with the historical fallbacks kept intact.
 function legacyNavigate(view: string) {
@@ -151,6 +164,10 @@ export default function SidebarNav({ user, shell = "legacy" }: SidebarNavProps) 
                 if (shell === "app") {
                   const href = hrefForView(item.view);
                   const active = activeView === item.view;
+                  const badge =
+                    item.view === "approvals" && effectiveRole(user) === "head_of_audit" ? (
+                      <ApprovalsBadge />
+                    ) : null;
                   // Migrated targets: client-side <Link>. Legacy targets: plain anchor —
                   // a full page load hands over to the audit-bot shell.
                   return MIGRATED_VIEWS.has(item.view) ? (
@@ -162,11 +179,13 @@ export default function SidebarNav({ user, shell = "legacy" }: SidebarNavProps) 
                     >
                       {icon}
                       {item.label}
+                      {badge}
                     </Link>
                   ) : (
                     <a key={item.view} href={href} data-view={item.view}>
                       {icon}
                       {item.label}
+                      {badge}
                     </a>
                   );
                 }

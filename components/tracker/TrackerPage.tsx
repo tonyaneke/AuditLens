@@ -15,8 +15,10 @@ import { effectiveRole } from "@/lib/permissions";
 
 // Modal-only: bulk owner reminders load on first open.
 const RemindersDialog = dynamic(() => import("./RemindersDialog"), { loading: () => null });
+import { StatusEditDialog, requestOwnerUpdateAction } from "@/components/audits/workflow-dialogs";
 import { esc, excelDoc, stamp, wordDoc } from "@/lib/client/exports";
 import { hrefForView, isLegacyPath } from "@/lib/routes";
+import { pendingStatusChange } from "@/lib/workspace/observations";
 import {
   allObs,
   allObsRaw,
@@ -65,7 +67,7 @@ const RECENT_COL: Record<string, string> = {
 type TrackerFilter = { crit: string; tl: string; status: string; repeat: boolean };
 
 export default function TrackerPage() {
-  const { db } = useWorkspace();
+  const { db, mutate } = useWorkspace();
   const user = useUser();
   const modal = useModal();
   const isHead = effectiveRole(user) === "head_of_audit";
@@ -497,14 +499,56 @@ export default function TrackerPage() {
                           <span className="hint">—</span>
                         )}
                       </td>
-                      <td>
+                      {/* Legacy: the status cell is interactive and must not open the row. */}
+                      <td onClick={(e) => e.stopPropagation()}>
                         <div className="tracker-status-cell">
                           <StatusPill status={o.status} />
                           {o.closureRejection && (o.status || "Open") !== "Closed" ? (
-                            <span className="pill" style={{ background: "#fdefe6", color: "#c05621" }} title="Returned by the Head of Audit">
+                            <span
+                              className="pill"
+                              style={{ background: "#fdefe6", color: "#c05621" }}
+                              title={`Returned by ${o.closureRejection.byName || "the Head of Audit"} to ${o.closureRejection.target === "owner" ? "the action owner" : "Internal Audit"}`}
+                            >
                               ↩ returned
                             </span>
                           ) : null}
+                          {(() => {
+                            const p = pendingStatusChange(db, o.id);
+                            return p ? (
+                              <span className="pill sop-pending-pill" title={`Change to ${String(p.newStatus || "")} awaiting Head approval`}>
+                                ⏳
+                              </span>
+                            ) : null;
+                          })()}
+                          {o.updateRequestedAt ? (
+                            <span className="pill sop-pending-pill" title="Update requested from owner">
+                              🔔
+                            </span>
+                          ) : null}
+                          <span className="tracker-status-actions">
+                            <button
+                              type="button"
+                              className="btn-icon-action"
+                              title="Edit status"
+                              aria-label={`Edit status: ${o.title}`}
+                              onClick={() =>
+                                modal.open(<StatusEditDialog auditId={o._a.id} reportId={o._r.id} obsId={o.id} />)
+                              }
+                            >
+                              ✎
+                            </button>
+                            {(o.status || "Open") !== "Closed" ? (
+                              <button
+                                type="button"
+                                className="btn-icon-action"
+                                title="Request update from owner"
+                                aria-label={`Request update from owner: ${o.title}`}
+                                onClick={() => requestOwnerUpdateAction(mutate, o._a.id, o._r.id, o, user)}
+                              >
+                                🔔
+                              </button>
+                            ) : null}
+                          </span>
                         </div>
                       </td>
                     </tr>
