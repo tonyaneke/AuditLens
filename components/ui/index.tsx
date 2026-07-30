@@ -156,7 +156,10 @@ export function Avatar({
 }) {
   const style: CSSProperties = { width: size, height: size };
   if (user?.photo) {
-    // eslint-disable-next-line @next/next/no-img-element -- data-URL avatars, not optimizable
+    /* eslint-disable-next-line @next/next/no-img-element --
+       QA-19: this is /api/users/[id]/photo, an authenticated route the Next image optimizer
+       cannot fetch. It is already version-stamped and served immutable, so the optimizer would
+       add nothing. */
     return <img src={user.photo} alt="" className="al-avatar" style={style} loading="lazy" decoding="async" />;
   }
   const initials =

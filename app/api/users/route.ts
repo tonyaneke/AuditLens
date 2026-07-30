@@ -3,6 +3,7 @@ import { hashPassword, requireHeadOfAudit, userToSession } from "@/lib/auth";
 import { writeAuditLog } from "@/lib/audit-log";
 import { randomToken } from "@/lib/azure-sso";
 import { loginUrlFromRequest, sendWelcomeEmail } from "@/lib/email";
+import { photoUrlFor } from "@/lib/photo-url";
 import { prisma } from "@/lib/prisma";
 import { ASSESSMENT_VIEWS, normalizeRole, normalizeSidebarAccess } from "@/lib/permissions";
 
@@ -13,7 +14,7 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const users = await prisma.user.findMany({
+  const rows = await prisma.user.findMany({
     orderBy: { createdAt: "asc" },
     select: {
       id: true,
@@ -25,8 +26,15 @@ export async function GET() {
       photo: true,
       active: true,
       createdAt: true,
+      updatedAt: true,
     },
   });
+
+  // QA-19 — cacheable photo URL rather than the inline base64 data URL. See lib/photo-url.ts.
+  const users = rows.map(({ photo, updatedAt, ...u }) => ({
+    ...u,
+    photo: photoUrlFor({ id: u.id, photo, updatedAt }),
+  }));
 
   return NextResponse.json({ users });
 }

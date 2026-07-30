@@ -4,7 +4,7 @@
 // lifecycle (startIASA/openIASA/completeIASA/reopenIASA/deleteIASA). The legacy `iasaMode`
 // global becomes ?tab=assessment|insights on /self-assessment.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { usePageChrome } from "@/components/chrome/PageChrome";
 import BusyButton from "@/components/feedback/BusyButton";
@@ -184,9 +184,16 @@ export default function SelfAssessmentPage() {
     );
   const cur = currentIaSa(db);
 
-  // Fold a pre-list single assessment into the list once (legacy iaSAAll()).
+  /* Fold a pre-list single assessment into the list once (legacy iaSAAll()).
+     QA-7 — see FraudPage: keyed on `version` and calls mutate(), which bumps `version`. The ref
+     makes the one-shot guarantee structural rather than a property of the predicate. */
+  const foldedIaSa = useRef(false);
   useEffect(() => {
-    if (needsIaSaMigration(db)) mutate((d) => void ensureIaSaList(d));
+    if (foldedIaSa.current) return;
+    if (needsIaSaMigration(db)) {
+      foldedIaSa.current = true;
+      mutate((d) => void ensureIaSaList(d));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version]);
 

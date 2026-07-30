@@ -11,6 +11,7 @@ import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import { Empty } from "@/components/ui";
 import { logAudit } from "@/lib/client/audit-log";
+import { headUsers, loadDirectory } from "@/lib/client/directory";
 import { emailNotify } from "@/lib/client/notify";
 import { computeExcoSnapshot } from "@/lib/exco-compute";
 import {
@@ -212,12 +213,13 @@ export default function ExcoPage() {
           /* reported below */
         }
         // Confirm to the Head(s) of Audit that the brief went out (in-app + email).
+        /* QA-7 — was a raw fetch("/api/directory"), bypassing the shared cache and re-fetching
+           the whole roster. loadDirectory() dedupes and caches; headUsers() also includes
+           admins, who act as Head of Audit and should receive this confirmation. */
         let heads: { id: string; email?: string }[] = [];
         try {
-          const dir = await fetch("/api/directory").then((r) => (r.ok ? r.json() : null));
-          heads = ((dir?.users || []) as { id: string; email?: string; role?: string }[]).filter(
-            (u) => u.role === "head_of_audit",
-          );
+          await loadDirectory();
+          heads = headUsers();
         } catch {
           /* best effort */
         }

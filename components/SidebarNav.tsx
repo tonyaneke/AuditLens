@@ -276,7 +276,7 @@ export default function SidebarNav({ user, shell = "legacy" }: SidebarNavProps) 
         <div className="sidebar-profile-head">
           <div className="sidebar-profile-avatar" aria-hidden="true">
             {user.photo ? (
-              // eslint-disable-next-line @next/next/no-img-element -- data-URL avatar
+              // eslint-disable-next-line @next/next/no-img-element -- see Avatar in components/ui
               <img src={user.photo} alt="" className="sidebar-profile-avatar-img" />
             ) : (
               initials(user.name)

@@ -23,6 +23,13 @@ import { toast } from "@/components/feedback/ToastHost";
 import { defaultWorkspace, type WorkspaceDb } from "./types";
 import { isSyncPaused } from "./sync-pause";
 
+/* QA-7 — adaptive poll interval. Starts fast so an active editing session sees a colleague's
+   change within a few seconds, then eases off while nothing is happening. Any observed change,
+   or the user returning to the tab, snaps it straight back to POLL_MIN_MS. */
+const POLL_MIN_MS = 4000;
+const POLL_MAX_MS = 30000;
+const POLL_BACKOFF = 1.5;
+
 type Store = {
   db: WorkspaceDb;
   lastUpdatedAt: string;
@@ -70,12 +77,24 @@ function persistSnapshot(db: WorkspaceDb, updatedAt: string): void {
   }
 }
 
-let bootFetch: Promise<WsPayload | null> | null =
-  typeof window !== "undefined"
-    ? fetch("/api/data")
-        .then((r) => (r.ok ? (r.json() as Promise<WsPayload>) : null))
-        .catch(() => null)
-    : null;
+/* QA-7 — the eager first fetch, started at module-eval time so the download overlaps hydration.
+   It used to fire unconditionally, including on /login, where there is no session: proxy.ts
+   401s it and the .catch swallowed the failure silently. That is a wasted round trip on the one
+   page where the user is waiting, and it made the network panel look busier than the app is.
+   Skipped on the public routes, which are the only ones that render without a session. */
+const PUBLIC_PATHS = ["/login", "/brief"];
+
+function shouldBootFetch(): boolean {
+  if (typeof window === "undefined") return false;
+  const path = window.location.pathname;
+  return !PUBLIC_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
+}
+
+let bootFetch: Promise<WsPayload | null> | null = shouldBootFetch()
+  ? fetch("/api/data")
+      .then((r) => (r.ok ? (r.json() as Promise<WsPayload>) : null))
+      .catch(() => null)
+  : null;
 
 type WorkspaceApi = {
   /** The live workspace blob. Mutate only via mutate(). */
@@ -181,7 +200,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       /* keep current copy */
     }
   }, [bump]);
-  refreshRef.current = refresh;
+  // Assigned in an effect, not during render — a ref write during render is not a legal
+  // side effect and React can discard the render it happened in.
+  useEffect(() => {
+    refreshRef.current = refresh;
+  }, [refresh]);
 
   // Initial load: adopt the session snapshot immediately (if any), then swap in the fresh
   // copy the moment the network delivers it.
@@ -230,17 +253,47 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     };
   }, [bump]);
 
-  // Poll for other users' changes (legacy pollData semantics). Two-step: a byte-sized
-  // ?meta=1 watermark check every tick; the full multi-MB blob is fetched only on change.
+  /* Poll for other users' changes (legacy pollData semantics). Two-step: a byte-sized
+     ?meta=1 watermark check every tick; the full multi-MB blob is fetched only on change.
+
+     QA-7 — the audit counted 40+ watermark requests on one screen. A fixed 4s tick is ~900
+     requests per hour per open tab, and it ran whether or not anyone was looking at the page.
+     Two changes, neither of which weakens the "see colleagues' edits promptly" guarantee:
+
+       1. Nothing polls while the tab is hidden. A background tab has no reader to keep current,
+          and the visibilitychange handler below re-syncs immediately on return — so coming back
+          to a tab is *fresher* than before, not staler.
+       2. The interval backs off from 4s toward 30s while the document is unchanged, and resets
+          to 4s the moment anything changes. Active collaboration keeps the fast tick; a tab left
+          open on a quiet document settles down to two requests a minute. */
   useEffect(() => {
     if (!ready) return;
-    const t = setInterval(async () => {
-      if (store.pendingSave || isSyncPaused()) return;
+
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let delay = POLL_MIN_MS;
+    let stopped = false;
+
+    const schedule = () => {
+      if (stopped) return;
+      timer = setTimeout(tick, delay);
+    };
+
+    async function tick() {
+      if (stopped) return;
+      // Skip a beat rather than fighting an in-flight save or an open modal.
+      if (store.pendingSave || isSyncPaused() || document.hidden) {
+        schedule();
+        return;
+      }
       try {
         const metaRes = await fetch("/api/data?meta=1");
         if (!metaRes.ok) return;
         const meta = await metaRes.json();
-        if (!meta || !meta.updatedAt || meta.updatedAt === store.lastUpdatedAt) return;
+        if (!meta || !meta.updatedAt || meta.updatedAt === store.lastUpdatedAt) {
+          // Unchanged: ease off, up to the ceiling.
+          delay = Math.min(POLL_MAX_MS, Math.round(delay * POLL_BACKOFF));
+          return;
+        }
         if (store.pendingSave || isSyncPaused()) return; // state may have changed mid-flight
         const res = await fetch("/api/data");
         if (!res.ok) return;
@@ -256,12 +309,31 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           store.db = json.data as WorkspaceDb;
           persistSnapshot(store.db, store.lastUpdatedAt);
           bump();
+          delay = POLL_MIN_MS; // someone is working — go back to the fast tick
         }
       } catch {
         /* transient */
+      } finally {
+        schedule();
       }
-    }, 4000);
-    return () => clearInterval(t);
+    }
+
+    // Returning to the tab re-syncs at once and restarts fast, so a hidden tab never shows a
+    // stale document to someone who has just looked at it.
+    const onVisible = () => {
+      if (document.hidden || stopped) return;
+      delay = POLL_MIN_MS;
+      if (timer) clearTimeout(timer);
+      void tick();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    schedule();
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [ready, bump]);
 
   // Never lose a debounced write on tab close / cross-shell navigation.

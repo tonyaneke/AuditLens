@@ -8,6 +8,7 @@ import {
   type SessionUser,
 } from "./permissions";
 import { effectiveMustChangePassword } from "./auth-config";
+import { photoUrlFor } from "./photo-url";
 
 const SESSION_COOKIE = "ams_session";
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
@@ -137,6 +138,7 @@ export function userToSession(user: {
   sidebarAccess: unknown;
   mustChangePassword: boolean;
   photo?: string | null;
+  updatedAt?: Date | string | null;
 }): SessionUser {
   return {
     id: user.id,
@@ -146,7 +148,9 @@ export function userToSession(user: {
     role: user.role,
     sidebarAccess: normalizeSidebarAccess(user.sidebarAccess),
     mustChangePassword: effectiveMustChangePassword(user.mustChangePassword),
-    photo: user.photo ?? null,
+    /* QA-19 — a cacheable URL, not the stored base64 data URL. /api/auth/me is fetched on
+       every page load, and the photo was inflating it by up to ~683 KB for one user. */
+    photo: photoUrlFor({ id: user.id, photo: user.photo, updatedAt: user.updatedAt }),
   };
 }
 

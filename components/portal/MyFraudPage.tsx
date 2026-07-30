@@ -11,6 +11,7 @@ import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import { Empty, Kpi, TintPill } from "@/components/ui";
 import { logAudit } from "@/lib/client/audit-log";
+import { headUsers, loadDirectory } from "@/lib/client/directory";
 import { emailNotify } from "@/lib/client/notify";
 import {
   ACTION_STATUS,
@@ -27,18 +28,15 @@ import { BAND_HEX, fmtDateTime } from "@/lib/workspace/selectors";
 import type { FraudRisk } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 
-type DirUser = { id: string; name?: string; email?: string; role?: string };
-
-// Legacy headUsers(): the notification fan-out targets every Head of Audit account.
-async function fetchHeadUsers(): Promise<DirUser[]> {
-  try {
-    const res = await fetch("/api/directory");
-    if (!res.ok) return [];
-    const json = await res.json();
-    return ((json.users || []) as DirUser[]).filter((u) => u.role === "head_of_audit");
-  } catch {
-    return [];
-  }
+/* Legacy headUsers(): the notification fan-out targets every Head of Audit account.
+ *
+ * QA-7 — this used to call fetch("/api/directory") directly, bypassing the module cache and
+ * in-flight dedupe in lib/client/directory.ts, so the whole roster was re-downloaded on every
+ * send. loadDirectory() populates that shared cache once; headUsers() reads it synchronously
+ * and, unlike the old local filter, correctly includes admins (who act as Head of Audit). */
+async function fetchHeadUsers() {
+  await loadDirectory();
+  return headUsers();
 }
 
 export default function MyFraudPage() {

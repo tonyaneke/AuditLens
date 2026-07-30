@@ -3,7 +3,7 @@
 // Audit Risk Assessment — React port of viewAuditRA (risk-ranked universe + annual plan) and
 // its toolbar/top actions, including the plan-year rollover that the legacy view ran on render.
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useUser } from "@/components/chrome/UserContext";
@@ -76,10 +76,18 @@ export default function RiskAssessmentPage() {
   const U = universe(db);
   const py = planYear(db);
 
-  // Legacy viewAuditRA() called rolloverPlan() on every render; here it is a one-shot mutation
-  // whenever the workspace actually has engagements left behind in an earlier plan year.
+  /* Legacy viewAuditRA() called rolloverPlan() on every render; here it is a one-shot mutation
+     whenever the workspace actually has engagements left behind in an earlier plan year.
+     QA-7 — see FraudPage: this effect is keyed on `version` and calls mutate(), which bumps
+     `version`. The ref makes the one-shot guarantee structural instead of relying on the
+     predicate flipping false. */
+  const rolledOver = useRef(false);
   useEffect(() => {
-    if (U.length && needsRollover(db)) mutate((d) => void rolloverPlan(d));
+    if (rolledOver.current) return;
+    if (U.length && needsRollover(db)) {
+      rolledOver.current = true;
+      mutate((d) => void rolloverPlan(d));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version, U.length]);
 

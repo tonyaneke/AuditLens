@@ -4,7 +4,7 @@
 // fraud risk register, Fraud Prevention Plan section) plus its topbar actions and the
 // one-time actions migration the legacy view ran on render.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useUser } from "@/components/chrome/UserContext";
@@ -143,10 +143,21 @@ export default function FraudPage() {
 
   const F = fraudList(db);
 
-  // Legacy viewFraud() ran migrateFraudActions() on every render; here it is a one-shot
-  // mutation whenever a risk still lacks its actions list or its rollup status is stale.
+  /* Legacy viewFraud() ran migrateFraudActions() on every render; here it is a one-shot
+     mutation whenever a risk still lacks its actions list or its rollup status is stale.
+
+     QA-7 — this effect depends on `version` and calls mutate(), which bumps `version`. It only
+     terminated because fraudMigrationNeeded() flips false after one pass; if the migration ever
+     failed to clear its own precondition it became an unbounded loop, each iteration issuing a
+     debounced PUT of the whole workspace. The ref makes "one-shot" structural rather than a
+     property of the predicate. */
+  const migrated = useRef(false);
   useEffect(() => {
-    if (F.length && fraudMigrationNeeded(db)) mutate((d) => migrateFraudActions(d));
+    if (migrated.current) return;
+    if (F.length && fraudMigrationNeeded(db)) {
+      migrated.current = true;
+      mutate((d) => migrateFraudActions(d));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version, F.length]);
 
