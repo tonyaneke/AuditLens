@@ -7,19 +7,23 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// SEC-03 — authentication is Microsoft Entra SSO only. `passwordHash` and `mustChangePassword`
+// were removed: no local login route ever existed, verifyPassword had no call sites, and the hash
+// column held an unusable random value for every user. Drop the columns with
+// `npx tsx scripts/drop-local-password.mts --apply` AFTER this code is deployed everywhere —
+// Prisma selects all scalar columns, so an instance still running the old code would 500 on every
+// user lookup if the columns went first.
 model User {
-  id                 String   @id @default(cuid())
-  name               String
-  email              String   @unique
-  passwordHash       String
-  department         String
-  role               String
-  sidebarAccess      Json     @default("[]")
-  mustChangePassword Boolean  @default(true)
-  active             Boolean  @default(true) // false = deactivated: sign-in blocked, history kept
-  photo              String?  // Microsoft profile picture as a data URL (fetched on SSO sign-in)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  department    String
+  role          String
+  sidebarAccess Json     @default("[]")
+  active        Boolean  @default(true) // false = deactivated: sign-in blocked, history kept
+  photo         String?  // Microsoft profile picture as a data URL (fetched on SSO sign-in)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 model WorkspaceData {

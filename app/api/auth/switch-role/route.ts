@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
-import { getSession, createSession } from "@/lib/auth";
+import { getSessionWithFlags, createSession } from "@/lib/auth";
 import { type SessionUser } from "@/lib/permissions";
 
 const SWITCHABLE_ROLES = ["head_of_audit", "audit_staff", "action_owner"] as const;
 
 export async function POST(request: Request) {
   try {
-    const session = await getSession();
+    /* getSessionWithFlags, not getSession: the latter trusts the JWT alone, so a deactivated or
+       deleted admin could keep switching roles — and re-signing their cookie — for the remaining
+       life of the token. This was the only auth route that skipped the DB re-check. */
+    const session = await getSessionWithFlags();
     if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

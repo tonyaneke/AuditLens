@@ -195,34 +195,60 @@ a {
   margin-top: 1px;
 }
 
+/* SEC-06 — this menu used to be revealed only by :hover / :focus-within on
+   .sidebar-profile-head, with no trigger element anywhere. Since the panel was
+   `visibility: hidden` its links were out of the tab order, so :focus-within could never fire
+   from the keyboard and the Audit log was unreachable without a mouse — which is why the audit
+   recorded the control as doing nothing. It is a real disclosure now (see ProfileMenu in
+   components/SidebarNav.tsx); open/closed is React state applying `hidden`, not styling. */
 .sidebar-profile-dropdown {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 100%;
-  padding-bottom: 8px;
-  opacity: 0;
-  visibility: hidden;
-  transform: translateY(4px);
-  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s;
-  pointer-events: none;
-  z-index: 5;
+  position: relative;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.sidebar-profile-dropdown-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: #9ac2b5;
+  cursor: pointer;
+}
+
+.sidebar-profile-dropdown-trigger:hover,
+.sidebar-profile-dropdown-trigger[aria-expanded="true"] {
+  background: rgba(255, 255, 255, 0.1);
+  color: #e8f5f0;
+}
+
+.sidebar-profile-dropdown-trigger:focus-visible {
+  outline: 2px solid #e8f5f0;
+  outline-offset: 2px;
 }
 
 .sidebar-profile-dropdown-panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  min-width: 170px;
   padding: 6px;
   background: #0d5a47;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  z-index: 5;
 }
 
-.sidebar-profile-head:hover .sidebar-profile-dropdown,
-.sidebar-profile-head:focus-within .sidebar-profile-dropdown {
-  opacity: 1;
-  visibility: visible;
-  transform: translateY(0);
-  pointer-events: auto;
+/* `hidden` is an attribute the browser already honours; this only stops the display:flex rules
+   further down from resurrecting it. */
+.sidebar-profile-dropdown-panel[hidden] {
+  display: none;
 }
 
 .sidebar-profile-dropdown-item {

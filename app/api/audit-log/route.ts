@@ -64,11 +64,7 @@ export async function POST(request: Request) {
   let session;
   try {
     session = await requireActiveSession();
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unauthorized";
-    if (message === "PasswordChangeRequired") {
-      return NextResponse.json({ error: "Password change required." }, { status: 403 });
-    }
+  } catch {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

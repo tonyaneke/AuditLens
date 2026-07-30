@@ -20,6 +20,8 @@ import {
   type ReactNode,
 } from "react";
 import { toast } from "@/components/feedback/ToastHost";
+import { useUser } from "@/components/chrome/UserContext";
+import { effectiveRole } from "@/lib/permissions";
 import { defaultWorkspace, type WorkspaceDb } from "./types";
 import { isSyncPaused } from "./sync-pause";
 
@@ -53,12 +55,26 @@ const store: Store = {
    on reload (stale-while-revalidate — the fresh copy replaces it when it lands); (2) the
    first fetch starts at script-eval time, before React has even hydrated. */
 
-const WS_CACHE_KEY = "al_ws_cache_v1";
+/* SEC-01 — the cached payload is now ROLE-SCOPED, so the key has to be too. An admin who switches
+   activeRole re-signs their cookie and reloads (components/RoleSwitcher.tsx); with a single fixed
+   key the snapshot taken as Head of Audit would be replayed into the action-owner view on the way
+   back up, showing records the scoped API would never have served. Keying by role means a switch
+   simply misses the cache and waits for the network. The v2 bump discards every pre-scoping
+   snapshot — those hold the full document. */
+const WS_CACHE_PREFIX = "al_ws_cache_v2";
+let wsCacheKey = WS_CACHE_PREFIX;
+
+/** Called by the provider once the session is known. Until then the generic key is used, which
+ *  only ever holds what the pre-session boot fetch returned. */
+export function setWorkspaceCacheScope(userId: string, role: string): void {
+  wsCacheKey = `${WS_CACHE_PREFIX}:${userId}:${role}`;
+}
+
 type WsPayload = { data?: WorkspaceDb; updatedAt?: string };
 
 function readCachedSnapshot(): { data: WorkspaceDb; updatedAt: string } | null {
   try {
-    const raw = sessionStorage.getItem(WS_CACHE_KEY);
+    const raw = sessionStorage.getItem(wsCacheKey);
     if (!raw) return null;
     const j = JSON.parse(raw) as { data?: WorkspaceDb; updatedAt?: string };
     if (j && j.data && Array.isArray(j.data.audits))
@@ -71,7 +87,7 @@ function readCachedSnapshot(): { data: WorkspaceDb; updatedAt: string } | null {
 
 function persistSnapshot(db: WorkspaceDb, updatedAt: string): void {
   try {
-    sessionStorage.setItem(WS_CACHE_KEY, JSON.stringify({ data: db, updatedAt }));
+    sessionStorage.setItem(wsCacheKey, JSON.stringify({ data: db, updatedAt }));
   } catch {
     /* quota — skip; boot falls back to the network */
   }
@@ -118,6 +134,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [version, setVersion] = useState(0);
   const [ready, setReady] = useState(false);
 
+  /* Point the snapshot cache at this user's effective role before anything reads it. Done during
+     render rather than in an effect on purpose: the initial-load effect below calls
+     readCachedSnapshot(), and effects run after render, so by then the key is already right. */
+  const user = useUser();
+  setWorkspaceCacheScope(user.id, effectiveRole(user));
+
   const bump = useCallback(() => setVersion((v) => v + 1), []);
   // saveNow needs refresh() on a 409, but refresh is declared below it. Held in a ref so the
   // two don't have to be reordered or made mutually dependent.
@@ -129,21 +151,30 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       store.saveTimer = null;
     }
     if (!store.pendingSave) return;
+
+    /* SEC-05 — never save without the watermark this save was built from. The server now rejects
+       an unversioned write with 400 rather than letting it overwrite whatever landed in between,
+       so saving blind would just lose the user's work with a confusing error. If we somehow have
+       no watermark (the initial GET has not landed), fetch one first and save against it. */
+    if (!store.lastUpdatedAt) {
+      try {
+        const metaRes = await fetch("/api/data?meta=1");
+        if (metaRes.ok) {
+          const meta = (await metaRes.json()) as { updatedAt?: string };
+          if (meta && meta.updatedAt) store.lastUpdatedAt = String(meta.updatedAt);
+        }
+      } catch {
+        /* offline — fall through; the save below fails and pendingSave is cleared as before */
+      }
+    }
+
     try {
       const res = await fetch("/api/data", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        /* QA-4 — send the watermark this save was built from. The server refuses the write
-           with 409 if the stored document has moved on since, instead of silently overwriting
-           whatever the other person just saved.
-
-           Omitted entirely when we have no watermark (the initial GET has not landed yet), so
-           a client that never saw a version is not locked out by a conflict it cannot resolve. */
-        body: JSON.stringify(
-          store.lastUpdatedAt
-            ? { data: store.db, baseUpdatedAt: store.lastUpdatedAt }
-            : { data: store.db },
-        ),
+        // The server refuses the write with 409 if the stored document has moved on since,
+        // instead of silently overwriting whatever the other person just saved.
+        body: JSON.stringify({ data: store.db, baseUpdatedAt: store.lastUpdatedAt || null }),
       });
       store.pendingSave = false;
       if (res.status === 409) {
@@ -162,7 +193,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const j = await res.json().catch(() => null);
         if (j && j.updatedAt) store.lastUpdatedAt = j.updatedAt;
         persistSnapshot(store.db, store.lastUpdatedAt);
+        return;
       }
+      /* Anything else (400 version_required, 413 too large, 500) used to be swallowed: the save
+         was dropped and the user was never told, so they carried on believing it had persisted.
+         The server rejects far more now — say so. */
+      const j = await res.json().catch(() => null);
+      toast(
+        (j && j.message) ||
+          (j && j.error) ||
+          "Your change could not be saved. Refresh the page and try again.",
+        "error",
+      );
     } catch {
       store.pendingSave = false;
     }
@@ -344,14 +386,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         void fetch("/api/data", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          // QA-4 — the watermark goes on this path too. The page is unloading so there is no
-          // opportunity to resolve a conflict interactively; losing the flush is the correct
-          // outcome, because the alternative is overwriting a colleague's saved work.
-          body: JSON.stringify(
-            store.lastUpdatedAt
-              ? { data: store.db, baseUpdatedAt: store.lastUpdatedAt }
-              : { data: store.db },
-          ),
+          /* QA-4 — the watermark goes on this path too. The page is unloading so there is no
+             opportunity to resolve a conflict interactively; losing the flush is the correct
+             outcome, because the alternative is overwriting a colleague's saved work.
+
+             SEC-05 — the field is always present, `null` when we never saw a version. Omitting it
+             is now a 400 that also writes a `security.unversioned_write_rejected` audit entry;
+             sending null gets the same refusal as a plain 409, without filling the security trail
+             with noise every time someone closes a tab mid-edit. */
+          body: JSON.stringify({ data: store.db, baseUpdatedAt: store.lastUpdatedAt || null }),
           keepalive: true,
         });
         store.pendingSave = false;

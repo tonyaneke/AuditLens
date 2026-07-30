@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const sessionUser = userToSession({ ...user, mustChangePassword: false });
+  const sessionUser = userToSession(user);
   const token = await signSessionToken(sessionUser);
 
   await writeAuditLog({

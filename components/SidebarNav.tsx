@@ -1,7 +1,7 @@
 "use client";
 
 import type { MouseEvent, ReactNode } from "react";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -15,6 +15,7 @@ import {
   Folder01Icon,
   JusticeScale01Icon,
   Logout01Icon,
+  MoreVerticalIcon,
   Settings01Icon,
   TaskDaily01Icon,
   TransactionHistoryIcon,
@@ -100,28 +101,30 @@ function initials(name: string) {
 
 /* QA-15 — profile-menu entry. In the React shell this is a real <Link>, so Settings and the
    audit log navigate client-side instead of reloading the document and re-downloading the whole
-   workspace. The legacy shell has no router, so it keeps the imperative navigate().
-
-   onMouseDown preventDefault is retained deliberately: the panel is revealed by :focus-within,
-   and letting mousedown move focus would close it before the click landed. */
+   workspace. The legacy shell has no router, so it keeps the imperative navigate(). */
 function ProfileNavItem({
   view,
   shell,
   onLegacyNav,
+  onNavigate,
   children,
 }: {
   view: ViewKey;
   shell: "app" | "legacy";
   onLegacyNav: (e: MouseEvent, view: ViewKey) => void;
+  onNavigate: () => void;
   children: ReactNode;
 }) {
   if (shell === "legacy") {
     return (
       <button
         type="button"
+        role="menuitem"
         className="sidebar-profile-dropdown-item"
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={(e) => onLegacyNav(e, view)}
+        onClick={(e) => {
+          onNavigate();
+          onLegacyNav(e, view);
+        }}
       >
         {children}
       </button>
@@ -130,11 +133,105 @@ function ProfileNavItem({
   return (
     <Link
       href={hrefForView(view)}
+      role="menuitem"
       className="sidebar-profile-dropdown-item"
-      onMouseDown={(e) => e.preventDefault()}
+      onClick={onNavigate}
     >
       {children}
     </Link>
+  );
+}
+
+/* SEC-06 — the profile menu holding Settings and the Audit log.
+ *
+ * The audit found the audit-log control "non-functional": clicking it produced no dialog, no
+ * route change and no network request. The viewer itself was fine — there was simply no way to
+ * open the menu. It had NO trigger element at all: the panel was revealed purely by CSS
+ * :hover / :focus-within on the surrounding row, and because the panel was `visibility: hidden`
+ * its links sat outside the tab order, so :focus-within could never fire from the keyboard and
+ * the only way in was to happen to hover the right 220px strip. An `onMouseDown` preventDefault
+ * on each item propped the hack up by stopping the click from moving focus.
+ *
+ * Replaced with an ordinary disclosure: a real button, aria-expanded, Escape to close with focus
+ * returned to the trigger, and outside-click to dismiss. The panel is `hidden` when closed, so it
+ * is out of the tab order because it is genuinely not available — not as a side effect of styling.
+ */
+function ProfileMenu({
+  shell,
+  onLegacyNav,
+}: {
+  shell: "app" | "legacy";
+  onLegacyNav: (e: MouseEvent, view: ViewKey) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+
+  const close = useCallback((returnFocus: boolean) => {
+    setOpen(false);
+    if (returnFocus) triggerRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        close(true);
+      }
+    }
+    function onPointerDown(e: PointerEvent) {
+      if (!wrapRef.current?.contains(e.target as Node)) close(false);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [open, close]);
+
+  return (
+    <div className="sidebar-profile-dropdown" ref={wrapRef}>
+      <button
+        type="button"
+        ref={triggerRef}
+        className="sidebar-profile-dropdown-trigger"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-controls="sidebar-profile-menu"
+        aria-label="Account menu"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <HugeiconsIcon icon={MoreVerticalIcon} size={16} strokeWidth={1.75} aria-hidden={true} />
+      </button>
+      <div
+        id="sidebar-profile-menu"
+        role="menu"
+        aria-label="Account"
+        className="sidebar-profile-dropdown-panel"
+        hidden={!open}
+      >
+        <ProfileNavItem
+          view="settings"
+          shell={shell}
+          onLegacyNav={onLegacyNav}
+          onNavigate={() => close(false)}
+        >
+          <HugeiconsIcon icon={Settings01Icon} size={16} strokeWidth={1.75} />
+          Settings
+        </ProfileNavItem>
+        <ProfileNavItem
+          view="auditlog"
+          shell={shell}
+          onLegacyNav={onLegacyNav}
+          onNavigate={() => close(false)}
+        >
+          <HugeiconsIcon icon={TransactionHistoryIcon} size={16} strokeWidth={1.75} />
+          Audit log
+        </ProfileNavItem>
+      </div>
+    </div>
   );
 }
 
@@ -287,23 +384,7 @@ export default function SidebarNav({ user, shell = "legacy" }: SidebarNavProps) 
             <div className="sidebar-profile-role">{displayRoleLabel(user)}</div>
           </div>
           {effectiveRole(user) === "head_of_audit" ? (
-            <div className="sidebar-profile-dropdown">
-              <div className="sidebar-profile-dropdown-panel">
-                {/* QA-15 — these navigated with window.location.assign, a full document reload
-                    that threw away the warmed workspace cache and re-downloaded the whole
-                    document, which is why "Audit log" felt like it did nothing for a second and
-                    then landed somewhere else. Client-side <Link> in the React shell; the
-                    legacy shell still needs its own navigate() call. */}
-                <ProfileNavItem view="settings" shell={shell} onLegacyNav={onProfileNav}>
-                  <HugeiconsIcon icon={Settings01Icon} size={16} strokeWidth={1.75} />
-                  Settings
-                </ProfileNavItem>
-                <ProfileNavItem view="auditlog" shell={shell} onLegacyNav={onProfileNav}>
-                  <HugeiconsIcon icon={TransactionHistoryIcon} size={16} strokeWidth={1.75} />
-                  Audit log
-                </ProfileNavItem>
-              </div>
-            </div>
+            <ProfileMenu shell={shell} onLegacyNav={onProfileNav} />
           ) : null}
         </div>
         {/* QA-13 — the role switcher used to sit inside .sidebar-profile-head, a horizontal

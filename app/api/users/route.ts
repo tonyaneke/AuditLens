@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { hashPassword, requireHeadOfAudit, userToSession } from "@/lib/auth";
+import { requireHeadOfAudit, userToSession } from "@/lib/auth";
 import { writeAuditLog } from "@/lib/audit-log";
-import { randomToken } from "@/lib/azure-sso";
 import { loginUrlFromRequest, sendWelcomeEmail } from "@/lib/email";
 import { photoUrlFor } from "@/lib/photo-url";
 import { prisma } from "@/lib/prisma";
@@ -96,10 +95,6 @@ export async function POST(request: Request) {
               (ASSESSMENT_VIEWS as readonly string[]).includes(v),
             )
           : [],
-      // SSO-only: there is no local password. Store an unusable random placeholder hash so the
-      // non-null column is satisfied; it is never used for authentication.
-      passwordHash: await hashPassword(randomToken()),
-      mustChangePassword: false,
     },
   });
 

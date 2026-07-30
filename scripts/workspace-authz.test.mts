@@ -1,5 +1,12 @@
-// Tests for lib/workspace-authz.ts — run with: npx tsx scripts/workspace-authz.test.mts
+/* eslint-disable @typescript-eslint/no-explicit-any --
+   These tests exist to prove the server rejects documents a well-typed client would never send:
+   partial saves, records echoed back out of scope, forged notifications. Typing the fixtures as
+   WorkspaceDb would make the compiler refuse exactly the malformed inputs under test. */
+
+// Tests for lib/workspace-authz.ts and lib/workspace-scope.ts.
+// Run with: npm test   (or: npx tsx scripts/workspace-authz.test.mts)
 import { authorizeWorkspaceWrite } from "../lib/workspace-authz";
+import { scopeWorkspace } from "../lib/workspace-scope";
 
 let pass = 0, fail = 0;
 function ok(cond: boolean, msg: string) { if (cond) { pass++; console.log("  ok " + msg); } else { fail++; console.error("  x FAIL: " + msg); } }
@@ -9,30 +16,69 @@ function baseWorkspace(): any {
   return {
     org: "CREDICORP",
     departments: [{ id: "d1", name: "Credit", headUserId: "own1", headName: "Ola", headEmail: "o@x.com" }],
-    fraudRisks: [{ id: "f1", scheme: "Ghost borrowers", likelihood: 4, impact: 4, controlStrength: "Weak", status: "Identified" }],
+    fraudRisks: [
+      {
+        id: "f1", scheme: "Ghost borrowers", likelihood: 4, impact: 4, controlStrength: "Weak",
+        status: "Identified", ownerUserId: "own1",
+        actions: [{ id: "fa1", text: "Monthly reconciliation", status: "Planned", ownerUserId: "own1" }],
+      },
+      // Somebody else's risk — own1 must never see or write it.
+      {
+        id: "f2", scheme: "Fee skimming", likelihood: 3, impact: 3, controlStrength: "Moderate",
+        status: "Identified", ownerUserId: "own2",
+        actions: [{ id: "fa2", text: "Dual approval", status: "Planned", ownerUserId: "own2" }],
+      },
+    ],
     auditUniverse: [{ id: "u1", name: "Credit Ops", factors: {} }],
     iaSAList: [{ id: "ia1", period: "H1 2026", std: {}, items: {} }],
-    extFindings: [{ id: "e1", title: "Weak access", status: "Open", severity: "High" }],
+    extFindings: [
+      { id: "e1", title: "Weak access", status: "Open", severity: "High", ownerUserId: "own1", owner: "Ola" },
+      // Assigned to somebody else — the control for every scoping assertion below.
+      { id: "e2", title: "CBN circular gap", status: "Open", severity: "Medium", ownerUserId: "own2", owner: "Bala" },
+    ],
     approvals: [{ id: "ap1", kind: "observation_update", obsId: "o1", status: "pending", requestedBy: "staff1" }],
     notifications: [],
-    audits: [{
-      id: "a1", name: "Credit Audit", leadAuditorId: "staff1", area: "Credit", status: "In progress",
-      reports: [{
-        id: "r1", title: "Loan Controls", refNo: "IA/01", status: "Final", execSummary: "orig",
-        observations: [{
-          id: "o1", title: "Weak SoD", criticality: "High", status: "Open", obsApproval: "approved",
-          ownerUserId: "own1", owner: "Ola", raisedBy: "staff1", isRepeat: false, repeatOf: "",
-          description: "orig desc", updates: [], withdrawal: undefined,
+    audits: [
+      {
+        id: "a1", name: "Credit Audit", leadAuditorId: "staff1", area: "Credit", status: "In progress",
+        reports: [{
+          id: "r1", title: "Loan Controls", refNo: "IA/01", status: "Final", execSummary: "orig",
+          observations: [
+            {
+              id: "o1", title: "Weak SoD", criticality: "High", status: "Open", obsApproval: "approved",
+              ownerUserId: "own1", owner: "Ola", raisedBy: "staff1", isRepeat: false, repeatOf: "",
+              description: "orig desc", updates: [], withdrawal: undefined,
+            },
+            // Same report, different owner — own1 must not receive or be able to write this.
+            {
+              id: "o2", title: "Stale limits", criticality: "Medium", status: "Open", obsApproval: "approved",
+              ownerUserId: "own2", owner: "Bala", raisedBy: "staff1", description: "other desc", updates: [],
+            },
+          ],
         }],
-      }],
-    }],
+      },
+      // A whole audit own1 has nothing in — must not appear in their payload at all.
+      {
+        id: "a2", name: "Treasury Audit", leadAuditorId: "staff1", area: "Treasury", status: "In progress",
+        reports: [{
+          id: "r2", title: "Settlement", refNo: "IA/02", status: "Final", execSummary: "confidential",
+          observations: [{
+            id: "o3", title: "Unreconciled nostro", criticality: "High", status: "Open",
+            obsApproval: "approved", ownerUserId: "own2", owner: "Bala", raisedBy: "staff1", updates: [],
+          }],
+        }],
+      },
+    ],
   };
 }
 const HEAD = { role: "head_of_audit", id: "head1" };
 const STAFF = { role: "audit_staff", id: "staff1" };
 const OWNER = { role: "action_owner", id: "own1" };
-const obs = (w: any) => w.audits[0].reports[0].observations;
-const findObs = (w: any, id: string) => obs(w).find((o: any) => o.id === id);
+const findObs = (w: any, id: string) =>
+  (w.audits || []).flatMap((a: any) => (a.reports || []).flatMap((r: any) => r.observations || []))
+    .find((o: any) => o.id === id);
+const findExt = (w: any, id: string) => (w.extFindings || []).find((f: any) => f.id === id);
+const findRisk = (w: any, id: string) => (w.fraudRisks || []).find((f: any) => f.id === id);
 
 console.log("== Head is fully trusted ==");
 {
@@ -89,16 +135,20 @@ console.log("\n== Staff cannot self-approve an approval ==");
 console.log("\n== Staff cannot touch head-only sections ==");
 {
   const cur = baseWorkspace(); const inc = clone(cur);
+  // NB: fraudRisks is deliberately NOT head-only. reconcileFraudRisks() returns the register
+  // verbatim for audit staff, who maintain it alongside the Head — same trust as reports and the
+  // external register. These two assertions used to claim otherwise and had been failing against
+  // the implementation; corrected here to assert the behaviour the code actually specifies.
   inc.fraudRisks[0].status = "Mitigated";
   inc.auditUniverse.push({ id: "u2", name: "New", factors: {} });
   inc.iaSAList[0].period = "H2 2026";
   inc.departments.push({ id: "d2", name: "Legal" });
   const r = authorizeWorkspaceWrite(STAFF.role, STAFF.id, cur, inc);
-  ok(r.data.fraudRisks[0].status === "Identified", "fraud risk change reverted");
+  ok(r.data.fraudRisks[0].status === "Mitigated", "staff may maintain the fraud register");
   ok(r.data.auditUniverse.length === 1, "audit universe addition reverted");
   ok(r.data.iaSAList[0].period === "H1 2026", "IA self-assessment change reverted");
   ok(r.data.departments.length === 1, "departments change reverted");
-  ok(["section:fraudRisks", "section:auditUniverse", "section:iaSAList", "section:departments"].every((s) => r.violations.includes(s)), "locked-section violations recorded");
+  ok(["section:auditUniverse", "section:iaSAList", "section:departments"].every((s) => r.violations.includes(s)), "locked-section violations recorded");
 }
 
 console.log("\n== Staff LEGITIMATE actions pass through ==");
@@ -161,8 +211,167 @@ console.log("\n== External-finding remediation stays writable for non-head ==");
 {
   const cur = baseWorkspace(); const inc = clone(cur);
   inc.extFindings[0].ownerResponse = "we fixed it";
+  inc.extFindings[0].ownerRectifiedAt = "2026-07-30T10:00:00.000Z";
   const r = authorizeWorkspaceWrite(OWNER.role, OWNER.id, cur, inc);
-  ok(r.data.extFindings[0].ownerResponse === "we fixed it", "owner can remediate an external finding");
+  ok(findExt(r.data, "e1").ownerResponse === "we fixed it", "owner can remediate their own external finding");
+  ok(findExt(r.data, "e1").status === "In Progress", "status transition is derived server-side");
+}
+
+/* ---------------- SEC-01 / SEC-02 — read scope and its write-side inverse ---------------- */
+
+console.log("\n== SEC-01: GET is scoped to the viewer ==");
+{
+  const db = baseWorkspace();
+  const full = scopeWorkspace(db, { id: STAFF.id, role: "audit_staff" });
+  ok(full === db, "audit staff get the document unchanged (identity, not a copy)");
+  ok(scopeWorkspace(db, { id: HEAD.id, role: "head_of_audit" }) === db, "head gets the document unchanged");
+
+  const mine = scopeWorkspace(db, { id: OWNER.id, role: "action_owner" }) as any;
+  ok(!!findObs(mine, "o1"), "owner receives their own observation");
+  ok(!findObs(mine, "o2"), "owner does NOT receive a colleague's observation in the same report");
+  ok(!findObs(mine, "o3"), "owner does NOT receive an observation in an audit they have nothing in");
+  ok(mine.audits.length === 1 && mine.audits[0].id === "a1", "audits with nothing visible are dropped entirely");
+  ok(mine.audits[0].reports[0].execSummary === undefined, "report exec summary is withheld from owners");
+  ok(!!findExt(mine, "e1") && !findExt(mine, "e2"), "external findings are scoped to the owner");
+  ok(!!findRisk(mine, "f1") && !findRisk(mine, "f2"), "fraud risks are scoped to the owner");
+  ok(mine.auditUniverse === undefined, "audit universe is not sent to owners");
+  ok(mine.iaSAList === undefined, "IA self-assessments are not sent to owners");
+  ok(mine.exco === undefined && mine.processReviews === undefined, "exco and process reviews are not sent to owners");
+  ok(mine.departments[0].headEmail === undefined, "department head contact details are stripped");
+  ok(mine.approvals.length === 1 && mine.approvals[0].id === "ap1", "owner sees only approvals about their own records");
+}
+
+console.log("\n== SEC-01: the scoped round-trip logs NO violations ==");
+{
+  // The whole reason read scope and write scope share lib/workspace-scope.ts. An owner's ordinary
+  // save omits every record they were never given; if the reconcilers could not tell that apart
+  // from a deletion, this would report a violation for each one.
+  const cur = baseWorkspace();
+  const served = clone(scopeWorkspace(cur, { id: OWNER.id, role: "action_owner" }));
+  served.audits[0].reports[0].observations[0].ownerRectifiedAt = "2026-07-30T10:00:00.000Z";
+
+  const r = authorizeWorkspaceWrite(OWNER.role, OWNER.id, cur, served);
+  ok(r.violations.length === 0, `no violations for a legitimate scoped save (got ${JSON.stringify(r.violations)})`);
+  ok(findObs(r.data, "o1").ownerRectifiedAt === "2026-07-30T10:00:00.000Z", "the owner's own change persists");
+  ok(findObs(r.data, "o1").status === "In Progress", "derived stage transition still applies");
+
+  // Nothing the owner never saw may be lost by omission.
+  ok(!!findObs(r.data, "o2"), "a colleague's observation survives an omitted save");
+  ok(!!findObs(r.data, "o3"), "an unrelated audit's observation survives");
+  ok(r.data.audits.length === 2, "the audit the owner never saw is still there");
+  ok(findExt(r.data, "e2").title === "CBN circular gap", "another owner's external finding survives");
+  ok(findRisk(r.data, "f2").scheme === "Fee skimming", "another owner's fraud risk survives");
+  ok(r.data.auditUniverse.length === 1 && r.data.iaSAList.length === 1, "head-only sections survive");
+  ok(r.data.departments[0].headEmail === "o@x.com", "department head details survive the stripped copy");
+  ok(r.data.audits[0].reports[0].execSummary === "orig", "exec summary survives the stripped copy");
+}
+
+console.log("\n== SEC-01: echoing back a record that was never served is refused ==");
+{
+  const cur = baseWorkspace();
+  const served = clone(scopeWorkspace(cur, { id: OWNER.id, role: "action_owner" })) as any;
+  // A crafted client re-adds a colleague's observation with edits.
+  served.audits[0].reports[0].observations.push({
+    id: "o2", title: "Rewritten by an owner", criticality: "Low", status: "Closed",
+    obsApproval: "approved", ownerUserId: "own2", updates: [],
+  });
+  served.extFindings.push({ id: "e2", title: "Rewritten", status: "Closed", ownerUserId: "own2" });
+  served.fraudRisks.push({ id: "f2", scheme: "Rewritten", status: "Mitigated", ownerUserId: "own2", actions: [] });
+
+  const r = authorizeWorkspaceWrite(OWNER.role, OWNER.id, cur, served);
+  ok(findObs(r.data, "o2").title === "Stale limits", "the colleague's observation is unchanged");
+  ok(findExt(r.data, "e2").title === "CBN circular gap", "the colleague's external finding is unchanged");
+  ok(findRisk(r.data, "f2").scheme === "Fee skimming", "the colleague's fraud risk is unchanged");
+  ok(r.violations.includes("out_of_scope_write:obs:o2"), "out-of-scope observation write recorded");
+  ok(r.violations.includes("out_of_scope_write:ext:e2"), "out-of-scope external write recorded");
+  ok(r.violations.includes("out_of_scope_write:fraud:f2"), "out-of-scope fraud write recorded");
+}
+
+console.log("\n== SEC-02: external findings are no longer taken wholesale ==");
+{
+  const cur = baseWorkspace(); const inc = clone(cur);
+  // Before this change `next.extFindings = inc.extFindings` — so this wiped the register.
+  inc.extFindings = [];
+  const r = authorizeWorkspaceWrite(OWNER.role, OWNER.id, cur, inc);
+  ok(r.data.extFindings.length === 2, "an owner cannot delete the external register");
+  ok(r.violations.includes("ext_delete_blocked:e1"), "deleting a finding they hold is a violation");
+  ok(!r.violations.includes("ext_delete_blocked:e2"), "omitting one they never held is not");
+
+  const inc2 = clone(cur);
+  inc2.extFindings[0].severity = "Low";
+  inc2.extFindings[0].status = "Closed";
+  const r2 = authorizeWorkspaceWrite(OWNER.role, OWNER.id, cur, inc2);
+  ok(findExt(r2.data, "e1").severity === "High", "an owner cannot re-rate a finding");
+  ok(findExt(r2.data, "e1").status === "Open", "an owner cannot close a finding");
+  ok(r2.violations.some((v) => v.startsWith("ext_field:e1:")), "ext field violation recorded");
+
+  const inc3 = clone(cur);
+  inc3.extFindings.push({ id: "e9", title: "Invented", status: "Open" });
+  const r3 = authorizeWorkspaceWrite(OWNER.role, OWNER.id, cur, inc3);
+  ok(!findExt(r3.data, "e9"), "an owner cannot raise an external finding");
+  ok(r3.violations.includes("ext_create_blocked:e9"), "ext create block recorded");
+
+  const incStaff = clone(cur);
+  incStaff.extFindings[0].severity = "Low";
+  const rStaff = authorizeWorkspaceWrite(STAFF.role, STAFF.id, cur, incStaff);
+  ok(findExt(rStaff.data, "e1").severity === "Low", "audit staff still maintain the external register");
+}
+
+console.log("\n== SEC-02: notifications are create-but-not-modify ==");
+{
+  const cur = baseWorkspace();
+  cur.notifications = [
+    { id: "n1", userId: "own1", kind: "info", text: "yours", link: "myobs", read: false, at: "2026-07-01T00:00:00.000Z" },
+    { id: "n2", userId: "own2", kind: "info", text: "theirs", link: "myobs", read: false, at: "2026-07-01T00:00:00.000Z" },
+  ];
+
+  const inc = clone(cur);
+  inc.notifications[0].read = true;                       // legitimate: mark my own as read
+  inc.notifications[1].text = "phishing link";            // forbidden: rewrite someone else's
+  inc.notifications.push({ id: "n3", userId: "own2", kind: "info", text: "assigned to you", link: "myobs", read: false, at: "1970-01-01T00:00:00.000Z" });
+
+  const r = authorizeWorkspaceWrite(OWNER.role, OWNER.id, cur, inc);
+  const byId = (id: string) => r.data.notifications.find((n: any) => n.id === id);
+  ok(byId("n1").read === true, "a user may mark their own notification read");
+  ok(byId("n2").text === "theirs", "a user cannot rewrite someone else's notification");
+  ok(r.violations.includes("notif_foreign_write_blocked:n2"), "foreign notification write recorded");
+  ok(byId("n3") && byId("n3").text === "assigned to you", "creating a notification for another user is allowed");
+  ok(byId("n3").byUserId === "own1", "a created notification is stamped with its real author");
+  ok(byId("n3").at !== "1970-01-01T00:00:00.000Z", "a created notification is stamped with the server time");
+
+  const inc2 = clone(cur);
+  inc2.notifications[0].text = "self-serving rewrite";
+  const r2 = authorizeWorkspaceWrite(OWNER.role, OWNER.id, cur, inc2);
+  ok(r2.data.notifications.find((n: any) => n.id === "n1").text === "yours", "only the read flag moves on your own row");
+  ok(r2.violations.includes("notif_field:n1:text"), "own-notification field violation recorded");
+}
+
+console.log("\n== SEC-02: owners cannot rewrite report metadata ==");
+{
+  const cur = baseWorkspace(); const inc = clone(cur);
+  inc.audits[0].reports[0].title = "Renamed by an owner";
+  inc.audits[0].reports[0].execSummary = "overwritten";
+  const r = authorizeWorkspaceWrite(OWNER.role, OWNER.id, cur, inc);
+  ok(r.data.audits[0].reports[0].title === "Loan Controls", "report title is locked for owners");
+  ok(r.data.audits[0].reports[0].execSummary === "orig", "exec summary is not blanked by an owner save");
+
+  const inc2 = clone(cur);
+  inc2.audits[0].reports.push({ id: "r9", title: "Invented", observations: [] });
+  const r2 = authorizeWorkspaceWrite(OWNER.role, OWNER.id, cur, inc2);
+  ok(r2.data.audits[0].reports.length === 1, "an owner cannot create a report");
+  ok(r2.violations.includes("report_create_blocked:r9"), "report create block recorded");
+}
+
+console.log("\n== Admin acts as their switched role ==");
+{
+  const cur = baseWorkspace(); const inc = clone(cur);
+  inc.audits[0].reports[0].observations[0].title = "Admin edited";
+  // No activeRole → head of audit → fully trusted.
+  const asHead = authorizeWorkspaceWrite("admin", "admin1", cur, clone(inc));
+  ok(findObs(asHead.data, "o1").title === "Admin edited", "admin with no activeRole is trusted as head");
+  // Viewing as an action owner → scoped and reconciled like one.
+  const asOwner = authorizeWorkspaceWrite("admin", "own1", cur, clone(inc), "action_owner");
+  ok(findObs(asOwner.data, "o1").title === "Weak SoD", "admin viewing as an owner is reconciled like one");
 }
 
 console.log("\n----------------------------------------");

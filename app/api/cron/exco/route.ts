@@ -79,7 +79,18 @@ export async function GET(request: Request) {
   // Vercel Cron sends "Authorization: Bearer <CRON_SECRET>" automatically when CRON_SECRET is set.
   const authHeader = request.headers.get("authorization") || "";
   const bearer = authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
-  if (secret && key !== secret && bearer !== secret) {
+  /* Fail closed. This route is in proxy.ts PUBLIC_PATHS — it has to be, since Vercel Cron calls
+     it without a session — so CRON_SECRET is its only authentication. The check used to be
+     `if (secret && ...)`, which meant an unset or blank CRON_SECRET skipped authorization
+     altogether and left the "send the Executive Assurance Brief to EXCO" endpoint open to anyone
+     who knew the URL. A missing secret is a misconfiguration, not permission to run. */
+  if (!secret) {
+    return NextResponse.json(
+      { ok: false, error: "CRON_SECRET is not configured." },
+      { status: 503 },
+    );
+  }
+  if (key !== secret && bearer !== secret) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 

@@ -1,4 +1,15 @@
 import type { WorkspaceDb } from "./db-data";
+import {
+  canSeeExt,
+  canSeeFraudAction,
+  canSeeFraudRisk,
+  canSeeObs,
+  isFullScope,
+  scopeWorkspace,
+  viewerFor,
+  visibleObsIds,
+  type Viewer,
+} from "./workspace-scope";
 
 // Server-side authorization for writes to the shared workspace document (/api/data PUT).
 //
@@ -8,6 +19,19 @@ import type { WorkspaceDb } from "./db-data";
 // re-imposes those rules on the server: for a non-head user it rebuilds the document from the stored
 // copy and re-applies only the changes that role is permitted to make. A well-behaved client never
 // sends anything disallowed, so `data` comes back identical; a malicious one is silently neutralised.
+//
+// SEC-01 — since GET now scopes the document (lib/workspace-scope.ts), a scoped client's save
+// legitimately OMITS every record it was never given. Each reconciler below therefore splits the
+// "stored but missing from the incoming document" case three ways:
+//
+//   visible + missing      → delete attempt: violation, keep stored           (unchanged)
+//   not visible + missing  → simply not sent: keep stored, NO violation       (new)
+//   not visible + present  → sending back a record it never received:
+//                            violation `out_of_scope_write`, keep stored      (new, tightening)
+//
+// Without the middle case an owner's ordinary save would log ~100 bogus `obs_delete_blocked`
+// violations and drown the security trail. The third case makes an unseen record fully immutable,
+// so no field-level reconciliation is needed for it at all.
 
 const HEAD_ROLE = "head_of_audit";
 const STAFF_ROLE = "audit_staff";
@@ -15,8 +39,8 @@ const STAFF_ROLE = "audit_staff";
 // Top-level sections a non-head user may modify. Everything else (auditUniverse,
 // processReviews, iaSA/iaSAList, planYear, org, signOff*, logo, branding, departments, exco*, …) is
 // locked to the stored value — the default-deny that closes head-only content to non-head writes.
-// fraudRisks is in the set because it is reconciled below: action owners may write ONLY the
-// implementation-progress surface of their own actions, never the register itself.
+// fraudRisks/extFindings/notifications are in the set because they are reconciled below: action
+// owners may write ONLY their own remediation surface, never the registers themselves.
 const NON_HEAD_WRITABLE_SECTIONS = new Set([
   "audits",
   "extFindings",
@@ -28,6 +52,24 @@ const NON_HEAD_WRITABLE_SECTIONS = new Set([
 // The implementation-progress surface of a fraud prevention action — what an assigned action
 // owner reports back on. Everything else about a risk/action is IA-managed.
 const OWNER_FRAUD_ACTION_FIELDS = ["status", "update", "ownerUpdates"];
+
+/* The remediation surface of an external / regulatory finding — the mirror of
+   OWNER_FRAUD_ACTION_FIELDS for extFindings. Everything else (severity, source, the finding text,
+   owner assignment, target dates, the verification chain) is Internal-Audit-managed.
+   `status` is NOT here: it is derived server-side from ownerRectifiedAt, exactly as observation
+   status is, so an owner cannot write "Closed" directly. */
+const OWNER_EXT_FIELDS = [
+  "ownerResponse",
+  "ownerResponseEvidence",
+  "ownerRectifiedBy",
+  "ownerRectifiedByName",
+  "ownerRectifiedAt",
+  "updates",
+];
+
+// A single save should never carry more than a handful of new notifications; a few hundred is
+// already pathological. Caps a notification-flood via the workspace document.
+const MAX_NEW_NOTIFICATIONS = 200;
 
 // Observation fields that change only through an approved workflow or a head action. A non-head
 // write can never alter these directly; they are forced back to the stored value.
@@ -67,9 +109,11 @@ export function authorizeWorkspaceWrite(
   incoming: WorkspaceDb,
   activeRole?: string,
 ): AuthzResult {
-  // Effective role: an admin acts as their switched activeRole, defaulting to head until
-  // they pick one (mirrors effectiveRole() in lib/permissions.ts).
-  const effective = role === "admin" ? activeRole || HEAD_ROLE : role;
+  /* Effective role and visibility come from one place each: effectiveRole() via viewerFor()
+     (an admin acts as their switched activeRole, defaulting to head until they pick one). This
+     used to be re-implemented inline here, which meant two copies of one security rule. */
+  const viewer = viewerFor({ id: userId, role, activeRole });
+  const effective = viewer.role;
 
   // The Head of Audit is fully trusted with the workspace document.
   if (effective === HEAD_ROLE) return { data: incoming, violations: [] };
@@ -82,22 +126,46 @@ export function authorizeWorkspaceWrite(
   const next = structuredClone(cur) as Obj;
 
   // ...then re-apply only the sections a non-head user is allowed to touch.
-  next.notifications = inc.notifications ?? cur.notifications ?? [];
-  next.extFindings = inc.extFindings ?? cur.extFindings ?? []; // remediation-writable (owners respond)
-  next.audits = reconcileAudits(asArray(cur.audits), asArray(inc.audits), effective, userId, violations);
-  next.approvals = reconcileApprovals(asArray(cur.approvals), asArray(inc.approvals), violations);
+  next.notifications = reconcileNotifications(
+    asArray(cur.notifications),
+    asArray(inc.notifications),
+    userId,
+    violations,
+  );
+  next.extFindings = reconcileExtFindings(
+    asArray(cur.extFindings),
+    asArray(inc.extFindings),
+    effective,
+    userId,
+    viewer,
+    violations,
+  );
+  next.audits = reconcileAudits(asArray(cur.audits), asArray(inc.audits), effective, userId, viewer, violations);
+  next.approvals = reconcileApprovals(
+    asArray(cur.approvals),
+    asArray(inc.approvals),
+    current,
+    viewer,
+    violations,
+  );
   next.fraudRisks = reconcileFraudRisks(
     asArray(cur.fraudRisks),
     asArray(inc.fraudRisks),
     effective,
     userId,
+    viewer,
     violations,
   );
 
-  // Note any attempt to change a locked section (informational — the change is already discarded).
+  /* Note any attempt to change a locked section (informational — the change is already
+     discarded). Compared against what this viewer was SHOWN, not against raw storage: a scoped
+     client receives e.g. departments as {id,name} only, so comparing to the stored rows would
+     flag `section:departments` on every legitimate save. Keys the client never received are not
+     in `inc` at all, so omission is never mistaken for a change. */
+  const shown = isFullScope(viewer) ? cur : (scopeWorkspace(current, viewer) as Obj);
   for (const key of Object.keys(inc)) {
     if (NON_HEAD_WRITABLE_SECTIONS.has(key)) continue;
-    if (!jsonEq(inc[key], cur[key])) violations.push(`section:${key}`);
+    if (!jsonEq(inc[key], shown[key])) violations.push(`section:${key}`);
   }
 
   return { data: next as WorkspaceDb, violations };
@@ -108,6 +176,7 @@ function reconcileAudits(
   incAudits: Obj[],
   role: string,
   userId: string,
+  viewer: Viewer,
   violations: string[],
 ): Obj[] {
   const incById = new Map(incAudits.map((a) => [a.id as string, a]));
@@ -116,12 +185,15 @@ function reconcileAudits(
   // metadata is therefore taken from storage; only the reports within existing audits are reconciled.
   const out = curAudits.map((curA) => {
     const incA = incById.get(curA.id as string);
-    if (!incA) {
-      violations.push(`audit_delete_blocked:${curA.id}`);
-      return curA;
-    }
     const outA = { ...curA }; // lock audit metadata (name, area, leadAuditorId, status, …)
-    outA.reports = reconcileReports(asArray(curA.reports), asArray(incA.reports), role, userId, violations);
+    if (!incA) {
+      /* A scoped viewer only receives audits that still hold an observation they can see, so an
+         absent audit is usually "never sent" rather than "deleted". Only flag it when the viewer
+         could see something inside it. Either way the stored audit survives untouched. */
+      if (auditIsVisible(curA, viewer)) violations.push(`audit_delete_blocked:${curA.id}`);
+      return outA;
+    }
+    outA.reports = reconcileReports(asArray(curA.reports), asArray(incA.reports), role, userId, viewer, violations);
     return outA;
   });
   // Non-head users cannot create audits.
@@ -131,11 +203,24 @@ function reconcileAudits(
   return out;
 }
 
+/** True when any observation inside this audit is visible to the viewer — i.e. the audit was part
+ *  of the document they were served, so its absence from their save is a deletion attempt. */
+function auditIsVisible(curA: Obj, viewer: Viewer): boolean {
+  if (isFullScope(viewer)) return true;
+  return asArray(curA.reports).some((r) => reportIsVisible(r, viewer));
+}
+
+function reportIsVisible(curR: Obj, viewer: Viewer): boolean {
+  if (isFullScope(viewer)) return true;
+  return asArray(curR.observations).some((o) => canSeeObs(o, viewer));
+}
+
 function reconcileReports(
   curReps: Obj[],
   incReps: Obj[],
   role: string,
   userId: string,
+  viewer: Viewer,
   violations: string[],
 ): Obj[] {
   const incById = new Map(incReps.map((r) => [r.id as string, r]));
@@ -145,23 +230,30 @@ function reconcileReports(
   const out = curReps.map((curR) => {
     const incR = incById.get(curR.id as string);
     if (!incR) {
-      violations.push(`report_delete_blocked:${curR.id}`);
+      if (reportIsVisible(curR, viewer)) violations.push(`report_delete_blocked:${curR.id}`);
       return curR;
     }
-    const outR = { ...incR }; // report metadata is editable by non-head
+    /* Report metadata is editable by non-head STAFF only. A scoped viewer receives the report
+       stripped of execSummary, so taking `incR` wholesale for them would blank it. */
+    const outR = role === STAFF_ROLE ? { ...incR } : { ...curR };
     outR.observations = reconcileObservations(
       asArray(curR.observations),
       asArray(incR.observations),
       role,
       userId,
+      viewer,
       violations,
     );
     return outR;
   });
   for (const incR of incReps) {
     if (curIds.has(incR.id as string)) continue;
+    if (role !== STAFF_ROLE) {
+      violations.push(`report_create_blocked:${incR.id}`);
+      continue;
+    }
     const outR = { ...incR };
-    outR.observations = reconcileObservations([], asArray(incR.observations), role, userId, violations);
+    outR.observations = reconcileObservations([], asArray(incR.observations), role, userId, viewer, violations);
     out.push(outR);
   }
   return out;
@@ -172,15 +264,23 @@ function reconcileObservations(
   incObs: Obj[],
   role: string,
   userId: string,
+  viewer: Viewer,
   violations: string[],
 ): Obj[] {
   const incById = new Map(incObs.map((o) => [o.id as string, o]));
   const curIds = new Set(curObs.map((o) => o.id as string));
   // Existing observations: cannot be deleted; controlled fields are locked.
   const out: Obj[] = curObs.map((curO) => {
+    const visible = canSeeObs(curO, viewer);
     const incO = incById.get(curO.id as string);
     if (!incO) {
-      violations.push(`obs_delete_blocked:${curO.id}`);
+      // Missing: a deletion attempt only if they had it in the first place.
+      if (visible) violations.push(`obs_delete_blocked:${curO.id}`);
+      return curO;
+    }
+    if (!visible) {
+      // Present but never served — the client is echoing back a record it was not given.
+      violations.push(`out_of_scope_write:obs:${curO.id}`);
       return curO;
     }
     return reconcileOneObs(curO, incO, role, userId, violations);
@@ -287,6 +387,7 @@ function reconcileFraudRisks(
   incRisks: Obj[],
   role: string,
   userId: string,
+  viewer: Viewer,
   violations: string[],
 ): Obj[] {
   // Audit staff maintain the register alongside the Head (same trust as reports/extFindings).
@@ -295,16 +396,22 @@ function reconcileFraudRisks(
   const incById = new Map(incRisks.map((f) => [f.id as string, f]));
   const curIds = new Set(curRisks.map((f) => f.id as string));
   const out = curRisks.map((curF) => {
+    const visible = canSeeFraudRisk(curF, viewer);
     const incF = incById.get(curF.id as string);
     if (!incF) {
-      violations.push(`fraud_delete_blocked:${curF.id}`);
+      if (visible) violations.push(`fraud_delete_blocked:${curF.id}`);
       return curF;
     }
-    const ownsRisk = curF.ownerUserId === userId;
+    if (!visible) {
+      violations.push(`out_of_scope_write:fraud:${curF.id}`);
+      return curF;
+    }
+    const ownsRisk = !!userId && curF.ownerUserId === userId;
     const incActById = new Map(asArray(incF.actions).map((a) => [a.id as string, a]));
     const actions = asArray(curF.actions).map((curA) => {
       const incA = incActById.get(curA.id as string);
       if (!incA) return curA; // owners cannot drop an action
+      if (!canSeeFraudAction(curF, curA, viewer)) return curA; // never served — fully locked
       if (!ownsRisk && curA.ownerUserId !== userId) return curA; // not theirs — fully locked
       const outA = { ...curA };
       for (const f of OWNER_FRAUD_ACTION_FIELDS) forceField(outA, f, incA[f]);
@@ -324,6 +431,121 @@ function reconcileFraudRisks(
   });
   for (const incF of incRisks) {
     if (!curIds.has(incF.id as string)) violations.push(`fraud_create_blocked:${incF.id}`);
+  }
+  return out;
+}
+
+/* External / regulatory findings used to be taken WHOLESALE from the client:
+     next.extFindings = inc.extFindings ?? cur.extFindings ?? [];
+   so any authenticated non-head user could rewrite or delete every finding the regulator raised
+   — the same class of defect the fraud register had before it was reconciled. Reconciled here on
+   the same shape: audit staff maintain the register; an action owner may write only the
+   remediation surface of the findings assigned to them, and the status transition is derived
+   server-side from ownerRectifiedAt rather than taken from the client. */
+function reconcileExtFindings(
+  curExts: Obj[],
+  incExts: Obj[],
+  role: string,
+  userId: string,
+  viewer: Viewer,
+  violations: string[],
+): Obj[] {
+  // Audit staff maintain the external register alongside the Head.
+  if (role === STAFF_ROLE) return incExts;
+
+  const incById = new Map(incExts.map((f) => [f.id as string, f]));
+  const curIds = new Set(curExts.map((f) => f.id as string));
+
+  const out = curExts.map((curF) => {
+    const visible = canSeeExt(curF, viewer);
+    const incF = incById.get(curF.id as string);
+    if (!incF) {
+      if (visible) violations.push(`ext_delete_blocked:${curF.id}`);
+      return curF;
+    }
+    if (!visible) {
+      violations.push(`out_of_scope_write:ext:${curF.id}`);
+      return curF;
+    }
+    // Assigned to them: everything is stored-value except the remediation surface.
+    const outF: Obj = { ...curF };
+    for (const f of OWNER_EXT_FIELDS) forceField(outF, f, incF[f]);
+    for (const f of Object.keys(incF)) {
+      if (OWNER_EXT_FIELDS.includes(f)) continue;
+      if (!jsonEq(incF[f], curF[f])) violations.push(`ext_field:${curF.id}:${f}`);
+    }
+    // Derived transition: submitting a closure response moves an Open finding to In Progress.
+    // "Closed" stays unreachable from here — only Internal Audit verification closes a finding.
+    if (!curF.ownerRectifiedAt && !!incF.ownerRectifiedAt && (curF.status || "Open") === "Open") {
+      outF.status = "In Progress";
+    }
+    return outF;
+  });
+
+  // Owners cannot raise external findings — those come from a regulator or external auditor.
+  for (const incF of incExts) {
+    if (!curIds.has(incF.id as string)) violations.push(`ext_create_blocked:${incF.id}`);
+  }
+  return out;
+}
+
+/* Notifications were also taken wholesale, and graftServerHeld() let an incoming row overwrite an
+   EXISTING notification belonging to someone else on id collision — its text, its link, its read
+   state. Owners do legitimately create notifications for other people (assigning an owner,
+   requesting an approval — see pushNotification in lib/workspace/portal.ts), so the rule is
+   create-but-never-modify:
+     - a new id addressed to anyone   → accepted, but stamped with the real author and time
+     - an existing id owned by SOMEONE ELSE → immutable, stored row wins
+     - an existing id owned by the CALLER   → only `read` may change (mark-as-read)
+   Rows stored for other users are re-seeded by graftServerHeld(), which is what stops a scoped
+   client's save from dropping them by omission. */
+function reconcileNotifications(
+  curNotifs: Obj[],
+  incNotifs: Obj[],
+  userId: string,
+  violations: string[],
+): Obj[] {
+  const curById = new Map(curNotifs.map((n) => [String(n.id), n]));
+  const out: Obj[] = [];
+  const seen = new Set<string>();
+  let created = 0;
+
+  for (const inc of incNotifs) {
+    if (!inc || !inc.id) continue;
+    const id = String(inc.id);
+    if (seen.has(id)) continue;
+    seen.add(id);
+
+    const cur = curById.get(id);
+    if (!cur) {
+      if (created >= MAX_NEW_NOTIFICATIONS) {
+        violations.push(`notif_flood_blocked:${id}`);
+        continue;
+      }
+      created++;
+      // Stamp authorship and time server-side so a forged notification is always attributable.
+      out.push({ ...inc, byUserId: userId, at: new Date().toISOString() });
+      continue;
+    }
+    if (String(cur.userId || "") !== userId) {
+      // Someone else's notification — immutable.
+      if (!jsonEq(inc, cur)) violations.push(`notif_foreign_write_blocked:${id}`);
+      out.push(cur);
+      continue;
+    }
+    // Their own: only the read flag moves.
+    const outN: Obj = { ...cur, read: !!inc.read };
+    for (const f of Object.keys(inc)) {
+      if (f === "read") continue;
+      if (!jsonEq(inc[f], cur[f])) violations.push(`notif_field:${id}:${f}`);
+    }
+    out.push(outN);
+  }
+
+  // Stored rows the client did not send back survive untouched (a scoped client only ever holds
+  // its own). graftServerHeld() re-seeds other users' rows on top of this.
+  for (const cur of curNotifs) {
+    if (cur && cur.id && !seen.has(String(cur.id))) out.push(cur);
   }
   return out;
 }
@@ -360,7 +582,22 @@ function sanitizeNewObs(inc: Obj, userId: string): Obj {
   return next;
 }
 
-function reconcileApprovals(curApps: Obj[], incApps: Obj[], violations: string[]): Obj[] {
+function reconcileApprovals(
+  curApps: Obj[],
+  incApps: Obj[],
+  current: WorkspaceDb,
+  viewer: Viewer,
+  violations: string[],
+): Obj[] {
+  /* Which approvals this viewer was served — the queue itself is head-only, but an owner does
+     receive the requests that concern their own observations. Mirrors the approvals filter in
+     scopeWorkspace(). */
+  const obsIds = isFullScope(viewer) ? null : visibleObsIds(current, viewer);
+  const sawApproval = (ap: Obj) =>
+    obsIds === null ||
+    (!!viewer.id && ap.requestedBy === viewer.id) ||
+    (!!ap.obsId && obsIds.has(String(ap.obsId)));
+
   const curById = new Map(curApps.map((a) => [a.id as string, a]));
   const seen = new Set<string>();
   const out: Obj[] = [];
@@ -368,6 +605,11 @@ function reconcileApprovals(curApps: Obj[], incApps: Obj[], violations: string[]
     const id = inc.id as string;
     seen.add(id);
     const cur = curById.get(id);
+    if (cur && !sawApproval(cur)) {
+      violations.push(`out_of_scope_write:approval:${id}`);
+      out.push(cur);
+      continue;
+    }
     if (!cur) {
       // A new approval request must be pending and undecided.
       if (inc.status && inc.status !== "pending") violations.push(`approval_new_prestatus:${id}`);
@@ -390,10 +632,10 @@ function reconcileApprovals(curApps: Obj[], incApps: Obj[], violations: string[]
     }
   }
   for (const cur of curApps) {
-    if (!seen.has(cur.id as string)) {
-      violations.push(`approval_delete_blocked:${cur.id}`);
-      out.push(cur);
-    }
+    if (seen.has(cur.id as string)) continue;
+    // Absent because it was never served is not a deletion attempt; the row survives either way.
+    if (sawApproval(cur)) violations.push(`approval_delete_blocked:${cur.id}`);
+    out.push(cur);
   }
   return out;
 }

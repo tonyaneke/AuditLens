@@ -79,17 +79,16 @@ export async function GET(request: NextRequest) {
     return toLogin(request, "deactivated");
   }
 
-  // SSO users have no local password to manage — clear any stale first-login flag, keep the display
-  // name in sync with Microsoft if it was blank, and refresh the profile photo when we got one.
-  const patch: { mustChangePassword?: boolean; name?: string; photo?: string } = {};
-  if (user.mustChangePassword) patch.mustChangePassword = false;
+  // Keep the display name in sync with Microsoft if it was blank, and refresh the profile photo
+  // when we got one.
+  const patch: { name?: string; photo?: string } = {};
   if (name && !user.name?.trim()) patch.name = name;
   if (photo) patch.photo = photo;
   const dbUser = Object.keys(patch).length
     ? await prisma.user.update({ where: { id: user.id }, data: patch })
     : user;
 
-  const sessionUser = userToSession({ ...dbUser, mustChangePassword: false });
+  const sessionUser = userToSession(dbUser);
   const token = await signSessionToken(sessionUser);
 
   await writeAuditLog({

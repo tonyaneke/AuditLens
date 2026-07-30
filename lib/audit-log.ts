@@ -54,6 +54,7 @@ export function categoryForAction(action: string): AuditCategory {
   if (prefix === "auth") return "auth";
   if (prefix === "user") return "user";
   if (prefix === "data") return "data";
+  if (prefix === "security") return "security";
   return "workspace";
 }
 
@@ -120,6 +121,10 @@ export function actionLabel(action: string) {
     "exco.generated": "EXCO brief generated",
     "exco.sent": "EXCO brief sent",
     "exco.brief_deleted": "EXCO brief deleted",
+    "security.workspace_write_filtered": "Disallowed workspace changes reverted",
+    "security.unversioned_write_rejected": "Save refused — no version token",
+    "security.unversioned_write_allowed": "Save accepted without a version token",
+    "auth.login_blocked": "Sign-in blocked",
   };
   if (labels[action]) return labels[action];
   // Fallback: humanize "<area>.<event>" so unknown actions still read well in the trail.

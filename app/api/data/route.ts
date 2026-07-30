@@ -3,156 +3,21 @@ import type { Prisma } from "@prisma/client";
 import { requireActiveSession } from "@/lib/auth";
 import { writeAuditLog } from "@/lib/audit-log";
 import { defaultWorkspaceData, type WorkspaceDb } from "@/lib/db-data";
-import { effectiveRole, type SessionUser } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { authorizeWorkspaceWrite } from "@/lib/workspace-authz";
+import { graftServerHeld, slimForClient } from "@/lib/workspace-payload";
+import { viewerFor } from "@/lib/workspace-scope";
+import { MAX_BODY_BYTES, prepareIncomingWorkspace } from "@/lib/workspace-validate";
 
 const WORKSPACE_ID = "default";
 
 type AnyRec = Record<string, unknown>;
 
-/** Who is asking, for the read-side trimming below. Uses effectiveRole so an admin viewing as
- *  an action owner is trimmed like an action owner — the same rule the UI applies. */
-function viewerOf(session: { id: string; role: string; activeRole?: string }) {
-  return { id: session.id, isHead: effectiveRole(session as SessionUser) === "head_of_audit" };
-}
-
-// The stored SOP PDFs (processReviews[].sopPdfBase64) are by far the heaviest part of the
-// workspace document (~1.1 MB of 1.7 MB stored). They stay server-side: GET replaces each with a
-// sopPdfStored flag, and PUT grafts the stored base64 back so a client save never loses them.
-function slimForClient(
-  data: WorkspaceDb,
-  viewer: { id: string; isHead: boolean },
-): WorkspaceDb {
-  let out = data;
-
-  const reviews = out.processReviews as AnyRec[] | undefined;
-  if (reviews && reviews.some((r) => r && typeof r === "object" && r.sopPdfBase64)) {
-    out = {
-      ...out,
-      processReviews: reviews.map((r) => {
-        if (!r || typeof r !== "object" || !r.sopPdfBase64) return r;
-        const { sopPdfBase64: _dropped, ...rest } = r;
-        void _dropped;
-        return { ...rest, sopPdfStored: true };
-      }),
-    };
-  }
-
-  /* QA-7 — notifications are addressed to a single user, and every read path already filters
-     with myNotifications(db, user.id). The whole list was still being sent to everyone: ~35 KB
-     of payload that no client uses, and every user could read every other user's notification
-     text, which quotes observation titles they may have no business seeing. Filtered here;
-     graftServerHeld() below puts the other users' rows back on write so a save cannot drop
-     them by omission. */
-  const notifs = out.notifications as AnyRec[] | undefined;
-  if (Array.isArray(notifs) && notifs.length) {
-    out = {
-      ...out,
-      notifications: notifs.filter((n) => String(n?.userId || "") === viewer.id),
-    } as WorkspaceDb;
-  }
-
-  /* exco.briefs[].token is the credential for /brief?id=<token>, a PUBLIC, unauthenticated
-     route (it is in proxy.ts PUBLIC_PATHS). Shipping every token to every signed-in user meant
-     any action owner could mint a shareable link to the Board assurance brief and send it
-     outside the organisation. Only the Head of Audit, who issues the briefs, needs them. */
-  const exco = out.exco as AnyRec | undefined;
-  if (!viewer.isHead && exco && Array.isArray(exco.briefs)) {
-    out = {
-      ...out,
-      exco: {
-        ...exco,
-        briefs: (exco.briefs as AnyRec[]).map((b) => {
-          if (!b || !b.token) return b;
-          const { token: _withheld, ...rest } = b;
-          void _withheld;
-          return rest;
-        }),
-      },
-    } as WorkspaceDb;
-  }
-
-  return out;
-}
-
-/** Restore everything slimForClient() withheld, so a whole-document save cannot delete data the
- *  client was never sent. Anything trimmed on GET must be grafted back here. */
-function graftServerHeld(current: WorkspaceDb, next: WorkspaceDb, userId: string): WorkspaceDb {
-  let out = next;
-
-  const nextReviews = out.processReviews as AnyRec[] | undefined;
-  if (nextReviews && nextReviews.length) {
-    const curReviews = (current.processReviews as AnyRec[] | undefined) || [];
-    const byId = new Map(
-      curReviews
-        .filter((r) => r && typeof r === "object" && r.id)
-        .map((r) => [String(r.id), r]),
-    );
-    out = {
-      ...out,
-      processReviews: nextReviews.map((r) => {
-        if (!r || typeof r !== "object" || r.sopPdfBase64) return r; // fresh upload rides in
-        const cur = byId.get(String(r.id));
-        if (cur && cur.sopPdfBase64)
-          return { ...r, sopPdfBase64: cur.sopPdfBase64, sopPdfStored: true };
-        return r;
-      }),
-    };
-  }
-
-  /* Notifications: the client only ever received its own, so anything stored for someone else
-     is server-held and must survive this write. Incoming rows are kept as-is — a client
-     legitimately creates notifications addressed to other people (assigning an owner, requesting
-     an approval) — and win on id collision, which is how a user marks their own as read.
-     Keyed by id so a row the client still holds in memory is not duplicated. */
-  const incoming = (out.notifications as AnyRec[] | undefined) || [];
-  const stored = (current.notifications as AnyRec[] | undefined) || [];
-  const merged = new Map<string, AnyRec>();
-  for (const n of stored) {
-    if (n && String(n.userId || "") !== userId) merged.set(String(n.id), n);
-  }
-  for (const n of incoming) {
-    if (n) merged.set(String(n.id), n);
-  }
-  out = { ...out, notifications: [...merged.values()] } as WorkspaceDb;
-
-  /* Brief tokens are withheld from non-heads above, so a non-head save arrives without them.
-     Restore from storage — losing a token would silently break every public brief link that has
-     already been circulated to the MD and EXCO. */
-  const nextExco = out.exco as AnyRec | undefined;
-  const curExco = current.exco as AnyRec | undefined;
-  if (nextExco && Array.isArray(nextExco.briefs) && curExco && Array.isArray(curExco.briefs)) {
-    const tokenById = new Map(
-      (curExco.briefs as AnyRec[])
-        .filter((b) => b && b.id && b.token)
-        .map((b) => [String(b.id), b.token]),
-    );
-    out = {
-      ...out,
-      exco: {
-        ...nextExco,
-        briefs: (nextExco.briefs as AnyRec[]).map((b) => {
-          if (!b || b.token) return b; // a freshly generated brief brings its own
-          const stored = tokenById.get(String(b.id));
-          return stored ? { ...b, token: stored } : b;
-        }),
-      },
-    } as WorkspaceDb;
-  }
-
-  return out;
-}
-
 export async function GET(request: Request) {
   let session;
   try {
     session = await requireActiveSession();
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unauthorized";
-    if (message === "PasswordChangeRequired") {
-      return NextResponse.json({ error: "Password change required." }, { status: 403 });
-    }
+  } catch {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -170,7 +35,7 @@ export async function GET(request: Request) {
   const row = await prisma.workspaceData.findUnique({ where: { id: WORKSPACE_ID } });
   const data = (row?.data as WorkspaceDb) || defaultWorkspaceData();
   return NextResponse.json({
-    data: slimForClient(data, viewerOf(session)),
+    data: slimForClient(data, viewerFor(session)),
     updatedAt: row?.updatedAt ?? null,
   });
 }
@@ -179,12 +44,18 @@ export async function PUT(request: Request) {
   let session;
   try {
     session = await requireActiveSession();
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unauthorized";
-    if (message === "PasswordChangeRequired") {
-      return NextResponse.json({ error: "Password change required." }, { status: 403 });
-    }
+  } catch {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  /* Reject oversized bodies before reading them. Worth doing explicitly: this app uses proxy.ts,
+     and Next buffers every proxied request body up to `proxyClientMaxBodySize` (10 MB by default)
+     — past which it TRUNCATES and continues rather than failing, so an oversized save would
+     otherwise arrive as a silently-cut JSON string. A chunked request carries no Content-Length
+     and slips this check, but then hits the truncate-and-fail-to-parse path below, which is safe. */
+  const declaredLength = Number(request.headers.get("content-length") || 0);
+  if (declaredLength > MAX_BODY_BYTES) {
+    return NextResponse.json({ error: "Workspace document too large." }, { status: 413 });
   }
 
   let body: { data?: WorkspaceDb; baseUpdatedAt?: string | null };
@@ -194,16 +65,17 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
   }
 
-  if (!body.data || !Array.isArray(body.data.audits)) {
-    return NextResponse.json(
-      { error: "Invalid workspace data — audits array required." },
-      { status: 400 },
-    );
+  // Structural validation: shape, identity and containment. Field VALUES are decided by
+  // authorizeWorkspaceWrite() below — see lib/workspace-validate.ts for why this is not a schema.
+  const shape = prepareIncomingWorkspace(body.data);
+  if (!shape.ok) {
+    return NextResponse.json({ error: shape.error }, { status: 400 });
   }
+  const incoming = shape.data;
 
   // The org logo is a static asset now (public/org-logo.png) — never let a client write a
   // base64 logo back into the document.
-  delete (body.data as AnyRec).logo;
+  delete (incoming as AnyRec).logo;
 
   // Authorize the write against the stored workspace: non-head users may only make the changes their
   // role permits (raise observations, request approvals, comment, remediate). Anything else — editing/
@@ -212,7 +84,7 @@ export async function PUT(request: Request) {
   const existing = await prisma.workspaceData.findUnique({ where: { id: WORKSPACE_ID } });
   const current = (existing?.data as WorkspaceDb) || defaultWorkspaceData();
 
-  /* QA-4 — optimistic concurrency.
+  /* QA-4 / SEC-05 — optimistic concurrency.
      The whole application state is one row, and every save overwrites all of it. Without a
      version check, two people editing different observations at the same time silently
      last-write-wins: the second save is built from a snapshot taken before the first, so it
@@ -221,8 +93,44 @@ export async function PUT(request: Request) {
      but never enforced on write.
 
      `baseUpdatedAt` is the watermark the client last saw. If the stored row has moved on since,
-     the write is refused with 409 and the client refreshes rather than clobbering. Older clients
-     that send no watermark keep the previous behaviour rather than being locked out mid-session. */
+     the write is refused with 409 and the client refreshes rather than clobbering.
+
+     It is now REQUIRED. It used to be opt-in ("older clients keep the previous behaviour"), which
+     meant the guard was only as strong as the client choosing to participate: omit the field and
+     the write fell through to an unconditional upsert. The only client that ever omitted it is
+     public/audit-bot.js, which no route can reach any more (every view is in MIGRATED_VIEWS, so
+     isLegacyPath() is always false and nothing loads the script). WORKSPACE_ALLOW_UNVERSIONED_WRITE=1
+     restores the old behaviour if that turns out to be wrong — a one-variable rollback rather than
+     a redeploy — and either way the outcome is recorded in the audit log. */
+  const allowUnversioned = process.env.WORKSPACE_ALLOW_UNVERSIONED_WRITE === "1";
+  if (body.baseUpdatedAt === undefined && existing) {
+    if (!allowUnversioned) {
+      await writeAuditLog({
+        user: session,
+        action: "security.unversioned_write_rejected",
+        category: "security",
+        summary: `Rejected a workspace write with no version token from a ${session.role}`,
+        metadata: { storedUpdatedAt: existing.updatedAt.toISOString() },
+      }).catch(() => {});
+      return NextResponse.json(
+        {
+          error: "version_required",
+          message:
+            "This save did not include a version token, so it could have overwritten someone else's work. Refresh and try again.",
+          updatedAt: existing.updatedAt,
+        },
+        { status: 400 },
+      );
+    }
+    await writeAuditLog({
+      user: session,
+      action: "security.unversioned_write_allowed",
+      category: "security",
+      summary: `Accepted a workspace write with no version token (WORKSPACE_ALLOW_UNVERSIONED_WRITE is set) from a ${session.role}`,
+      metadata: { storedUpdatedAt: existing.updatedAt.toISOString() },
+    }).catch(() => {});
+  }
+
   if (body.baseUpdatedAt !== undefined && existing) {
     const stored = existing.updatedAt.toISOString();
     const base = body.baseUpdatedAt ? new Date(body.baseUpdatedAt).toISOString() : null;
@@ -243,7 +151,7 @@ export async function PUT(request: Request) {
     session.role,
     session.id,
     current,
-    body.data,
+    incoming,
     session.activeRole,
   );
 
@@ -291,7 +199,7 @@ export async function PUT(request: Request) {
   }
 
   return NextResponse.json({
-    data: slimForClient(row.data as WorkspaceDb, viewerOf(session)),
+    data: slimForClient(row.data as WorkspaceDb, viewerFor(session)),
     updatedAt: row.updatedAt,
   });
 }

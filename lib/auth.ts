@@ -1,4 +1,3 @@
-import bcrypt from "bcryptjs";
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { prisma } from "./prisma";
@@ -7,8 +6,17 @@ import {
   normalizeSidebarAccess,
   type SessionUser,
 } from "./permissions";
-import { effectiveMustChangePassword } from "./auth-config";
 import { photoUrlFor } from "./photo-url";
+
+/* SEC-03 — this app authenticates through Microsoft Entra SSO only. There is no local password.
+ *
+ * It used to carry the remains of one: a `passwordHash` column filled with an unusable random
+ * value, a `mustChangePassword` flag nothing could ever clear through the UI, and
+ * hashPassword/verifyPassword/generateTempPassword helpers with no call sites. The audit read
+ * that surface — correctly — as evidence of a second authentication path that would bypass
+ * conditional access and MFA, and spent review effort proving it was not live. Dead code that
+ * misleads an incident responder is a finding in its own right, so it is gone: sign-in is
+ * app/api/auth/azure/start → app/api/auth/callback, and nothing else. */
 
 const SESSION_COOKIE = "ams_session";
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
@@ -17,14 +25,6 @@ function authSecret() {
   const secret = process.env.AUTH_SECRET;
   if (!secret) throw new Error("AUTH_SECRET is not configured.");
   return new TextEncoder().encode(secret);
-}
-
-export async function hashPassword(password: string) {
-  return bcrypt.hash(password, 12);
-}
-
-export async function verifyPassword(password: string, hash: string) {
-  return bcrypt.compare(password, hash);
 }
 
 // Signs a session JWT for the user. Use this when you need to set the cookie yourself
@@ -37,7 +37,6 @@ export async function signSessionToken(user: SessionUser): Promise<string> {
     department: user.department,
     role: user.role,
     sidebarAccess: user.sidebarAccess,
-    mustChangePassword: user.mustChangePassword,
     activeRole: user.activeRole || "",
   })
     .setProtectedHeader({ alg: "HS256" })
@@ -86,9 +85,6 @@ export async function getSession(): Promise<SessionUser | null> {
       department: String(payload.department || ""),
       role: String(payload.role || "audit_staff"),
       sidebarAccess: normalizeSidebarAccess(payload.sidebarAccess),
-      mustChangePassword: effectiveMustChangePassword(
-        Boolean(payload.mustChangePassword),
-      ),
       activeRole: String(payload.activeRole || "") || undefined,
     };
   } catch {
@@ -117,10 +113,12 @@ export async function requireSession() {
   return session;
 }
 
+/* Kept as a distinct name because ~15 route handlers read as `requireActiveSession()` and the
+   intent — "a session good enough to act on" — is still the right one to state at a call site.
+   It no longer has a password-change gate to apply; getSessionWithFlags() already rejects a
+   deleted or deactivated user. */
 export async function requireActiveSession() {
-  const session = await requireSession();
-  if (session.mustChangePassword) throw new Error("PasswordChangeRequired");
-  return session;
+  return requireSession();
 }
 
 export async function requireHeadOfAudit() {
@@ -136,7 +134,6 @@ export function userToSession(user: {
   department: string;
   role: string;
   sidebarAccess: unknown;
-  mustChangePassword: boolean;
   photo?: string | null;
   updatedAt?: Date | string | null;
 }): SessionUser {
@@ -147,7 +144,6 @@ export function userToSession(user: {
     department: user.department,
     role: user.role,
     sidebarAccess: normalizeSidebarAccess(user.sidebarAccess),
-    mustChangePassword: effectiveMustChangePassword(user.mustChangePassword),
     /* QA-19 — a cacheable URL, not the stored base64 data URL. /api/auth/me is fetched on
        every page load, and the photo was inflating it by up to ~683 KB for one user. */
     photo: photoUrlFor({ id: user.id, photo: user.photo, updatedAt: user.updatedAt }),
