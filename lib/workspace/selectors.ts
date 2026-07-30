@@ -181,6 +181,15 @@ export function allObs(db: WorkspaceDb): ObsWithContext[] {
   );
   return out;
 }
+/* QA-11 — the reporting population, and the reason the Dashboard and Tracker disagreed.
+   The Tracker counted allObs().filter(obsIsApproved); the Dashboard counted allObs(). An
+   observation still awaiting approval is not yet a finding, so it must not appear in any
+   headline KPI — but it was inflating every Dashboard tile, including Overdue. Every screen
+   that reports numbers to a reader (dashboards, Board packs, the ExCo brief) uses this. */
+export function approvedObs(db: WorkspaceDb): ObsWithContext[] {
+  return allObs(db).filter(obsIsApproved);
+}
+
 export function allObsRaw(db: WorkspaceDb): ObsWithContext[] {
   const out: ObsWithContext[] = [];
   (db.audits || []).forEach((a) =>
@@ -230,6 +239,28 @@ export function daysToClose(o: Observation, r: Report | undefined): number | nul
   const c = effectiveClose(o, r);
   return c ? daysBetween(today0(), c) : null;
 }
+
+/* QA-11 — "Overdue" reported different values on the Dashboard and the Tracker.
+   Part of that was arithmetic: this bucket function decided overdue from a day count, while
+   the KPI tiles used isOverdueObs(). daysBetween() ROUNDS, so an item a few hours past its
+   close date yields -0.x → 0 → "≤ 2 weeks", while isOverdueObs()'s strict `today0() > close`
+   calls the same item overdue. The two disagree on exactly the edge-of-day population.
+
+   closeBucketOf() is now the single entry point: it asks isOverdueObs() first and only falls
+   back to day counting for items that are genuinely not yet overdue. Anything counting or
+   grouping by expected close must use this, so the histogram and the KPI cannot drift apart. */
+export function closeBucketOf(o: Observation, r: Report | undefined): string | null {
+  if (isOverdueObs(o, r)) return "Overdue";
+  const d = daysToClose(o, r);
+  if (d == null) return null;
+  if (d <= 14) return "≤ 2 weeks";
+  if (d <= 30) return "2–4 weeks";
+  if (d <= 90) return "1–3 months";
+  return "> 3 months";
+}
+
+/** @deprecated Use closeBucketOf(o, r) — bucketing from a rounded day count disagrees with
+ * isOverdueObs() at the day boundary. Retained only for callers that have no observation. */
 export function closeBucket(d: number | null): string | null {
   if (d == null) return null;
   if (d < 0) return "Overdue";
@@ -238,6 +269,32 @@ export function closeBucket(d: number | null): string | null {
   if (d <= 90) return "1–3 months";
   return "> 3 months";
 }
+/* QA-21 — displayed percentages summed to 101%.
+   Each slice was rounded independently (Math.round(v / total * 100)), and independent rounding
+   does not preserve a total: 1/3 three times gives 33+33+33 = 99, and the observed split gave
+   1+68+23+9+0 = 101. The counts were right; only the display was wrong — but it appears on a
+   Board-facing screen where arithmetic is expected to reconcile.
+
+   Largest remainder: floor everything, then hand the leftover points to whichever values were
+   cut hardest. The result always totals exactly 100 (or 0 when there is nothing to divide). */
+export function percentages(values: number[]): number[] {
+  const total = values.reduce((s, v) => s + (v > 0 ? v : 0), 0);
+  if (total <= 0) return values.map(() => 0);
+
+  const exact = values.map((v) => ((v > 0 ? v : 0) / total) * 100);
+  const out = exact.map((x) => Math.floor(x));
+  let left = 100 - out.reduce((s, v) => s + v, 0);
+
+  // Biggest fractional part first; ties go to the larger underlying value so the ordering is
+  // stable rather than dependent on array position.
+  const order = exact
+    .map((x, i) => ({ i, frac: x - Math.floor(x) }))
+    .sort((a, b) => b.frac - a.frac || values[b.i] - values[a.i]);
+
+  for (let k = 0; k < order.length && left > 0; k++, left--) out[order[k].i]++;
+  return out;
+}
+
 export function ageBucket(n: number | null): string {
   if (n == null) return "—";
   if (n <= 30) return "0–30 days";

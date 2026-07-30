@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { UserSwitchIcon, CheckmarkBadge01Icon } from "@hugeicons/core-free-icons";
-import { effectiveRole, type SessionUser } from "@/lib/permissions";
+import { effectiveRole, roleLabel, type SessionUser } from "@/lib/permissions";
 
 type RoleOption = {
   value: string;
@@ -11,20 +11,21 @@ type RoleOption = {
   description: string;
 };
 
+// QA-14 — labels come from lib/permissions so this control cannot drift from the sidebar.
 const ROLE_OPTIONS: RoleOption[] = [
   {
     value: "head_of_audit",
-    label: "Head of Audit",
+    label: roleLabel("head_of_audit"),
     description: "Full access to all sections and approvals",
   },
   {
     value: "audit_staff",
-    label: "Audit Staff",
+    label: roleLabel("audit_staff"),
     description: "Standard audit team member view",
   },
   {
     value: "action_owner",
-    label: "Action Owner",
+    label: roleLabel("action_owner"),
     description: "Department head remediation portal",
   },
 ];
@@ -40,8 +41,9 @@ export default function RoleSwitcher({ user }: RoleSwitcherProps) {
   if (user.role !== "admin") return null;
 
   const currentRole = effectiveRole(user);
-  const currentLabel =
-    ROLE_OPTIONS.find((r) => r.value === currentRole)?.label || currentRole;
+  // Was `?? currentRole`, which printed a raw role code (e.g. "admin") whenever the active role
+  // had no entry in ROLE_OPTIONS — one of the three labels the audit saw for a single session.
+  const currentLabel = roleLabel(currentRole);
 
   async function handleSwitch(role: string) {
     if (role === currentRole || switching) return;

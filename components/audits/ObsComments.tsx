@@ -11,6 +11,7 @@
 import { useMemo, useState } from "react";
 import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useUser } from "@/components/chrome/UserContext";
+import BusyButton from "@/components/feedback/BusyButton";
 import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import { Avatar, BackButton } from "@/components/ui";
@@ -124,7 +125,11 @@ function AuditorCommentDialog({ auditId, reportId, obsId }: { auditId: string; r
       footer={
         <>
           <button className="btn sec" type="button" onClick={modal.close}>Cancel</button>
-          <button className="btn" type="button" onClick={post}>Post comment</button>
+          {/* QA-18 — a plain button here meant a second click before the modal unmounted posted
+              the comment twice AND sent the action owner a second email. */}
+          <BusyButton className="btn" busyLabel="Posting…" disabled={!text.trim()} onClick={post}>
+            Post comment
+          </BusyButton>
         </>
       }
     >

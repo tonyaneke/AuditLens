@@ -48,10 +48,17 @@ export default function RemindersDialog() {
   }, []);
   void dirVersion;
 
-  const outstanding = allObs(db)
+  const openApproved = allObs(db)
     .filter(obsIsApproved)
-    .filter((o) => (o.status || "Open") !== "Closed")
-    .filter((o) => o.ownerUserId);
+    .filter((o) => (o.status || "Open") !== "Closed");
+
+  // Reminders can only be routed by `ownerUserId` — the free-text `owner` field holds job
+  // titles ("CHIEF FINANCIAL OFFICER"), not people, so it cannot resolve to an address.
+  // Anything without that foreign key is unreachable, and that has to be said out loud rather
+  // than silently filtered away: an outstanding action nobody can be reminded about is exactly
+  // what this control exists to surface. scripts/backfill-owner-ids.mts assigns the legacy rows.
+  const outstanding = openApproved.filter((o) => o.ownerUserId);
+  const unassigned = openApproved.filter((o) => !o.ownerUserId);
 
   const byOwner = new Map<string, OwnerGroup>();
   for (const o of outstanding) {
@@ -77,10 +84,6 @@ export default function RemindersDialog() {
     .sort((a, b) => b.overdueCount - a.overdueCount || b.items.length - a.items.length);
 
   const selectedGroups = groups.filter((g) => !excluded.has(g.ownerId));
-  const totalObs = selectedGroups.reduce(
-    (s, g) => s + (onlyOverdue ? g.overdueCount : g.items.length),
-    0,
-  );
 
   function toggle(ownerId: string) {
     setExcluded((cur) => {
@@ -91,14 +94,23 @@ export default function RemindersDialog() {
     });
   }
 
-  function send() {
+  async function send() {
     if (!selectedGroups.length) return;
-    const sentTo: string[] = [];
-    mutate((d) => {
-      for (const g of selectedGroups) {
+
+    // Resolve what each owner is being sent before any side effect, so the in-app notification
+    // and the email always describe the same set of items.
+    const jobs = selectedGroups
+      .map((g) => {
         const items = (onlyOverdue ? g.items.filter((x) => x.overdue) : g.items).slice();
-        if (!items.length) continue;
         items.sort((a, b) => Number(b.overdue) - Number(a.overdue));
+        return { g, items };
+      })
+      .filter((j) => j.items.length);
+    if (!jobs.length) return;
+
+    // In-app notification for every selected owner. This is a local write and cannot fail.
+    mutate((d) => {
+      for (const { g, items } of jobs) {
         notify(
           d,
           g.ownerId,
@@ -106,28 +118,77 @@ export default function RemindersDialog() {
           `Reminder: ${items.length} outstanding observation(s) require your department's action`,
           "myobs",
         );
-        if (g.email) {
-          const lines = items.map(
-            (x, i) =>
-              `${i + 1}. ${x.o.title}${x.due ? ` — expected close ${fmtDate(x.due)}` : ""}${x.overdue ? " (OVERDUE)" : ""}`,
-          );
-          emailNotify(
-            [g.email],
-            `AuditLens — reminder: ${items.length} outstanding observation(s)`,
-            `Dear ${g.name},\n\nThis is a reminder from Internal Audit that ${items.length} observation(s) assigned to your department are still outstanding:\n\n${lines.join("\n")}\n\nPlease sign in to AuditLens to post a progress update or mark items Ready for Closure.`,
-          );
-        }
-        sentTo.push(g.name);
       }
     });
+
+    // Email only owners with an address, and record what the mail service actually did. The
+    // previous version counted every owner as "sent" regardless of whether an email was even
+    // attempted, so the toast and the audit-log entry both overstated the follow-up performed.
+    const emailed: string[] = [];
+    const failed: { name: string; reason: string }[] = [];
+    const noEmail: string[] = [];
+    await Promise.all(
+      jobs.map(async ({ g, items }) => {
+        if (!g.email) {
+          noEmail.push(g.name);
+          return;
+        }
+        const lines = items.map(
+          (x, i) =>
+            `${i + 1}. ${x.o.title}${x.due ? ` — expected close ${fmtDate(x.due)}` : ""}${x.overdue ? " (OVERDUE)" : ""}`,
+        );
+        const res = await emailNotify(
+          [g.email],
+          `AuditLens — reminder: ${items.length} outstanding observation(s)`,
+          `Dear ${g.name},\n\nThis is a reminder from Internal Audit that ${items.length} observation(s) assigned to your department are still outstanding:\n\n${lines.join("\n")}\n\nPlease sign in to AuditLens to post a progress update or mark items Ready for Closure.`,
+        );
+        if (res.sent) emailed.push(g.name);
+        else failed.push({ name: g.name, reason: res.reason || "unknown error" });
+      }),
+    );
+
+    const covered = jobs.reduce((s, j) => s + j.items.length, 0);
     logAudit(
       "obs.bulk_reminder",
-      `Sent outstanding-observation reminders to ${sentTo.length} department head(s)`,
-      { owners: sentTo, observations: totalObs, onlyOverdue },
+      `Outstanding-observation reminders: ${emailed.length} emailed, ${failed.length} failed, ${noEmail.length} with no email on file`,
+      {
+        emailed,
+        emailFailed: failed,
+        noEmailOnFile: noEmail,
+        observations: covered,
+        unassignedObservations: unassigned.length,
+        onlyOverdue,
+      },
     );
+
+    const clean = !failed.length && !noEmail.length;
+    const lines = [
+      `In-app reminders posted for ${jobs.length} department head(s), covering ${covered} observation(s).`,
+      emailed.length
+        ? `${emailed.length} email(s) delivered.`
+        : "No emails were delivered.",
+    ];
+    if (noEmail.length)
+      lines.push(`No email address on file for: ${noEmail.join(", ")} — notified in-app only.`);
+    if (failed.length)
+      lines.push(
+        `Email failed for: ${failed.map((f) => `${f.name} (${f.reason})`).join(", ")}.`,
+      );
+    if (unassigned.length)
+      lines.push(
+        `${unassigned.length} outstanding observation(s) have no action owner and could not be included.`,
+      );
+
     modal.close();
     modal.success(
-      `Reminders sent to ${sentTo.length} department head(s) covering ${totalObs} observation(s).`,
+      <div style={{ textAlign: "left" }}>
+        {lines.map((l, i) => (
+          <p key={i} style={{ margin: i ? "6px 0 0" : 0 }}>
+            {l}
+          </p>
+        ))}
+      </div>,
+      clean ? "Reminders sent" : "Reminders sent — with exceptions",
     );
   }
 
@@ -149,6 +210,16 @@ export default function RemindersDialog() {
         Each selected department head receives one consolidated email listing their outstanding
         observations, plus an in-app notification.
       </p>
+      {unassigned.length ? (
+        <div className="reminders-gap" role="status">
+          <b>
+            {unassigned.length} outstanding observation{unassigned.length === 1 ? "" : "s"} cannot
+            be reminded about.
+          </b>{" "}
+          They have no assigned action owner, so there is no address to send to. Open each
+          observation and assign an owner to bring it into the follow-up cycle.
+        </div>
+      ) : null}
       <label style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 400 }}>
         <input
           type="checkbox"

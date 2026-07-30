@@ -14,6 +14,7 @@
 
 import { useState } from "react";
 import { useUser } from "@/components/chrome/UserContext";
+import BusyButton from "@/components/feedback/BusyButton";
 import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import { StatusPill } from "@/components/ui";
@@ -442,9 +443,10 @@ export function VerifyRemediationDialog({ auditId, reportId, obsId }: Ids) {
             >
               ← Back
             </button>
-            <button className="btn" type="button" onClick={sendBack}>
+            {/* QA-18 — BusyButton blocks a second activation while the first is in flight. */}
+            <BusyButton className="btn" busyLabel="Sending…" onClick={sendBack}>
               Reject &amp; send back to owner
-            </button>
+            </BusyButton>
           </>
         ) : (
           <>
@@ -562,7 +564,8 @@ export function HeadCloseDialog({ auditId, reportId, obsId }: Ids) {
       footer={
         <>
           <button className="btn sec" type="button" onClick={modal.close}>Cancel</button>
-          <button className="btn" type="button" onClick={close}>Approve &amp; close</button>
+          {/* QA-18 — closing an observation twice would double-post its closure entries. */}
+          <BusyButton className="btn" busyLabel="Closing…" onClick={close}>Approve &amp; close</BusyButton>
         </>
       }
     >
@@ -640,9 +643,9 @@ export function ClosureRejectDialog({ auditId, reportId, obsId, target }: Ids & 
       footer={
         <>
           <button className="btn sec" type="button" onClick={modal.close}>Cancel</button>
-          <button className="btn" type="button" onClick={submit}>
+          <BusyButton className="btn" busyLabel="Sending…" onClick={submit}>
             {toAuditor ? "Return to auditor" : "Send back to owner"}
-          </button>
+          </BusyButton>
         </>
       }
     >
@@ -695,7 +698,7 @@ export function RequestReviewDialog({ auditId, reportId, obsId }: Ids) {
       footer={
         <>
           <button className="btn sec" type="button" onClick={modal.close}>Cancel</button>
-          <button className="btn" type="button" onClick={submit}>Send request</button>
+          <BusyButton className="btn" busyLabel="Sending…" onClick={submit}>Send request</BusyButton>
         </>
       }
     >
@@ -744,7 +747,7 @@ export function ForwardWithdrawalDialog({ auditId, reportId, obsId }: Ids) {
       footer={
         <>
           <button className="btn sec" type="button" onClick={modal.close}>Cancel</button>
-          <button className="btn" type="button" onClick={submit}>Forward to Head</button>
+          <BusyButton className="btn" busyLabel="Forwarding…" onClick={submit}>Forward to Head</BusyButton>
         </>
       }
     >
@@ -797,7 +800,7 @@ export function DeclineReviewDialog({ auditId, reportId, obsId }: Ids) {
       footer={
         <>
           <button className="btn sec" type="button" onClick={modal.close}>Cancel</button>
-          <button className="btn" type="button" onClick={submit}>Decline request</button>
+          <BusyButton className="btn" busyLabel="Declining…" onClick={submit}>Decline request</BusyButton>
         </>
       }
     >
@@ -965,9 +968,9 @@ export function StatusEditDialog({ auditId, reportId, obsId }: Ids) {
       footer={
         <>
           <button className="btn sec" type="button" onClick={modal.close}>Cancel</button>
-          <button className="btn" type="button" onClick={submit}>
+          <BusyButton className="btn" busyLabel="Saving…" onClick={submit}>
             {head ? "Apply" : "Request change"}
-          </button>
+          </BusyButton>
         </>
       }
     >

@@ -50,7 +50,9 @@ export function MyObsCard({ item }: { item: PortalItem }) {
   const rfc = !!o.ownerRectifiedAt && (o.status || "Open") !== "Closed";
 
   return (
-    <div className="myobs-card" onClick={open} title="Open">
+    /* QA-6 — was a <div onClick>. This is an action owner's primary route into their own
+       observations, so it being keyboard-unreachable locked them out of the portal entirely. */
+    <button type="button" className="myobs-card" onClick={open} title="Open">
       <div className="myobs-card-top">
         {ext ? (
           <TintPill hex={sv}>{(o as ExtFinding).severity || "—"}</TintPill>
@@ -76,7 +78,7 @@ export function MyObsCard({ item }: { item: PortalItem }) {
           <span>{ecStr}</span>
         </div>
       ) : null}
-    </div>
+    </button>
   );
 }
 
@@ -154,20 +156,27 @@ export function OwnerAnnounce({ userId }: { userId: string }) {
   const dismissed = useAnnDismissed(userId);
   if (dismissed) return null;
   return (
-    <div className="owner-announce" onClick={() => modal.open(<OwnerSimulationDialog userId={userId} />)}>
+    /* QA-6 — the whole banner used to be a <div onClick>, which was both keyboard-unreachable
+       and impossible to wrap in a <button> because it already contains the dismiss control.
+       The call to action is its own button instead: no nested interactive elements, and both
+       actions are reachable by keyboard. */
+    <div className="owner-announce">
       <span className="owner-announce-ico" aria-hidden="true">📌</span>
       <div>
         <b>New here?</b> When your department has addressed an observation, open it and use the{" "}
         <b>Ready for Closure</b> button to send it back to Internal Audit.{" "}
-        <u>Click to see how it works.</u>
+        <button
+          type="button"
+          className="owner-announce-cta"
+          onClick={() => modal.open(<OwnerSimulationDialog userId={userId} />)}
+        >
+          See how it works
+        </button>
       </div>
       <button
         className="owner-announce-x"
         type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          dismissOwnerAnnounce(userId);
-        }}
+        onClick={() => dismissOwnerAnnounce(userId)}
         title="Dismiss"
       >
         ×

@@ -69,6 +69,35 @@ export function normalizeRole(raw: unknown): string {
     : "audit_staff";
 }
 
+/* QA-14 — one session displayed three different role labels.
+   Six separate role→label maps existed (SidebarNav, workspace/observations, settings/staff,
+   RoleSwitcher's options, settings/dialogs' select, and StaffDashboard's greeting, which
+   substituted the user's DEPARTMENT for their role entirely). Role denotes authority to approve
+   and close findings, so a label that changes between screens undermines any screenshot used as
+   evidence of who did what. This is the single source; nothing else should map a role to text. */
+export const ROLE_LABELS: Record<string, string> = {
+  head_of_audit: "Head of Audit",
+  audit_staff: "Audit Staff",
+  action_owner: "Action Owner",
+  admin: "Admin",
+};
+
+export function roleLabel(role: string | undefined | null): string {
+  return ROLE_LABELS[String(role || "")] || ROLE_LABELS.audit_staff;
+}
+
+/** The label to show for a user, accounting for an admin viewing as another role.
+ * Always states both the acting role and that they are an admin — an admin who has switched
+ * view still holds admin authority, and hiding that is what made the sidebar look inconsistent. */
+export function displayRoleLabel(user: SessionUser): string {
+  if (user.role === "admin") {
+    return user.activeRole
+      ? `${roleLabel(user.activeRole)} (Admin)`
+      : `${roleLabel("head_of_audit")} (Admin)`;
+  }
+  return roleLabel(user.role);
+}
+
 /** Effective role for permission checks: an admin acts as their chosen activeRole, and as the
  * Head of Audit until they pick one. Everyone else is just their role. */
 export function effectiveRole(user: SessionUser): string {

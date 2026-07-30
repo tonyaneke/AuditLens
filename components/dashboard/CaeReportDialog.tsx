@@ -9,7 +9,7 @@ import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import { runAiText } from "@/lib/client/ai";
 import { esc, stamp, wordDoc } from "@/lib/client/exports";
 import {
-  allObs,
+  approvedObs,
   ck,
   CRITS,
   daysToClose,
@@ -37,7 +37,8 @@ import type { WorkspaceDb } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 
 function buildCaePrompt(db: WorkspaceDb, period: string): string {
-  const obs = allObs(db);
+  // QA-11 — Board-facing figures use the approved population, as the Tracker does.
+  const obs = approvedObs(db);
   const c = zeroCrit();
   obs.forEach((o) => c[o.criticality]++);
   const open = obs.filter((o) => o.status !== "Closed").length;
@@ -65,7 +66,8 @@ Key data:
 
 export function exportCaeReport(db: WorkspaceDb): void {
   const u = db.caeReport || {};
-  const obs = allObs(db);
+  // QA-11 — as above: the exported Board report must reconcile with the Tracker.
+  const obs = approvedObs(db);
   const c = zeroCrit();
   obs.forEach((o) => c[o.criticality]++);
   const open = obs.filter((o) => o.status !== "Closed").length;

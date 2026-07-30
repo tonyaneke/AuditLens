@@ -23,7 +23,7 @@ import {
   allObs,
   allObsRaw,
   ck,
-  closeBucket,
+  closeBucketOf,
   CLOSE_BUCKETS,
   CRITS,
   CRIT_HEX,
@@ -67,6 +67,10 @@ const RECENT_COL: Record<string, string> = {
 type TrackerFilter = { crit: string; tl: string; status: string; owner: string; repeat: boolean };
 const NO_FILTER: TrackerFilter = { crit: "All", tl: "All", status: "All", owner: "All", repeat: false };
 
+/** QA-5 — rows painted per group before "Show more". A display limit, never a data limit:
+ * the group header always states the true total. */
+const PAGE = 50;
+
 export default function TrackerPage() {
   const { db, mutate } = useWorkspace();
   const user = useUser();
@@ -76,6 +80,9 @@ export default function TrackerPage() {
   const search = useSearchParams();
   const mode = search.get("mode") === "insights" ? "insights" : search.get("mode") === "recent" ? "recent" : "actions";
   const [filter, setFilter] = useState<TrackerFilter>(NO_FILTER);
+  // How many rows each close-group is currently showing. Keyed by group so expanding
+  // "Recently closed" doesn't disturb the open-action groups.
+  const [closedShown, setClosedShown] = useState<Record<string, number>>({});
 
   const obs = useMemo(() => allObs(db).filter(obsIsApproved), [db]);
 
@@ -93,7 +100,7 @@ export default function TrackerPage() {
     let inner = `<h1>Remediation Tracker — Open Actions</h1><div class="meta">${esc(db.org)} — Internal Audit · ${openObs.length} open action(s) · ${openObs.filter((o) => o.isRepeat).length} repeat finding(s)</div>`;
     if (!openObs.length) inner += `<div>No open actions.</div>`;
     [...CLOSE_BUCKETS, "No date"].forEach((g) => {
-      const rows = openObs.filter((o) => (closeBucket(daysToClose(o, o._r)) ?? "No date") === g);
+      const rows = openObs.filter((o) => (closeBucketOf(o, o._r) ?? "No date") === g);
       if (!rows.length) return;
       rows.sort((a, b) => {
         const da = daysToClose(a, a._r), dbb = daysToClose(b, b._r);
@@ -295,6 +302,10 @@ export default function TrackerPage() {
     return d != null && d >= 0 && d <= 14;
   }).length;
   const overdue = openAll.filter(isOver).length;
+  // QA-11 — the Overdue tile counts every open overdue action, but the row groups below divert
+  // anything already marked Ready to Close into its own group. Without saying so, the tile and
+  // the rows it filters to appear to disagree. The count is stated on the tile instead.
+  const overdueAwaitingVerification = openAll.filter((o) => readyToClose(o) && isOver(o)).length;
   const repeats = openAll.filter((o) => o.isRepeat).length;
 
   const owners = [...new Set(obs.map((o) => String(o.owner || "")).filter(Boolean))].sort((a, b) =>
@@ -312,11 +323,23 @@ export default function TrackerPage() {
   const passStatus = (o: ObsWithContext) => statusF === "All" || (o.status || "Open") === statusF;
   const filtersActive =
     filter.crit !== "All" || statusF !== "All" || tlF !== "All" || filter.owner !== "All" || filter.repeat;
-  const bucketOf = (o: ObsWithContext) => closeBucket(daysToClose(o, o._r)) ?? "No date";
+  const bucketOf = (o: ObsWithContext) => closeBucketOf(o, o._r) ?? "No date";
 
   const CLOSE_GROUPS = ["Ready to Close", ...CLOSE_BUCKETS, "No date", "Recently Closed"];
   const groupLabel = (g: string) =>
     g === "No date" ? "No expected close date" : g === "Ready to Close" ? "Ready to close — awaiting verification" : g === "Recently Closed" ? "Recently closed" : g;
+
+  /* QA-11 — the reason the Dashboard and the Tracker reported different Overdue counts.
+     The KPI tiles count every open action in a bucket; these row groups pull anything already
+     marked Ready to Close out into its own group first. So the "Overdue" group legitimately
+     renders fewer rows than the "Overdue" tile claims, and nothing said so — the auditor read
+     15 on one screen and 12 on the other. The count that was moved is now stated on the group
+     it was moved out of, which is the auditor's own suggested remedy. */
+  const divertedToReady = (g: string) =>
+    g === "Ready to Close" || g === "Recently Closed"
+      ? 0
+      : pool.filter((o) => (o.status || "Open") !== "Closed" && readyToClose(o) && passStatus(o) && bucketOf(o) === g)
+          .length;
   const kpiActive: Record<string, boolean> = {
     ready: tlF === "Ready to Close",
     closed: tlF === "Recently Closed",
@@ -348,8 +371,7 @@ export default function TrackerPage() {
       if (!showClosedGroup) return null;
       rows = pool
         .filter((o) => (o.status || "Open") === "Closed")
-        .sort((a, b) => String(b.closedDateISO || "").localeCompare(String(a.closedDateISO || "")))
-        .slice(0, 50);
+        .sort((a, b) => String(b.closedDateISO || "").localeCompare(String(a.closedDateISO || "")));
     } else {
       if (!showOpenGroups) return null;
       rows = pool.filter((o) => (o.status || "Open") !== "Closed" && !readyToClose(o) && passStatus(o) && bucketOf(o) === g);
@@ -360,8 +382,18 @@ export default function TrackerPage() {
       );
     }
     if (!rows.length) return null;
-    return { g, rows };
-  }).filter(Boolean) as { g: string; rows: ObsWithContext[] }[];
+    /* QA-5 — "Recently Closed" used to .slice(0, 50) with no notice, so 22 of 72 closed actions
+       were unreachable from any filter combination and the group header disagreed with the
+       "Recently closed" KPI. The full set is kept here; `shown` only limits what is painted,
+       every group reports its true total, and the remainder is one click away. */
+    const limit = closedShown[g] ?? PAGE;
+    return { g, rows, shown: rows.slice(0, limit), total: rows.length };
+  }).filter(Boolean) as {
+    g: string;
+    rows: ObsWithContext[];
+    shown: ObsWithContext[];
+    total: number;
+  }[];
 
   return (
     <>
@@ -373,18 +405,32 @@ export default function TrackerPage() {
             ["ready", "good", "Ready to close", readyCount, "awaiting verification"],
             ["open", "base", "Open actions", openAll.length, "across all audits"],
             ["watch", "warn", "Watchlist", watch, "due within 2 weeks"],
-            ["overdue", "warn", "Overdue", overdue, "past expected close"],
+            [
+              "overdue",
+              "warn",
+              "Overdue",
+              overdue,
+              overdueAwaitingVerification
+                ? `past expected close · ${overdueAwaitingVerification} awaiting verification`
+                : "past expected close",
+            ],
             ["repeat", "accent", "Repeat findings", repeats, "recur from prior audits"],
           ] as [string, string, string, number, string][]
         ).map(([which, tone, label, value, sub]) => (
-          <div
+          /* QA-6 — these were <div onClick>: no tabindex, no role, no key handler, so the
+             tracker's primary filter control was unreachable by keyboard. A real <button> gets
+             focus, Enter and Space for free, and aria-pressed conveys the toggle state that the
+             "active" class conveys visually. */
+          <button
             key={which}
+            type="button"
             className={`kpi-click${kpiActive[which] ? " active" : ""}`}
             onClick={() => applyKpi(which)}
-            title="Click to filter"
+            aria-pressed={!!kpiActive[which]}
+            title="Filter by this"
           >
             <Kpi tone={tone} label={label} value={value} sub={sub} />
-          </div>
+          </button>
         ))}
       </div>
 
@@ -443,7 +489,7 @@ export default function TrackerPage() {
       </div>
 
       {groups.length ? (
-        groups.map(({ g, rows }) => (
+        groups.map(({ g, shown, total }) => (
           <div className="card" key={g}>
             <div className="row" style={{ marginBottom: 10, alignItems: "center" }}>
               <span className="dot" style={{ width: 11, height: 11, borderRadius: 3, background: BCOL[g], display: "inline-block" }} />
@@ -451,7 +497,11 @@ export default function TrackerPage() {
                 {groupLabel(g)}
               </div>
               <div className="hint">
-                {rows.length} action{rows.length !== 1 ? "s" : ""}
+                {total} action{total !== 1 ? "s" : ""}
+                {shown.length < total ? ` · showing ${shown.length}` : ""}
+                {divertedToReady(g)
+                  ? ` · ${divertedToReady(g)} more listed under “Ready to close”`
+                  : ""}
               </div>
             </div>
             <table>
@@ -466,7 +516,7 @@ export default function TrackerPage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((o) => {
+                {shown.map((o) => {
                   const od = isOver(o);
                   const ec = effectiveClose(o, o._r);
                   return (
@@ -571,6 +621,27 @@ export default function TrackerPage() {
                 })}
               </tbody>
             </table>
+            {shown.length < total ? (
+              <div className="tracker-more">
+                <span className="hint">
+                  Showing {shown.length} of {total}
+                </span>
+                <button
+                  className="btn ghost sm"
+                  type="button"
+                  onClick={() => setClosedShown((s) => ({ ...s, [g]: (s[g] ?? PAGE) + PAGE }))}
+                >
+                  Show {Math.min(PAGE, total - shown.length)} more
+                </button>
+                <button
+                  className="btn ghost sm"
+                  type="button"
+                  onClick={() => setClosedShown((s) => ({ ...s, [g]: total }))}
+                >
+                  Show all {total}
+                </button>
+              </div>
+            ) : null}
           </div>
         ))
       ) : (
@@ -627,7 +698,14 @@ function RecentPanel({
       <div className="seclabel">Recent observations</div>
       <div className="tracker-recent">
         {list.map((e, i) => (
-          <div className="tracker-recent-row" key={i} onClick={() => onOpen(e.o)} title="Open observation">
+          /* QA-6 — was a <div onClick> with no keyboard affordance. */
+          <button
+            className="tracker-recent-row"
+            key={i}
+            type="button"
+            onClick={() => onOpen(e.o)}
+            title="Open observation"
+          >
             <div className="tracker-recent-main">
               <b>{e.label}</b>
               <div className="hint">{e.o.title}</div>
@@ -636,7 +714,7 @@ function RecentPanel({
             <span className="hint" style={{ whiteSpace: "nowrap", color: RECENT_COL[e.type] }}>
               {timeAgo(e.at)}
             </span>
-          </div>
+          </button>
         ))}
       </div>
     </div>

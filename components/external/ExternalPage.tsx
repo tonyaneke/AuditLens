@@ -525,7 +525,8 @@ function ExtInsightsPanel({
                 <td>{s}</td>
                 <td>{v.t}</td>
                 <td>{v.closed}</td>
-                <td>{Math.round((v.closed / v.t) * 100)}%</td>
+                {/* QA-21 — an unguarded divide rendered "NaN%" whenever a source had no rows. */}
+                <td>{v.t ? Math.round((v.closed / v.t) * 100) : 0}%</td>
                 <td>{v.overdue ? <span className="pill c-High">{v.overdue}</span> : "—"}</td>
               </tr>
             ))}

@@ -87,7 +87,7 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { data?: WorkspaceDb };
+  let body: { data?: WorkspaceDb; baseUpdatedAt?: string | null };
   try {
     body = await request.json();
   } catch {
@@ -111,6 +111,34 @@ export async function PUT(request: Request) {
   // sections — is reconciled away server-side so the client cannot bypass the approval workflow.
   const existing = await prisma.workspaceData.findUnique({ where: { id: WORKSPACE_ID } });
   const current = (existing?.data as WorkspaceDb) || defaultWorkspaceData();
+
+  /* QA-4 — optimistic concurrency.
+     The whole application state is one row, and every save overwrites all of it. Without a
+     version check, two people editing different observations at the same time silently
+     last-write-wins: the second save is built from a snapshot taken before the first, so it
+     restores the stale copy of records the second user never even opened. The audit found the
+     `?meta=1` watermark endpoint already existed, suggesting conflict detection was intended
+     but never enforced on write.
+
+     `baseUpdatedAt` is the watermark the client last saw. If the stored row has moved on since,
+     the write is refused with 409 and the client refreshes rather than clobbering. Older clients
+     that send no watermark keep the previous behaviour rather than being locked out mid-session. */
+  if (body.baseUpdatedAt !== undefined && existing) {
+    const stored = existing.updatedAt.toISOString();
+    const base = body.baseUpdatedAt ? new Date(body.baseUpdatedAt).toISOString() : null;
+    if (base !== stored) {
+      return NextResponse.json(
+        {
+          error: "conflict",
+          message:
+            "Someone else saved a change while you were editing. Your view has been refreshed — reapply your change and save again.",
+          updatedAt: existing.updatedAt,
+        },
+        { status: 409 },
+      );
+    }
+  }
+
   const { data: authorized, violations } = authorizeWorkspaceWrite(
     session.role,
     session.id,
@@ -121,11 +149,35 @@ export async function PUT(request: Request) {
 
   const payload = graftStoredPdfs(current, authorized) as Prisma.InputJsonValue;
 
-  const row = await prisma.workspaceData.upsert({
-    where: { id: WORKSPACE_ID },
-    update: { data: payload },
-    create: { id: WORKSPACE_ID, data: payload },
-  });
+  /* The check above still leaves a window between the read and the write. Make the update
+     itself conditional on the watermark so two simultaneous saves cannot both succeed:
+     updateMany applies a WHERE, and returns count 0 if the row moved on in between. */
+  if (body.baseUpdatedAt !== undefined && existing) {
+    const result = await prisma.workspaceData.updateMany({
+      where: { id: WORKSPACE_ID, updatedAt: existing.updatedAt },
+      data: { data: payload },
+    });
+    if (result.count === 0) {
+      const fresh = await prisma.workspaceData.findUnique({ where: { id: WORKSPACE_ID } });
+      return NextResponse.json(
+        {
+          error: "conflict",
+          message:
+            "Someone else saved a change while you were editing. Your view has been refreshed — reapply your change and save again.",
+          updatedAt: fresh?.updatedAt ?? null,
+        },
+        { status: 409 },
+      );
+    }
+  } else {
+    await prisma.workspaceData.upsert({
+      where: { id: WORKSPACE_ID },
+      update: { data: payload },
+      create: { id: WORKSPACE_ID, data: payload },
+    });
+  }
+
+  const row = await prisma.workspaceData.findUniqueOrThrow({ where: { id: WORKSPACE_ID } });
 
   if (violations.length) {
     // Persisted the sanitized document; record what was filtered for the security trail.

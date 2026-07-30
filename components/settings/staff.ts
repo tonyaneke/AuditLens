@@ -77,12 +77,8 @@ export function staffPick(name: string): [string, string, string] | undefined {
   return STAFF_DIRECTORY.find(([x]) => x.toLowerCase() === n);
 }
 
-export function roleLabel(r: string | undefined): string {
-  if (r === "head_of_audit") return "Head of Audit";
-  if (r === "action_owner") return "Action Owner";
-  if (r === "admin") return "Admin";
-  return "Audit Staff";
-}
+/** QA-14 — re-exported from lib/permissions so there is one role→label map, not six. */
+export { roleLabel } from "@/lib/permissions";
 
 /** Sidebar sections a Head of Audit can grant to audit staff (audit-bot.js ASSESSMENT_NAV). */
 export const ASSESSMENT_NAV: [string, string][] = [

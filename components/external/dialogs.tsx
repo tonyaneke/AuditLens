@@ -10,6 +10,7 @@ import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import { runAiText } from "@/lib/client/ai";
 import { logAudit } from "@/lib/client/audit-log";
+import { countReplacementChars, readTextFile } from "@/lib/client/csv-encoding";
 import {
   buildExtInsightPrompt,
   ensureExtList,
@@ -679,26 +680,39 @@ export function ExtImportDialog() {
   const [err, setErr] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
-  function onFile(files: FileList | null) {
+  async function onFile(files: FileList | null) {
     const file = files && files[0];
     if (!file) return;
     setFileName(file.name);
     setErr("");
-    const rd = new FileReader();
-    rd.onload = () => {
-      const res = extFindingsFromCsv(String(rd.result || ""));
-      if (!res.ok) {
-        setErr(res.error);
-        return;
-      }
-      mutate((d) => {
-        ensureExtList(d).push(...res.findings);
-      });
-      modal.close();
-      toast(res.findings.length + " external finding(s) imported.", "success");
-    };
-    rd.onerror = () => setErr("Could not read that file.");
-    rd.readAsText(file);
+    // QA-2 — see lib/client/csv-encoding.ts. readAsText() assumed UTF-8 and silently replaced
+    // anything else with U+FFFD, writing corruption straight into the findings register.
+    let text: string;
+    let encoding: string;
+    try {
+      ({ text, encoding } = await readTextFile(file));
+    } catch {
+      setErr("Could not read that file.");
+      return;
+    }
+    const bad = countReplacementChars(text);
+    if (bad) {
+      setErr(
+        `Read as ${encoding}, but the file already contains ${bad} unreadable character${bad === 1 ? "" : "s"}. ` +
+          "Re-export it as UTF-8 CSV before importing.",
+      );
+      return;
+    }
+    const res = extFindingsFromCsv(text);
+    if (!res.ok) {
+      setErr(res.error);
+      return;
+    }
+    mutate((d) => {
+      ensureExtList(d).push(...res.findings);
+    });
+    modal.close();
+    toast(res.findings.length + " external finding(s) imported.", "success");
   }
 
   return (

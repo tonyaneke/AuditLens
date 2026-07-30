@@ -27,7 +27,7 @@ function today0() { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
 function addDays(d: Date, n: number) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
 function daysBetween(a: Date, b: Date) { return Math.round((b.getTime() - a.getTime()) / 86400000); }
 
-type Obs = { criticality?: string; status?: string; isRepeat?: boolean; rootCause?: string; timeline?: string; dueDate?: string; owner?: string; title?: string; closedDateISO?: string };
+type Obs = { criticality?: string; status?: string; isRepeat?: boolean; rootCause?: string; timeline?: string; dueDate?: string; owner?: string; title?: string; closedDateISO?: string; obsApproval?: string; withdrawn?: boolean; withdrawal?: { stage?: string } };
 type Report = { reportDateISO?: string; reportDate?: string; observations?: Obs[]; title?: string };
 type Audit = { name?: string; area?: string; reports?: Report[] };
 type OItem = { o: Obs; a: Audit; r: Report };
@@ -47,7 +47,22 @@ function zc() { const o: Record<string, number> = {}; CRITS.forEach((c) => (o[c]
 export function computeExcoSnapshot(data: any, opts: { period?: string; headline?: string; commentary?: string }) {
   const audits: Audit[] = Array.isArray(data.audits) ? data.audits : [];
   const items: OItem[] = [];
-  audits.forEach((a) => (a.reports || []).forEach((r) => (r.observations || []).forEach((o) => items.push({ o, a, r }))));
+  /* QA-11 — this brief goes to the MD and EXCO, and it was counting a different population to
+     every screen in the app: withdrawn observations and ones still awaiting approval were both
+     included. allObs() in lib/workspace/selectors.ts drops withdrawn, and obsIsApproved() drops
+     pending/rejected. Mirrored here (this file is a deliberate server-side replica, so the
+     predicates are restated rather than imported) — otherwise the Board pack reports more open
+     and more overdue findings than the Tracker the audit team is working from. */
+  const isWithdrawn = (o: Obs) => !!(o.withdrawn || (o.withdrawal && o.withdrawal.stage === "withdrawn"));
+  const isApproved = (o: Obs) => o.obsApproval !== "pending" && o.obsApproval !== "rejected";
+  audits.forEach((a) =>
+    (a.reports || []).forEach((r) =>
+      (r.observations || []).forEach((o) => {
+        if (isWithdrawn(o) || !isApproved(o)) return;
+        items.push({ o, a, r });
+      }),
+    ),
+  );
   const total = items.length;
   const openItems = items.filter((x) => x.o.status !== "Closed");
   const closed = total - openItems.length;

@@ -15,9 +15,11 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
+import { toast } from "@/components/feedback/ToastHost";
 import { defaultWorkspace, type WorkspaceDb } from "./types";
 import { isSyncPaused } from "./sync-pause";
 
@@ -98,6 +100,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
 
   const bump = useCallback(() => setVersion((v) => v + 1), []);
+  // saveNow needs refresh() on a 409, but refresh is declared below it. Held in a ref so the
+  // two don't have to be reordered or made mutually dependent.
+  const refreshRef = useRef<(() => Promise<void>) | null>(null);
 
   const saveNow = useCallback(async () => {
     if (store.saveTimer) {
@@ -109,9 +114,31 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const res = await fetch("/api/data", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ data: store.db }),
+        /* QA-4 — send the watermark this save was built from. The server refuses the write
+           with 409 if the stored document has moved on since, instead of silently overwriting
+           whatever the other person just saved.
+
+           Omitted entirely when we have no watermark (the initial GET has not landed yet), so
+           a client that never saw a version is not locked out by a conflict it cannot resolve. */
+        body: JSON.stringify(
+          store.lastUpdatedAt
+            ? { data: store.db, baseUpdatedAt: store.lastUpdatedAt }
+            : { data: store.db },
+        ),
       });
       store.pendingSave = false;
+      if (res.status === 409) {
+        // Someone else saved first. Their version is authoritative; take it and tell the user,
+        // rather than reapplying ours on top of a document we never saw.
+        const j = await res.json().catch(() => null);
+        await refreshRef.current?.();
+        toast(
+          (j && j.message) ||
+            "Someone else saved a change while you were editing. Your view has been refreshed — reapply your change and save again.",
+          "error",
+        );
+        return;
+      }
       if (res.ok) {
         const j = await res.json().catch(() => null);
         if (j && j.updatedAt) store.lastUpdatedAt = j.updatedAt;
@@ -154,6 +181,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       /* keep current copy */
     }
   }, [bump]);
+  refreshRef.current = refresh;
 
   // Initial load: adopt the session snapshot immediately (if any), then swap in the fresh
   // copy the moment the network delivers it.
@@ -244,7 +272,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         void fetch("/api/data", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ data: store.db }),
+          // QA-4 — the watermark goes on this path too. The page is unloading so there is no
+          // opportunity to resolve a conflict interactively; losing the flush is the correct
+          // outcome, because the alternative is overwriting a colleague's saved work.
+          body: JSON.stringify(
+            store.lastUpdatedAt
+              ? { data: store.db, baseUpdatedAt: store.lastUpdatedAt }
+              : { data: store.db },
+          ),
           keepalive: true,
         });
         store.pendingSave = false;

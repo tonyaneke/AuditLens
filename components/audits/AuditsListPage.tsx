@@ -50,7 +50,12 @@ function AuditCard({ a }: { a: Audit }) {
   const sh = AUDIT_STATUS_HEX[a.status || ""] || "#64748b";
   const open = obs.filter((o) => o.status !== "Closed").length;
   return (
-    <div className="entity-card" onClick={() => navTo(hrefForView("audit", { audit: a.id }))}>
+    /* QA-6 — was a <div onClick>: not focusable, not activatable by keyboard. */
+    <button
+      type="button"
+      className="entity-card"
+      onClick={() => navTo(hrefForView("audit", { audit: a.id }))}
+    >
       <div className="entity-card-head">
         <div className="entity-card-icon audit-icon" aria-hidden="true">▤</div>
         <div className="entity-card-main">
@@ -88,7 +93,7 @@ function AuditCard({ a }: { a: Audit }) {
           <span className="hint">No observations yet</span>
         )}
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -96,7 +101,9 @@ function ReportCard({ a, r }: { a: Audit; r: Report }) {
   const c = zeroCrit();
   (r.observations || []).forEach((o) => c[o.criticality]++);
   return (
-    <div
+    /* QA-6 — see AuditCard above. */
+    <button
+      type="button"
       className="entity-card"
       onClick={() => navTo(hrefForView("report", { audit: a.id, report: r.id }))}
     >
@@ -116,7 +123,7 @@ function ReportCard({ a, r }: { a: Audit; r: Report }) {
           </span>
         </div>
       </div>
-    </div>
+    </button>
   );
 }
 

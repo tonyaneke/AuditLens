@@ -53,12 +53,8 @@ export function obsCommentTag(u: ThreadEntry): string {
 export function statusClass(s: string | undefined): string {
   return s === "Closed" ? "s-Closed" : s === "In Progress" ? "s-InProgress" : "s-Open";
 }
-export function roleLabel(r: string | undefined): string {
-  if (r === "head_of_audit") return "Head of Audit";
-  if (r === "action_owner") return "Action Owner";
-  if (r === "admin") return "Admin";
-  return "Audit Staff";
-}
+/** QA-14 — re-exported from lib/permissions so there is one role→label map, not six. */
+export { roleLabel } from "@/lib/permissions";
 export function hasExecSummary(r: Report | undefined): boolean {
   return !!(
     r &&

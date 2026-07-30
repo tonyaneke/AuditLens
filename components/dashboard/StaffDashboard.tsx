@@ -7,19 +7,21 @@ import { useUser } from "@/components/chrome/UserContext";
 import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import NewObsDialog from "@/components/obs/NewObsDialog";
+import BusyButton from "@/components/feedback/BusyButton";
 import NewResponsesDialog, { newResponseNotifs } from "./NewResponsesDialog";
 import { CritPill, Empty, Kpi, RowOpen, StatusPill } from "@/components/ui";
-import { effectiveRole } from "@/lib/permissions";
+import { displayRoleLabel } from "@/lib/permissions";
 import {
-  allObs,
+  approvedObs,
   ck,
-  closeBucket,
+  closeBucketOf,
   CLOSE_BUCKETS,
   CRITS,
   daysToClose,
   effectiveClose,
   fmtDate,
   fmtDateTime,
+  percentages,
   uid,
   type ObsWithContext,
 } from "@/lib/workspace/selectors";
@@ -120,12 +122,26 @@ function AddNoteDialog({ obsId }: { obsId: string }) {
           <button className="btn sec" type="button" onClick={modal.close}>
             Cancel
           </button>
-          <button
+          {/* QA-18 — BusyButton disables itself while onClick runs, so a double-click cannot
+              record the note twice. `disabled` on empty text also fixes the QA-17 complaint at
+              source: the field is marked "Note *", so the control should be visibly unavailable
+              rather than accepting the click and silently doing nothing. */}
+          <BusyButton
             className="btn"
-            type="button"
+            busyLabel="Saving…"
+            disabled={!text.trim()}
             onClick={() => {
-              if (!text.trim()) {
+              const body = text.trim();
+              if (!body) {
                 toast("Enter a note first.");
+                return;
+              }
+              // QA-18 — a duplicate of the note most recently recorded on this observation is
+              // almost always an accidental resubmit. Warn rather than silently accepting it:
+              // duplicates clutter the remediation record and inflate apparent follow-up.
+              const last = notes[notes.length - 1];
+              if (last && String(last.text || "").trim() === body) {
+                toast("That is identical to the last note on this observation.", "error");
                 return;
               }
               mutate((d) => {
@@ -136,10 +152,13 @@ function AddNoteDialog({ obsId }: { obsId: string }) {
                       o.notes = o.notes || [];
                       (o.notes as unknown[]).push({
                         id: uid(),
-                        text: text.trim(),
+                        text: body,
                         author: user.name || "",
                         at: new Date().toISOString(),
                       });
+                      // Observation ids are unique; without this the loop keeps scanning every
+                      // remaining report and would append again on any duplicated id.
+                      return;
                     }
                   }
               });
@@ -147,7 +166,7 @@ function AddNoteDialog({ obsId }: { obsId: string }) {
             }}
           >
             Save note
-          </button>
+          </BusyButton>
         </>
       }
     >
@@ -200,7 +219,10 @@ export default function StaffDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [responses.length]);
 
-  const obs = allObs(db);
+  // QA-11 — was allObs(db), which counted observations still awaiting approval. The Tracker
+  // has always excluded them, so every headline figure here (Overdue, open, closed, the
+  // criticality donut) read higher than the same figure one screen away.
+  const obs = approvedObs(db);
   const total = obs.length;
   const nAudits = (db.audits || []).length;
   const nReports = (db.audits || []).reduce((s, a) => s + (a.reports || []).length, 0);
@@ -241,14 +263,16 @@ export default function StaffDashboard() {
   let closeNoDate = 0;
   const watchlist: { o: ObsWithContext; d: number }[] = [];
   openObs.forEach((o) => {
-    const d = daysToClose(o, o._r);
-    if (d == null) {
+    // QA-11 — bucket via closeBucketOf so "Overdue" here is decided by exactly the same
+    // predicate the Tracker's Overdue tile uses, rather than a rounded day count.
+    const b = closeBucketOf(o, o._r);
+    if (b == null) {
       closeNoDate++;
       return;
     }
-    const b = closeBucket(d);
-    if (b) closeB[b]++;
-    if (d <= 14) watchlist.push({ o, d });
+    closeB[b]++;
+    const d = daysToClose(o, o._r);
+    if (d != null && d <= 14) watchlist.push({ o, d });
   });
   watchlist.sort((a, b) => a.d - b.d);
   const onTrackN = closeB["2–4 weeks"] + closeB["1–3 months"] + closeB["> 3 months"];
@@ -257,12 +281,14 @@ export default function StaffDashboard() {
   const repeatOpen = repeats.filter((o) => o.status !== "Closed").length;
 
   const firstName = (user.name || db.signOffName || "there").trim().split(/\s+/)[0] || "there";
-  const roleTitle =
-    effectiveRole(user) === "head_of_audit"
-      ? "Head of Audit"
-      : user.department || db.signOffTitle || "Head, Internal Audit";
+  /* QA-14 — this line used to print the user's DEPARTMENT ("Internal Audit") for anyone who
+     wasn't Head of Audit, so the same session read "Head of Audit" in the sidebar and
+     "Internal Audit" here. A department is not a role, and role denotes the authority to
+     approve and close findings. Same label as everywhere else now. */
+  const roleTitle = displayRoleLabel(user);
 
   const segs = CRITS.map((c) => ({ value: byC[c], color: HEX[c] }));
+  const critPct = percentages(CRITS.map((c) => byC[c]));
   const tlUnspecified = openObs.filter((o) => !TIMELINES.includes(String(o.timeline || ""))).length;
   void tlUnspecified;
 
@@ -296,12 +322,13 @@ export default function StaffDashboard() {
           <div className="donutwrap">
             <Donut segs={segs} total={total} label="total" />
             <div className="legend" style={{ flex: 1 }}>
-              {CRITS.map((c) => (
+              {CRITS.map((c, i) => (
                 <div className="li" key={c}>
                   <span className="dot" style={{ background: HEX[c] }} />
                   <span className="lname">{c}</span>
                   <span className="lval">{byC[c]}</span>
-                  <span className="lpct">{total ? Math.round((byC[c] / total) * 100) : 0}%</span>
+                  {/* QA-21 — largest-remainder, so these always total exactly 100%. */}
+                  <span className="lpct">{critPct[i]}%</span>
                 </div>
               ))}
             </div>

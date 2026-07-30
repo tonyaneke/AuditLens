@@ -171,9 +171,14 @@ a {
   flex-shrink: 0;
 }
 
+/* QA-13 — `flex: 1` is shorthand for `1 1 0%`, and a 0% basis means this element only gets
+   width from POSITIVE free space. Add a wide enough sibling to the row and free space goes
+   negative, flex-grow stops applying, and the name column renders at ~0px wide — one character
+   per line, since .sidebar-profile-name wraps rather than truncates. `flex: 1 1 auto` bases the
+   element on its content instead, so it shrinks gracefully rather than vanishing. */
 .sidebar-profile-meta {
   min-width: 0;
-  flex: 1;
+  flex: 1 1 auto;
 }
 
 /* Never truncate — long names wrap onto a second line. */
@@ -274,7 +279,10 @@ a {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: #5a8a7a;
+  /* Was #5a8a7a — 2.46:1 on --brand-900, the worst contrast in the UI, and it labels every
+     sidebar group (MAIN / ASSESSMENT / OVERSIGHT / PORTAL). Now 4.68:1, clearing AA at this
+     10px size while staying dimmer than the nav items themselves (#a8c9bc, 5.41:1). */
+  color: #95bdad;
   padding: 0 10px 6px;
 }
 
@@ -330,7 +338,8 @@ a {
   padding: 10px 14px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   font-size: 10px;
-  color: #5a8a7a;
+  /* Was #5a8a7a — 2.46:1 on the sidebar. Same replacement as .nav-label (4.68:1). */
+  color: #95bdad;
   line-height: 1.45;
 }
 
@@ -1776,6 +1785,8 @@ td.timeline-cell {
 
 /* Responsive */
 /* Entity cards (audits & reports lists) */
+/* QA-6 — a real <button> now (was a div with an onClick and no keyboard affordance).
+   The extra declarations only strip default button chrome so it renders as it always has. */
 .entity-card {
   background: var(--card);
   border: 1px solid var(--line);
@@ -1785,6 +1796,15 @@ td.timeline-cell {
   cursor: pointer;
   transition: border-color 0.15s ease-out, box-shadow 0.15s ease-out, transform 0.15s ease-out;
   box-shadow: var(--shadow-sm);
+  display: block;
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+.entity-card:focus-visible {
+  outline: 2px solid var(--brand-700);
+  outline-offset: 2px;
 }
 
 .entity-card:hover {
@@ -4427,11 +4447,14 @@ body.ai-busy .ai-generate-btn:not(:disabled) {
 
 /* ---- My Observations cards (action owner) ---- */
 .myobs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+/* QA-6 — a real <button> now; the last line strips default button chrome. */
 .myobs-card {
   background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px;
   cursor: pointer; transition: box-shadow .18s ease, transform .18s ease, border-color .18s ease;
   display: flex; flex-direction: column; gap: 8px;
+  width: 100%; font: inherit; color: inherit; text-align: left;
 }
+.myobs-card:focus-visible { outline: 2px solid var(--brand-700); outline-offset: 2px; }
 .myobs-card:hover { box-shadow: 0 8px 24px rgba(15,40,34,0.10); transform: translateY(-2px); border-color: color-mix(in oklch, var(--accent) 40%, var(--line)); }
 .myobs-card-top { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .myobs-card-title { font-weight: 700; font-size: 14.5px; line-height: 1.4; color: var(--ink); }
@@ -4443,12 +4466,18 @@ body.ai-busy .ai-generate-btn:not(:disabled) {
   display: flex; align-items: flex-start; gap: 12px;
   background: color-mix(in oklch, var(--accent) 10%, #fff);
   border: 1px solid color-mix(in oklch, var(--accent) 30%, var(--line));
-  border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; cursor: pointer;
-  font-size: 13.5px; color: var(--ink); line-height: 1.5; transition: background .15s ease;
+  border-radius: 12px; padding: 12px 14px; margin-bottom: 14px;
+  font-size: 13.5px; color: var(--ink); line-height: 1.5;
 }
-.owner-announce:hover { background: color-mix(in oklch, var(--accent) 16%, #fff); }
 .owner-announce-ico { font-size: 18px; line-height: 1.2; }
-.owner-announce u { color: var(--accent); font-weight: 600; }
+/* QA-6 — the call to action is a real button, so the banner itself no longer needs to be
+   clickable (it also contains the dismiss control, which cannot legally nest inside a button). */
+.owner-announce-cta {
+  background: none; border: 0; padding: 0; font: inherit; cursor: pointer;
+  color: var(--accent); font-weight: 600; text-decoration: underline;
+}
+.owner-announce-cta:hover { text-decoration: none; }
+.owner-announce-cta:focus-visible { outline: 2px solid var(--brand-700); outline-offset: 2px; }
 .owner-announce-x { margin-left: auto; background: none; border: none; font-size: 18px; color: var(--muted); cursor: pointer; line-height: 1; padding: 0 2px; }
 .owner-announce-x:hover { color: var(--ink); }
 
@@ -4506,12 +4535,16 @@ a.btn-back {
 
 /* ---- Remediation tracker: recent activity strip ---- */
 .tracker-recent { display: flex; flex-direction: column; margin-top: 6px; }
+/* QA-6 — a real <button> now; the resets keep it looking like a row. */
 .tracker-recent-row {
   display: flex; align-items: center; gap: 12px;
   padding: 9px 8px; border-top: 1px solid var(--line);
   cursor: pointer; border-radius: 8px;
   transition: background 0.12s ease-out;
+  width: 100%; border-left: 0; border-right: 0; border-bottom: 0;
+  background: none; font: inherit; color: inherit; text-align: left;
 }
+.tracker-recent-row:focus-visible { outline: 2px solid var(--brand-700); outline-offset: -2px; }
 .tracker-recent-row:first-child { border-top: none; }
 .tracker-recent-row:hover { background: #f4f8f6; }
 .tracker-recent-ico {
@@ -4522,9 +4555,33 @@ a.btn-back {
 .tracker-recent-main { flex: 1; min-width: 0; }
 .tracker-recent-main b { font-size: 13px; }
 
+/* QA-5 — progressive reveal for a close group that is longer than one page. */
+.tracker-more {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.tracker-more .hint { flex: 1; }
+
+/* Reminders dialog: outstanding observations with no action owner cannot be reminded about.
+   Stated up front rather than silently filtered out of the list. */
+.reminders-gap {
+  margin: 0 0 10px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  border: 1px solid #f2c9d1;
+  background: var(--crit-bg, #fdf3f5);
+  color: #7a1226;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
 /* ---- File upload progress bar ---- */
 .upload-progress { margin-top: 10px; }
-.upload-progress-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 12.5px; color: var(--muted, #64748b); margin-bottom: 4px; gap: 8px; }
+.upload-progress-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 12.5px; color: var(--muted, #587069); margin-bottom: 4px; gap: 8px; }
 .upload-progress-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .upload-progress-pct { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--accent, #4b3fa0); }
 .upload-progress-track { height: 7px; border-radius: 999px; background: #e6ebf1; overflow: hidden; }
@@ -4538,10 +4595,26 @@ a.btn-back {
 .iasa-due-card { margin-bottom: 4px; }
 
 /* ---- Clickable tracker KPI cards (filter shortcuts) ---- */
-.kpi-click { cursor: pointer; border-radius: 14px; transition: transform .12s ease, box-shadow .12s ease; }
+/* QA-6 — .kpi-click is a real <button> now (it was a div with an onClick and no keyboard
+   affordance). These resets strip the default button chrome so it renders exactly as before;
+   only focus behaviour is added. */
+.kpi-click {
+  cursor: pointer;
+  border-radius: 14px;
+  transition: transform .12s ease, box-shadow .12s ease;
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+}
 .kpi-click:hover { transform: translateY(-1px); }
 .kpi-click:hover .kpi { box-shadow: 0 4px 14px rgba(13,90,71,.10); }
 .kpi-click.active .kpi { outline: 2px solid var(--accent, #1f8a5b); outline-offset: 1px; }
+.kpi-click:focus-visible { outline: 2px solid var(--brand-700); outline-offset: 2px; }
 
 /* ---- User avatars (Microsoft profile photos, initials fallback) ---- */
 .al-avatar { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; object-fit: cover; flex-shrink: 0; background: #e6ebf1; color: #475569; font-weight: 700; overflow: hidden; line-height: 1; }
@@ -4594,7 +4667,7 @@ a.btn-back {
   padding: 10px 12px;
   font-size: 11px;
   font-weight: 700;
-  color: var(--muted, #64807a);
+  color: var(--muted, #587069);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   border-bottom: 1px solid var(--line, #e1eae7);
@@ -4617,7 +4690,7 @@ a.btn-back {
 .role-switcher-option.active { background: #e9f8f2; }
 .role-switcher-option-content { flex: 1; min-width: 0; }
 .role-switcher-option-label { font-size: 13px; font-weight: 600; color: var(--ink, #19302a); }
-.role-switcher-option-desc { font-size: 11px; color: var(--muted, #64807a); margin-top: 2px; }
+.role-switcher-option-desc { font-size: 11px; color: var(--muted, #587069); margin-top: 2px; }
 .role-switcher-option.active .role-switcher-option-label { color: var(--accent, #1f8a5b); }
 
 /* ---- Loading skeletons (workspace still downloading) ---- */
@@ -4664,13 +4737,13 @@ a.btn-back {
 .mft-progress { display: flex; align-items: center; gap: 8px; min-width: 170px; }
 .mft-track { flex: 1; height: 6px; border-radius: 999px; background: #e8eef1; overflow: hidden; }
 .mft-fill { height: 100%; border-radius: 999px; background: var(--brand-500, #1f8a5b); transition: width 0.4s; }
-.mft-progress-label { font-size: 11.5px; color: #64807a; white-space: nowrap; }
+.mft-progress-label { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
 .mft-action-row { display: flex; gap: 14px; align-items: flex-start; padding: 12px 2px; border-top: 1px solid var(--line); flex-wrap: wrap; }
 .mft-action-main { flex: 1; min-width: 260px; }
 .mft-action-text { font-weight: 600; line-height: 1.5; }
 .mft-action-tags { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; align-items: center; }
 .mft-update { background: #f4f8f6; border-left: 3px solid #cfe4db; border-radius: 8px; padding: 7px 11px; margin-top: 8px; font-size: 12.5px; color: #425b52; line-height: 1.5; }
-.mft-update-meta { margin-top: 3px; font-size: 11px; color: #7d968d; }
+.mft-update-meta { margin-top: 3px; font-size: 11px; color: var(--muted); }
 .mft-action-side { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; min-width: 170px; }
 @media (max-width: 720px) {
   .mft-action-side { align-items: flex-start; width: 100%; }

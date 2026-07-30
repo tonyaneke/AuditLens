@@ -1,6 +1,6 @@
 "use client";
 
-import type { MouseEvent } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -21,7 +21,7 @@ import {
   WorkflowSquare01Icon,
 } from "@hugeicons/core-free-icons";
 import type { SessionUser } from "@/lib/permissions";
-import { effectiveRole, isAdmin, visibleViews } from "@/lib/permissions";
+import { displayRoleLabel, effectiveRole, isAdmin, visibleViews } from "@/lib/permissions";
 import {
   myExtPendingCount,
   myFraudPendingCount,
@@ -91,18 +91,51 @@ type SidebarNavProps = {
   shell?: "legacy" | "app";
 };
 
-function formatRole(role: string) {
-  if (role === "head_of_audit") return "Head of Audit";
-  if (role === "action_owner") return "Action Owner";
-  if (role === "admin") return "Admin";
-  return "Audit Staff";
-}
-
 function initials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return "?";
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+/* QA-15 — profile-menu entry. In the React shell this is a real <Link>, so Settings and the
+   audit log navigate client-side instead of reloading the document and re-downloading the whole
+   workspace. The legacy shell has no router, so it keeps the imperative navigate().
+
+   onMouseDown preventDefault is retained deliberately: the panel is revealed by :focus-within,
+   and letting mousedown move focus would close it before the click landed. */
+function ProfileNavItem({
+  view,
+  shell,
+  onLegacyNav,
+  children,
+}: {
+  view: ViewKey;
+  shell: "app" | "legacy";
+  onLegacyNav: (e: MouseEvent, view: ViewKey) => void;
+  children: ReactNode;
+}) {
+  if (shell === "legacy") {
+    return (
+      <button
+        type="button"
+        className="sidebar-profile-dropdown-item"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={(e) => onLegacyNav(e, view)}
+      >
+        {children}
+      </button>
+    );
+  }
+  return (
+    <Link
+      href={hrefForView(view)}
+      className="sidebar-profile-dropdown-item"
+      onMouseDown={(e) => e.preventDefault()}
+    >
+      {children}
+    </Link>
+  );
 }
 
 /* Pending-approvals count on the Approvals item — port of legacy updateApprovalsBadge().
@@ -251,38 +284,35 @@ export default function SidebarNav({ user, shell = "legacy" }: SidebarNavProps) 
           </div>
           <div className="sidebar-profile-meta">
             <div className="sidebar-profile-name">{user.name}</div>
-            <div className="sidebar-profile-role">
-              {isAdmin(user) && user.activeRole
-                ? `${formatRole(user.activeRole)} (Admin)`
-                : formatRole(user.role)}
-            </div>
+            <div className="sidebar-profile-role">{displayRoleLabel(user)}</div>
           </div>
-          {isAdmin(user) && <RoleSwitcher user={user} />}
           {effectiveRole(user) === "head_of_audit" ? (
             <div className="sidebar-profile-dropdown">
               <div className="sidebar-profile-dropdown-panel">
-                <button
-                  type="button"
-                  className="sidebar-profile-dropdown-item"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={(e) => onProfileNav(e, "settings")}
-                >
+                {/* QA-15 — these navigated with window.location.assign, a full document reload
+                    that threw away the warmed workspace cache and re-downloaded the whole
+                    document, which is why "Audit log" felt like it did nothing for a second and
+                    then landed somewhere else. Client-side <Link> in the React shell; the
+                    legacy shell still needs its own navigate() call. */}
+                <ProfileNavItem view="settings" shell={shell} onLegacyNav={onProfileNav}>
                   <HugeiconsIcon icon={Settings01Icon} size={16} strokeWidth={1.75} />
                   Settings
-                </button>
-                <button
-                  type="button"
-                  className="sidebar-profile-dropdown-item"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={(e) => onProfileNav(e, "auditlog")}
-                >
+                </ProfileNavItem>
+                <ProfileNavItem view="auditlog" shell={shell} onLegacyNav={onProfileNav}>
                   <HugeiconsIcon icon={TransactionHistoryIcon} size={16} strokeWidth={1.75} />
                   Audit log
-                </button>
+                </ProfileNavItem>
               </div>
             </div>
           ) : null}
         </div>
+        {/* QA-13 — the role switcher used to sit inside .sidebar-profile-head, a horizontal
+            flex row. Its max-content width (~170px) exceeded the space left beside the 36px
+            avatar in a 220px row, so free space went negative, flex-grow never applied, and
+            .sidebar-profile-meta stayed at its 0 flex-basis — rendering the user's name one
+            character per line. It only ever reproduced for admins, because only admins render
+            this control. It belongs on its own row anyway; its margin-top always assumed that. */}
+        {isAdmin(user) && <RoleSwitcher user={user} />}
         <button
           type="button"
           className="sidebar-signout"

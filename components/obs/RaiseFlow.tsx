@@ -22,6 +22,13 @@ import {
   priorObsForRepeat,
   TIMELINES,
 } from "@/lib/workspace/observations";
+import {
+  firstError,
+  nextObsRef,
+  reportBaseDate,
+  usedObsRefs,
+  validateObservation,
+} from "@/lib/workspace/obs-validation";
 import { approvals, ck, uid } from "@/lib/workspace/selectors";
 import type { Observation } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
@@ -42,7 +49,14 @@ export default function RaiseFlow({
   const head = isHead(user);
 
   const [step, setStep] = useState<1 | 2>(1);
-  const [o, setO] = useState<Observation>({ ...draft });
+  /* QA-9 — the Ref field was free text with `e.g. 1.1` as its placeholder and no generator
+     behind it, so whoever raised an observation typed the example. That is how "1.1" came to
+     identify eleven different findings. Seeded with the next free reference instead; the field
+     stays editable, but a duplicate is now rejected on submit. */
+  const [o, setO] = useState<Observation>(() => ({
+    ...draft,
+    ref: String(draft.ref || "").trim() || nextObsRef(db),
+  }));
   const [err, setErr] = useState("");
 
   // Step 2 state
@@ -78,6 +92,9 @@ export default function RaiseFlow({
       const u = dir.find((x) => x.id === d.headUserId);
       return !u || u.active !== false || d.headUserId === ownerId || d.headUserId === owner2Id;
     });
+  const report = (db.audits || [])
+    .find((x) => x.id === auditId)
+    ?.reports?.find((x) => x.id === reportId);
   const priors = priorObsForRepeat(db, reportId);
   const [repQ, setRepQ] = useState("");
 
@@ -133,6 +150,17 @@ export default function RaiseFlow({
           ? "Assign a primary action owner — an observation cannot be raised without someone accountable for remediating it."
           : "No department heads exist yet. Add a department with a head in Settings, then raise this observation.",
       );
+      return;
+    }
+    /* QA-9 / QA-10 / QA-22 — reference uniqueness, a target date after the report date, and a
+       prior reference on any repeat. The AI repeat scan above can set isRepeat without finding
+       a match, which is exactly how a repeat finding ended up with no prior reference. */
+    const problems = validateObservation(
+      { ref: String(o.ref || "").trim(), dueDate: due, isRepeat, repeatOf },
+      { existingRefs: usedObsRefs(db), baseDate: reportBaseDate(report, o.createdAt) },
+    );
+    if (problems.length) {
+      setErr(firstError(problems));
       return;
     }
     setErr("");
@@ -213,8 +241,13 @@ export default function RaiseFlow({
         </div>
         <div className="f3">
           <div>
-            <label>Ref</label>
-            <input value={String(o.ref || "")} onChange={set("ref")} placeholder="e.g. 1.1" />
+            <label>Ref *</label>
+            <input
+              value={String(o.ref || "")}
+              onChange={set("ref")}
+              placeholder="auto-assigned"
+              title="Assigned automatically. Must be unique across all reports."
+            />
           </div>
           <div>
             <label>Criticality *</label>

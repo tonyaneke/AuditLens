@@ -18,7 +18,16 @@ import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import RaiseFlow from "@/components/obs/RaiseFlow";
 import { runAiJson, runAiText } from "@/lib/client/ai";
 import { logAudit } from "@/lib/client/audit-log";
+import { countReplacementChars, readTextFile } from "@/lib/client/csv-encoding";
 import { directory, loadDirectory } from "@/lib/client/directory";
+import {
+  firstError,
+  nextObsRef,
+  normaliseImportedDate,
+  reportBaseDate,
+  usedObsRefs,
+  validateObservation,
+} from "@/lib/workspace/obs-validation";
 import { dl } from "@/lib/client/exports";
 import { generateObsDraft } from "@/lib/client/obs-ai";
 import { useDirectoryUsers } from "@/components/external/use-directory";
@@ -1353,13 +1362,34 @@ export function ModalBulkImportDialog() {
   const [fileName, setFileName] = useState("");
   const [result, setResult] = useState<ReactNode>(null);
 
-  function loadFile(e: ChangeEvent<HTMLInputElement>) {
+  // QA-2 — decode deliberately rather than assuming UTF-8. readAsText() silently turned every
+  // Excel-authored curly quote and dash into U+FFFD, which then went into the audit record.
+  async function loadFile(e: ChangeEvent<HTMLInputElement>) {
     const f = e.target.files && e.target.files[0];
     if (!f) return;
     setFileName(f.name);
-    const rd = new FileReader();
-    rd.onload = () => setCsvText(String(rd.result || ""));
-    rd.readAsText(f);
+    try {
+      const { text, encoding } = await readTextFile(f);
+      setCsvText(text);
+      const bad = countReplacementChars(text);
+      setResult(
+        bad ? (
+          <div className="hint" style={{ color: "var(--crit)" }}>
+            Read as {encoding}, but the file already contains {bad} unreadable character
+            {bad === 1 ? "" : "s"}. Re-export it as UTF-8 CSV before importing, or those
+            characters will be stored in the audit record.
+          </div>
+        ) : encoding !== "UTF-8" ? (
+          <div className="hint">Read as {encoding}.</div>
+        ) : null,
+      );
+    } catch {
+      setResult(
+        <div className="hint" style={{ color: "var(--crit)" }}>
+          Could not read that file.
+        </div>,
+      );
+    }
   }
 
   function doImport() {
@@ -1390,7 +1420,11 @@ export function ModalBulkImportDialog() {
     }
     let imported = 0;
     const skipped: string[] = [];
+    const warnings: string[] = [];
     mutate((d) => {
+      // QA-9 — track references as we go so a duplicate inside the file itself is caught too,
+      // not just a collision with what is already in the workspace.
+      const takenRefs = usedObsRefs(d);
       for (let r = 1; r < rows.length; r++) {
         const cols = rows[r];
         const g = (k: string) => (idx[k] != null ? String(cols[idx[k]] == null ? "" : cols[idx[k]]).trim() : "");
@@ -1398,6 +1432,31 @@ export function ModalBulkImportDialog() {
         if (!auditName || !reportTitle || !title) {
           skipped.push("Row " + (r + 1) + ": missing Audit / Report / Title");
           continue;
+        }
+
+        // QA-9 — a blank or already-used reference is generated rather than imported as-is.
+        let ref = g("ref");
+        if (!ref) {
+          ref = nextObsRef(d);
+          warnings.push(`Row ${r + 1}: no reference supplied — assigned ${ref}`);
+        } else if (takenRefs.has(ref.toLowerCase())) {
+          const replacement = nextObsRef(d);
+          warnings.push(`Row ${r + 1}: reference "${ref}" already in use — assigned ${replacement}`);
+          ref = replacement;
+        }
+        takenRefs.add(ref.toLowerCase());
+
+        // QA-8 — never store a free-text date; this field drives every overdue calculation.
+        const due = normaliseImportedDate(g("dueDate"));
+        if (due.warning) warnings.push(`Row ${r + 1}: ${due.warning}`);
+
+        // QA-22 — a repeat flag with no prior reference cannot be traced to its origin.
+        const isRepeat = /^(y|yes|true|1)$/i.test(g("isRepeat"));
+        const repeatOf = g("repeatOf");
+        if (isRepeat && !repeatOf) {
+          warnings.push(
+            `Row ${r + 1}: flagged as a repeat with no prior reference — imported as not-a-repeat`,
+          );
         }
         const a = findOrCreateAudit(d, auditName, g("type"), g("area"));
         const rep = findOrCreateReport(a, reportTitle);
@@ -1413,7 +1472,7 @@ export function ModalBulkImportDialog() {
               : "Open");
         const o: Observation = {
           id: uid(),
-          ref: g("ref"),
+          ref,
           title,
           category: g("category"),
           description: g("description"),
@@ -1426,9 +1485,9 @@ export function ModalBulkImportDialog() {
           managementResponse: g("managementResponse"),
           owner: g("owner"),
           timeline: tl,
-          dueDate: g("dueDate"),
-          isRepeat: /^(y|yes|true|1)$/i.test(g("isRepeat")),
-          repeatOf: g("repeatOf"),
+          dueDate: due.value,
+          isRepeat: isRepeat && !!repeatOf,
+          repeatOf,
           status: st,
           createdAt: new Date().toISOString(),
         };
@@ -1452,6 +1511,24 @@ export function ModalBulkImportDialog() {
               </span>
             ))}
             {skipped.length > 12 ? "…" : ""}
+          </div>
+        ) : null}
+        {/* QA-9 / QA-8 / QA-22 — rows that imported, but not exactly as supplied. Silence here
+            is how duplicate references and unreadable dates got into the register before. */}
+        {warnings.length ? (
+          <div className="note" style={{ marginTop: 8 }}>
+            <b>
+              {warnings.length} row{warnings.length === 1 ? " was" : "s were"} adjusted on import:
+            </b>
+            <div className="hint" style={{ marginTop: 4 }}>
+              {warnings.slice(0, 12).map((s, i) => (
+                <span key={i}>
+                  {s}
+                  <br />
+                </span>
+              ))}
+              {warnings.length > 12 ? `…and ${warnings.length - 12} more` : ""}
+            </div>
           </div>
         ) : null}
         {imported ? (
@@ -1783,6 +1860,19 @@ Management's current draft response: ${mgmt || "(none provided — draft an appr
     if (!o) return;
     if (!title.trim()) {
       toast("Title required.", "error");
+      return;
+    }
+    /* QA-9 / QA-10 / QA-22 — reference uniqueness, target date after the report date, and a
+       prior reference on any repeat. None of these were enforced, which is how "1.1" came to
+       be used eleven times and eight actions were created already overdue. Validated before
+       the save branches, so the rules apply to a staff member's proposed change as well as a
+       head's direct edit. */
+    const problems = validateObservation(
+      { ref: ref.trim(), dueDate: due.trim(), isRepeat: isRep, repeatOf: repOf.trim() },
+      { existingRefs: usedObsRefs(db, obsId), baseDate: reportBaseDate(r, o.createdAt) },
+    );
+    if (problems.length) {
+      toast(firstError(problems), "error");
       return;
     }
     const data: Partial<Observation> = {

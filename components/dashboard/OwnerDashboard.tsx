@@ -5,6 +5,7 @@
 import { useRouter } from "next/navigation";
 import { useUser } from "@/components/chrome/UserContext";
 import { CritPill, Empty, Kpi, RowOpen, StatusPill } from "@/components/ui";
+import { displayRoleLabel } from "@/lib/permissions";
 import { hrefForView, isLegacyPath } from "@/lib/routes";
 import {
   allObs,
@@ -106,7 +107,12 @@ export default function OwnerDashboard() {
       <div className="dash-welcome anim-fade-in">
         <div className="dash-welcome-text">
           <h1>Welcome, {(user.name || "there").split(/\s+/)[0]}</h1>
-          <p className="dash-welcome-role">{user.department || "Action Owner"}</p>
+          {/* QA-14 — the role, then the department as context. Previously the department
+              replaced the role entirely, so this screen never agreed with the sidebar. */}
+          <p className="dash-welcome-role">
+            {displayRoleLabel(user)}
+            {user.department ? ` · ${user.department}` : ""}
+          </p>
         </div>
         <div className="spacer" />
       </div>
