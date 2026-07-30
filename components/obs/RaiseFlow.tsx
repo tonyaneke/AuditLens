@@ -125,6 +125,17 @@ export default function RaiseFlow({
   }
 
   function submit() {
+    /* An observation with no action owner has nobody accountable for remediating it: it can
+       never be marked Ready for Closure, so it would sit in the tracker forever. */
+    if (!ownerId) {
+      setErr(
+        ownerDepts.length
+          ? "Assign a primary action owner — an observation cannot be raised without someone accountable for remediating it."
+          : "No department heads exist yet. Add a department with a head in Settings, then raise this observation.",
+      );
+      return;
+    }
+    setErr("");
     const dept = departments(db).find((d) => d.headUserId === ownerId);
     const sec2 = ownerId && owner2Id === ownerId ? "" : owner2Id;
     const dept2 = departments(db).find((d) => d.headUserId === sec2);
@@ -249,7 +260,14 @@ export default function RaiseFlow({
       title="Raise observation — assign owner"
       footer={
         <>
-          <button className="btn sec" type="button" onClick={() => setStep(1)}>
+          <button
+            className="btn sec"
+            type="button"
+            onClick={() => {
+              setErr("");
+              setStep(1);
+            }}
+          >
             ← Back
           </button>
           <button className="btn" type="button" onClick={submit}>
@@ -276,7 +294,8 @@ export default function RaiseFlow({
       </select>
       {ownerDepts.length ? null : (
         <div className="hint" style={{ color: "var(--crit)", marginTop: 4 }}>
-          No department heads exist yet — add departments in Settings to assign an owner (you can still raise without one).
+          No department heads exist yet — add a department with a head in Settings to assign an
+          owner. An observation cannot be raised without one.
         </div>
       )}
       <label style={{ marginTop: 8 }}>
@@ -378,6 +397,11 @@ export default function RaiseFlow({
           ? "As Head of Audit, this observation is raised and the action owner is notified immediately."
           : "This observation will be sent to the Head of Audit for approval before the action owner is notified."}
       </div>
+      {err ? (
+        <div style={{ marginTop: 8 }}>
+          <div className="ai-err">{err}</div>
+        </div>
+      ) : null}
     </ModalFrame>
   );
 }

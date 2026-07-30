@@ -25,6 +25,7 @@ import {
   procList,
   type RawProcAnalysis,
 } from "@/lib/workspace/process";
+import { departments, notifyOwnerAssigned } from "@/lib/workspace/observations";
 import { uid } from "@/lib/workspace/selectors";
 import type { ProcessReview } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
@@ -408,6 +409,10 @@ export function RaiseProcFindingDialog({ pid, fid }: { pid: string; fid: string 
     ),
   );
   const [rid, setRid] = useState(reports[0]?.reportId || "");
+  const [ownerId, setOwnerId] = useState("");
+  const [err, setErr] = useState("");
+  // Assignable owners = departments with a head login, same source as the raise wizard.
+  const ownerDepts = departments(db).filter((d) => d.headUserId);
   if (!p || !x) return null;
 
   if (!reports.length) {
@@ -429,13 +434,26 @@ export function RaiseProcFindingDialog({ pid, fid }: { pid: string; fid: string 
 
   // Legacy doRaiseProcFinding — pushes an observation with the exact legacy field set, tags the
   // report kind, then navigates to the (legacy-shell) report view.
+  // DEPARTS FROM LEGACY: legacy raised this with `owner: ""` and no owner picker at all, so a
+  // process finding became an observation nobody could ever close. An owner is now required,
+  // as it is in the raise wizard, and they are notified of the assignment.
   function doRaise() {
+    if (!ownerId) {
+      setErr(
+        ownerDepts.length
+          ? "Assign an action owner — an observation cannot be raised without someone accountable for remediating it."
+          : "No department heads exist yet. Add a department with a head in Settings, then raise this finding.",
+      );
+      return;
+    }
+    setErr("");
     let auditId = "";
     let reportId = "";
     mutate((d) => {
       const cur = procList(d).find((r) => r.id === pid);
       const cf = (cur?.findings || []).find((y) => y.id === fid);
       if (!cf) return;
+      const dept = departments(d).find((dp) => dp.headUserId === ownerId);
       for (const a of d.audits || [])
         for (const r of a.reports || []) {
           if (r.id !== rid) continue;
@@ -444,7 +462,7 @@ export function RaiseProcFindingDialog({ pid, fid }: { pid: string; fid: string 
             ({ High: "High", Medium: "Moderate", Low: "Low" } as Record<string, string>)[
               cf.severity || ""
             ] || "Moderate";
-          r.observations.push({
+          const obs = {
             id: uid(),
             ref: "",
             title: cf.title,
@@ -457,14 +475,18 @@ export function RaiseProcFindingDialog({ pid, fid }: { pid: string; fid: string 
             sopUpdate: "",
             criticality: crit as "High" | "Moderate" | "Low",
             managementResponse: "",
-            owner: "",
+            owner: dept ? dept.headName : "",
+            ownerUserId: ownerId,
+            departmentId: dept ? dept.id : "",
             timeline: "",
             dueDate: "",
             isRepeat: false,
             repeatOf: "",
             status: "Open",
             createdAt: new Date().toISOString(),
-          });
+          };
+          r.observations.push(obs);
+          notifyOwnerAssigned(d, obs);
           auditId = a.id;
           reportId = r.id;
         }
@@ -502,6 +524,30 @@ export function RaiseProcFindingDialog({ pid, fid }: { pid: string; fid: string 
           </option>
         ))}
       </select>
+      <label style={{ marginTop: 8 }}>Action owner (responds &amp; closes) *</label>
+      <select value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>
+        <option value="">— select action owner —</option>
+        {ownerDepts.map((d) => (
+          <option key={d.id} value={d.headUserId}>
+            {d.headName} · {d.name}
+          </option>
+        ))}
+      </select>
+      {ownerDepts.length ? (
+        <div className="hint" style={{ marginTop: 4 }}>
+          The owner is notified and is the one who remediates this and marks it Ready for Closure.
+        </div>
+      ) : (
+        <div className="hint" style={{ color: "var(--crit)", marginTop: 4 }}>
+          No department heads exist yet — add a department with a head in Settings to assign an
+          owner. An observation cannot be raised without one.
+        </div>
+      )}
+      {err ? (
+        <div style={{ marginTop: 8 }}>
+          <div className="ai-err">{err}</div>
+        </div>
+      ) : null}
     </ModalFrame>
   );
 }

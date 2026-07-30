@@ -73,7 +73,9 @@ export function VerifyStepper({ o }: { o: Observation }) {
           returned: true,
           who: rej!.prevOwnerRectified!.byName,
           at: rej!.prevOwnerRectified!.at,
-          note: "Returned by " + (rej!.byName || "the Head"),
+          note:
+            "Returned by " +
+            (rej!.byName || (rej!.byRole === "audit_staff" ? "Internal Audit" : "the Head")),
         }
       : { label: "Ready for closure", done: !!o.ownerRectifiedAt, who: o.ownerRectifiedByName, at: o.ownerRectifiedAt },
     auditorReturned
@@ -82,7 +84,9 @@ export function VerifyStepper({ o }: { o: Observation }) {
           returned: true,
           who: rej!.prevReportVerified!.byName,
           at: rej!.prevReportVerified!.at,
-          note: "Returned by " + (rej!.byName || "the Head"),
+          note:
+            "Returned by " +
+            (rej!.byName || (rej!.byRole === "audit_staff" ? "Internal Audit" : "the Head")),
         }
       : { label: "Auditor verified", done: !!o.reportVerifiedAt, who: o.reportVerifiedByName, at: o.reportVerifiedAt },
     { label: "Head verified & closed", done: !!o.headVerifiedAt, who: o.headVerifiedByName, at: o.closedDateISO },
@@ -257,12 +261,14 @@ export default function ObsRemediation({
           ✓ Ready for Closure
         </button>,
       );
-    // After a Head reject-to-auditor, re-verification is the AUDITOR's job — the Head only waits.
+    /* After a Head reject-to-auditor, re-verification is the AUDITOR's job — the Head only waits.
+       One entry point: the modal shows the owner's response and carries both outcomes —
+       verify it onward for closure, or reject it back to the owner for more work. */
     if (canVerify && o.ownerRectifiedAt && !o.reportVerifiedAt && !(head && rej && rej.target === "auditor"))
       actions.push(
         <button className="btn sm" type="button" key="verify"
           onClick={() => modal.open(<VerifyRemediationDialog auditId={a.id} reportId={r.id} obsId={o.id} />)}>
-          {rej && rej.target === "auditor" ? "Resend for closure verification" : "Verify remediation"}
+          {rej && rej.target === "auditor" ? "Resend for closure verification" : "View remediation"}
         </button>,
       );
     if (head && o.reportVerifiedAt && !o.headVerifiedAt) {
@@ -300,7 +306,7 @@ export default function ObsRemediation({
     ? ""
     : primary && !o.ownerRectifiedAt
       ? rej && rej.target === "owner"
-        ? "This was sent back to your department for more work — address the feedback, then mark it Ready for Closure again."
+        ? `This was sent back to your department for more work by ${rej.byRole === "audit_staff" ? "Internal Audit" : "the Head of Audit"} — address the feedback above, then mark it Ready for Closure again.`
         : "When your department has addressed this, mark it Ready for Closure for Internal Audit to verify."
       : secondary && !o.ownerRectifiedAt
         ? // DEPARTS FROM LEGACY: co-owners can now respond, so the copy no longer tells them to wait.
@@ -312,7 +318,7 @@ export default function ObsRemediation({
             : canVerify && o.ownerRectifiedAt && !o.reportVerifiedAt
               ? rej && rej.target === "auditor"
                 ? "The Head of Audit returned this to Internal Audit — address the note above, then resend for closure verification."
-                : "The action owner has marked this Ready for Closure — review their response and evidence, then verify to prepare closure."
+                : "The action owner has marked this Ready for Closure — open View remediation to review their response and evidence, then either verify it to prepare closure or reject it back to the owner."
               : head && o.reportVerifiedAt && !o.headVerifiedAt
                 ? "Verified by the auditor and sent to you — review the closure and evidence, then close, reject to the auditor, or escalate to the owner."
                 : ownerViewer
@@ -382,11 +388,13 @@ export default function ObsRemediation({
           <b>
             {rej.target === "auditor"
               ? "Returned by the Head of Audit to Internal Audit"
-              : "Escalated by the Head of Audit to the action owner"}
+              : rej.byRole === "audit_staff"
+                ? "Returned by Internal Audit to the action owner for more work"
+                : "Escalated by the Head of Audit to the action owner"}
           </b>
           {rej.note ? <div style={{ marginTop: 4 }}>{rej.note}</div> : null}
           <div className="hint" style={{ marginTop: 4 }}>
-            {rej.byName || "Head of Audit"}
+            {rej.byName || (rej.byRole === "audit_staff" ? "Internal Audit" : "Head of Audit")}
             {rej.at ? " · " + fmtDateTime(rej.at) : ""}
           </div>
         </div>

@@ -91,6 +91,54 @@ function FilePick({ onPick, label = "📎 Attach file" }: { onPick: (f: File | u
   );
 }
 
+/* ---- the shared "send it back" write ----
+   Used by the Head's reject/escalate dialog and by a reviewer returning a Ready-for-Closure
+   response from inside the View-remediation modal. Kept in one place so the two cannot drift:
+   the milestones being unwound are preserved on the rejection so the verify stepper can show
+   "↩ returned" instead of silently reverting to "Raised". */
+function writeRejection(
+  cur: Observation,
+  target: "auditor" | "owner",
+  note: string,
+  user: SessionUser,
+  head: boolean,
+): void {
+  cur.closureRejection = {
+    target,
+    note: note.trim(),
+    byName: user.name || (head ? "Head of Audit" : "Internal Audit"),
+    byRole: head ? "head_of_audit" : "audit_staff",
+    at: new Date().toISOString(),
+    prevOwnerRectified: cur.ownerRectifiedAt
+      ? { byName: cur.ownerRectifiedByName || "", at: cur.ownerRectifiedAt }
+      : undefined,
+    prevReportVerified: cur.reportVerifiedAt
+      ? { byName: cur.reportVerifiedByName || "", at: cur.reportVerifiedAt }
+      : undefined,
+  };
+  if (target === "auditor") {
+    cur.reportVerifiedAt = "";
+    cur.reportVerifiedBy = "";
+    cur.reportVerifiedByName = "";
+  } else {
+    cur.ownerRectifiedAt = "";
+    cur.ownerRectifiedBy = "";
+    cur.ownerRectifiedByName = "";
+    cur.reportVerifiedAt = "";
+    cur.reportVerifiedBy = "";
+    cur.reportVerifiedByName = "";
+  }
+}
+
+function notifyRejection(d: WorkspaceDb, cur: Observation, target: "auditor" | "owner"): void {
+  if (target === "auditor") {
+    notify(d, cur.raisedBy, "returned", "Returned for rework: " + cur.title, "observation", cur.id);
+    return;
+  }
+  notify(d, cur.ownerUserId, "returned", "Sent back to your department: " + cur.title, "myobs", cur.id);
+  notify(d, cur.secondaryOwnerUserId, "returned", "Sent back to your department: " + cur.title, "myobs", cur.id);
+}
+
 function ClosurePackage({ o }: { o: Observation }) {
   return (
     <>
@@ -305,16 +353,37 @@ export function VerifyRemediationDialog({ auditId, reportId, obsId }: Ids) {
   const [file, setFile] = useState<File | undefined>();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  /* Reviewing the owner's response has two honest outcomes, so both live here rather than as
+     rival buttons on the page: verify it onward for closure, or reject it back to the owner. */
+  const [mode, setMode] = useState<"verify" | "reject">("verify");
+  const [rejNote, setRejNote] = useState("");
+  const head = isHead(user);
 
   if (!o) return null;
   if (!canVerifyItem(user, o, a)) {
     return (
-      <ModalFrame title="Verify remediation">
+      <ModalFrame title="View remediation">
         <div className="hint">
-          Only the auditor who raised it, the lead auditor, or the Head of Audit can verify.
+          Only the auditor who raised it, the lead auditor, or the Head of Audit can review this.
         </div>
       </ModalFrame>
     );
+  }
+
+  function sendBack() {
+    if (!rejNote.trim()) {
+      setErr("Say what needs to change before sending it back.");
+      return;
+    }
+    editObs((cur) => writeRejection(cur, "owner", rejNote, user, head));
+    notifyIn((d, cur) => notifyRejection(d, cur, "owner"));
+    logAudit(
+      "obs.closure_rejected",
+      `${head ? "Head" : "Auditor"} rejected remediation to owner: ` + o!.title,
+      { observationId: obsId },
+    );
+    modal.close();
+    toast("Rejected and sent back to the action owner for more work.", "success");
   }
 
   async function submit() {
@@ -347,16 +416,45 @@ export function VerifyRemediationDialog({ auditId, reportId, obsId }: Ids) {
     toast("Verified and sent to the Head of Internal Audit for closure sign-off.", "success");
   }
 
+  const rejecting = mode === "reject";
   return (
     <ModalFrame
-      title="Verify remediation"
+      title="View remediation"
       footer={
-        <>
-          <button className="btn sec" type="button" onClick={modal.close}>Cancel</button>
-          <button className="btn" type="button" onClick={submit} disabled={busy}>
-            {busy ? "Verifying…" : "Verify & send for closure"}
-          </button>
-        </>
+        rejecting ? (
+          <>
+            <button
+              className="btn sec"
+              type="button"
+              onClick={() => {
+                setMode("verify");
+                setErr("");
+              }}
+            >
+              ← Back
+            </button>
+            <button className="btn" type="button" onClick={sendBack}>
+              Reject &amp; send back to owner
+            </button>
+          </>
+        ) : (
+          <>
+            <button className="btn sec" type="button" onClick={modal.close}>Cancel</button>
+            <button
+              className="btn ghost danger"
+              type="button"
+              onClick={() => {
+                setMode("reject");
+                setErr("");
+              }}
+            >
+              Reject remediation
+            </button>
+            <button className="btn" type="button" onClick={submit} disabled={busy}>
+              {busy ? "Verifying…" : "Verify & send for closure"}
+            </button>
+          </>
+        )
       }
     >
       <div className="note" style={{ marginBottom: 10 }}><b>{o.title}</b></div>
@@ -367,22 +465,43 @@ export function VerifyRemediationDialog({ auditId, reportId, obsId }: Ids) {
         </div>
       ) : null}
       <ClosurePackage o={o} />
-      <div className="f2">
-        <div>
-          <label htmlFor="co-date">Closure date</label>
-          <input id="co-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-        </div>
-        <div>
-          <label htmlFor="co-by">Verified by</label>
-          <input id="co-by" value={by} onChange={(e) => setBy(e.target.value)} />
-        </div>
-      </div>
-      <label style={{ marginTop: 10 }}>
-        Closure evidence file <span className="hint">(optional upload)</span>
-      </label>
-      <FilePick onPick={setFile} label="📎 Choose file" />
-      <label htmlFor="co-note" style={{ marginTop: 10 }}>Closure note</label>
-      <textarea id="co-note" style={{ minHeight: 90 }} value={note} onChange={(e) => setNote(e.target.value)} />
+
+      {rejecting ? (
+        <>
+          <div className="hint" style={{ margin: "10px 0 8px" }}>
+            This reopens the observation for the action owner. Their response above stays in the
+            conversation, and they mark it Ready for Closure again once they have addressed your
+            feedback.
+          </div>
+          <label htmlFor="co-rej">What needs to change? *</label>
+          <textarea
+            id="co-rej"
+            style={{ minHeight: 110 }}
+            value={rejNote}
+            onChange={(e) => setRejNote(e.target.value)}
+            placeholder="Tell the action owner what is still missing — be specific about what would make this closable…"
+          />
+        </>
+      ) : (
+        <>
+          <div className="f2">
+            <div>
+              <label htmlFor="co-date">Closure date</label>
+              <input id="co-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            </div>
+            <div>
+              <label htmlFor="co-by">Verified by</label>
+              <input id="co-by" value={by} onChange={(e) => setBy(e.target.value)} />
+            </div>
+          </div>
+          <label style={{ marginTop: 10 }}>
+            Closure evidence file <span className="hint">(optional upload)</span>
+          </label>
+          <FilePick onPick={setFile} label="📎 Choose file" />
+          <label htmlFor="co-note" style={{ marginTop: 10 }}>Closure note</label>
+          <textarea id="co-note" style={{ minHeight: 90 }} value={note} onChange={(e) => setNote(e.target.value)} />
+        </>
+      )}
       {err ? <div className="ai-err" style={{ marginTop: 10 }}>{err}</div> : null}
     </ModalFrame>
   );
@@ -476,9 +595,12 @@ export function ClosureRejectDialog({ auditId, reportId, obsId, target }: Ids & 
   const [note, setNote] = useState("");
   const [err, setErr] = useState("");
   const toAuditor = target === "auditor";
+  const head = isHead(user);
 
   if (!o) return null;
-  if (!isHead(user)) {
+  // The Head's own sign-off stage. A reviewing auditor rejects from inside the View-remediation
+  // modal instead, which is the only place they see the response they are judging.
+  if (!head) {
     return (
       <ModalFrame title="Return observation">
         <div className="hint">Only the Head of Audit can do this.</div>
@@ -491,44 +613,16 @@ export function ClosureRejectDialog({ auditId, reportId, obsId, target }: Ids & 
       setErr("Say what needs to change before returning it.");
       return;
     }
-    editObs((cur) => {
-      // Preserve the milestones being unwound so the stepper can show "returned" rather than
-      // silently reverting to incomplete (legacy verifyStepperHTML relies on these).
-      cur.closureRejection = {
-        target,
-        note: note.trim(),
-        byName: user.name || "Head of Audit",
-        at: new Date().toISOString(),
-        prevOwnerRectified: cur.ownerRectifiedAt
-          ? { byName: cur.ownerRectifiedByName || "", at: cur.ownerRectifiedAt }
-          : undefined,
-        prevReportVerified: cur.reportVerifiedAt
-          ? { byName: cur.reportVerifiedByName || "", at: cur.reportVerifiedAt }
-          : undefined,
-      };
-      if (toAuditor) {
-        cur.reportVerifiedAt = "";
-        cur.reportVerifiedBy = "";
-        cur.reportVerifiedByName = "";
-      } else {
-        cur.ownerRectifiedAt = "";
-        cur.ownerRectifiedBy = "";
-        cur.ownerRectifiedByName = "";
-        cur.reportVerifiedAt = "";
-        cur.reportVerifiedBy = "";
-        cur.reportVerifiedByName = "";
-      }
+    editObs((cur) => writeRejection(cur, target, note, user, head));
+    notifyIn((d, cur) => notifyRejection(d, cur, target));
+    logAudit("obs.closure_rejected", `Head returned to ${target}: ` + o!.title, {
+      observationId: obsId,
     });
-    notifyIn((d, cur) => {
-      if (toAuditor) notify(d, cur.raisedBy, "returned", "Returned for rework: " + cur.title, "observation", cur.id);
-      else {
-        notify(d, cur.ownerUserId, "returned", "Sent back to your department: " + cur.title, "myobs", cur.id);
-        notify(d, cur.secondaryOwnerUserId, "returned", "Sent back to your department: " + cur.title, "myobs", cur.id);
-      }
-    });
-    logAudit("obs.closure_rejected", `Head returned to ${target}: ` + o!.title, { observationId: obsId });
     modal.close();
-    toast(toAuditor ? "Returned to Internal Audit." : "Escalated to the action owner.", "success");
+    toast(
+      toAuditor ? "Returned to Internal Audit." : "Escalated to the action owner.",
+      "success",
+    );
   }
 
   return (

@@ -37,6 +37,9 @@ export type ClosureRejection = {
   note: string;
   by?: string;
   byName?: string;
+  /** Who returned it — the Head signing off, or the auditor verifying the owner's response.
+   *  Absent on records written before auditor-initiated returns existed (treat as the Head). */
+  byRole?: "head_of_audit" | "audit_staff" | string;
   at?: string;
   prevOwnerRectified?: { at: string; byName: string } | null;
   prevReportVerified?: { at: string; byName: string } | null;

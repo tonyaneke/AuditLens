@@ -246,7 +246,20 @@ function applyDerivedStageTransition(cur: Obj, inc: Obj, next: Obj, role: string
     if (rejection && rejection.target === "auditor") next.closureRejection = null;
   }
 
-  // 3. An owner's comment to Internal Audit satisfies an outstanding "update requested" flag
+  // 3. An auditor returns the owner's closure response for more work. The Head could already
+  //    do this ("escalate to owner"); the auditor who actually reviews the response could not,
+  //    so a weak response could only be pushed UP to the Head. Unwinding ownerRectifiedAt is
+  //    already within an auditor's rights — but closureRejection is a controlled field, so
+  //    without this the note explaining WHY reverted and the owner was sent back with no
+  //    feedback. Restricted to target "owner": an auditor still cannot fabricate a Head
+  //    "reject to auditor", and this can never close or withdraw anything.
+  const auditorReturnedToOwner = role === STAFF_ROLE && !!cur.ownerRectifiedAt && !inc.ownerRectifiedAt;
+  if (auditorReturnedToOwner) {
+    const incRej = inc.closureRejection as { target?: string } | null | undefined;
+    if (incRej && incRej.target === "owner") next.closureRejection = incRej;
+  }
+
+  // 4. An owner's comment to Internal Audit satisfies an outstanding "update requested" flag
   //    (legacy addObsUpdate cleared it client-side; owners can't write updateRequestedAt here,
   //    so derive the clear from the one thing they can do — append a non-private update they
   //    authored themselves). Private co-owner notes don't count as a response.
