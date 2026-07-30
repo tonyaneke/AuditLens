@@ -328,7 +328,16 @@ export function ReadyForClosureDialog({ auditId, reportId, obsId }: Ids) {
                 {verdict.suggestion}
               </div>
               <div style={{ marginTop: 6 }}>
-                <button className="btn sec sm" type="button" onClick={() => setText(verdict.suggestion)}>
+                <button
+                  className="btn sec sm"
+                  type="button"
+                  onClick={() => {
+                    setText(verdict.suggestion);
+                    // Without this the box just changes somewhere above the fold and the click
+                    // reads as having done nothing.
+                    toast("Copied into your closure response — edit it to match what you did.", "success");
+                  }}
+                >
                   Copy
                 </button>
               </div>
@@ -851,6 +860,12 @@ export function useOwnerRequests(auditId: string, reportId: string, o: Observati
   }
 
   function requestProgressReport() {
+    // Same guard as requestOwnerUpdateAction: with no owner every notify() no-ops, so the
+    // request would be recorded and reported as sent having reached nobody.
+    if (!o.ownerUserId) {
+      toast("This observation has no assigned action owner — assign one first.", "error");
+      return;
+    }
     mutate((d) => {
       const cur = findObsIn(d, auditId, reportId, o.id);
       if (!cur) return;

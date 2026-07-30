@@ -159,7 +159,24 @@ export default function ObsComments({
 
   const visible = useMemo(() => (o ? obsThread(o, ownerViewer) : []), [o, ownerViewer]);
 
-  usePageChrome({ title: "Comments", back: <BackButton href={backHref} /> });
+  /* "Add comment" lives in the page header, not as a floating button — as a fixed FAB it sat on
+     top of the conversation and covered the text of the newest comment. */
+  usePageChrome(
+    {
+      title: "Comments",
+      back: <BackButton href={backHref} />,
+      actions: !ownerViewer && o ? (
+        <button
+          className="btn sm"
+          type="button"
+          onClick={() => modal.open(<AuditorCommentDialog auditId={auditId} reportId={reportId} obsId={obsId} />)}
+        >
+          ＋ Add comment
+        </button>
+      ) : null,
+    },
+    [ownerViewer, !!o, auditId, reportId, obsId],
+  );
 
   if (!o) {
     return <div className="card"><div className="empty">Observation not found.</div></div>;
@@ -216,16 +233,6 @@ export default function ObsComments({
         <div className="hint">{visible.length ? "No comments match the current filters." : "No comments yet."}</div>
       )}
 
-      {!ownerViewer ? (
-        <button
-          className="btn"
-          type="button"
-          style={{ position: "fixed", bottom: 28, right: 36, zIndex: 40, boxShadow: "0 6px 18px rgba(13,90,71,.35)", padding: "12px 22px", fontSize: 14 }}
-          onClick={() => modal.open(<AuditorCommentDialog auditId={auditId} reportId={reportId} obsId={obsId} />)}
-        >
-          ＋ Add comment
-        </button>
-      ) : null}
     </div>
   );
 }

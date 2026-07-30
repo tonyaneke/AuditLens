@@ -2,11 +2,12 @@
 
 // Staff / Head dashboard — React port of viewDashboard() (+ watchlist expand, add-note).
 
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useUser } from "@/components/chrome/UserContext";
 import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import NewObsDialog from "@/components/obs/NewObsDialog";
+import NewResponsesDialog, { newResponseNotifs } from "./NewResponsesDialog";
 import { CritPill, Empty, Kpi, RowOpen, StatusPill } from "@/components/ui";
 import { effectiveRole } from "@/lib/permissions";
 import {
@@ -187,6 +188,17 @@ export default function StaffDashboard() {
   const user = useUser();
   const modal = useModal();
   const [watchOpen, setWatchOpen] = useState<Record<string, boolean>>({});
+
+  /* Surface unread owner responses once per visit. The ref keeps it to once — the workspace
+     poll swaps `db` regularly, and re-opening the modal under the user would be hostile. */
+  const responses = newResponseNotifs(db, user.id);
+  const responsesShown = useRef(false);
+  useEffect(() => {
+    if (responsesShown.current || !responses.length) return;
+    responsesShown.current = true;
+    modal.open(<NewResponsesDialog items={responses} />);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [responses.length]);
 
   const obs = allObs(db);
   const total = obs.length;

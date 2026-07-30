@@ -21,7 +21,6 @@ import {
 } from "@/lib/workspace/external";
 import {
   departments,
-  notify,
   notifyBoth,
   notifyOwnerAssigned,
 } from "@/lib/workspace/observations";
@@ -346,7 +345,7 @@ export function ExtRaiseDialog() {
   const haveOwners = departments(db).filter((d) => d.headUserId).length > 0;
 
   function next() {
-    if (!f.title) {
+    if (!f.title.trim()) {
       setErr("A finding title is required.");
       return;
     }
@@ -355,6 +354,18 @@ export function ExtRaiseDialog() {
   }
 
   function save() {
+    /* Same rule as raising an observation: a finding with no action owner has nobody accountable
+       for remediating it, so it can never be marked Ready for Closure and sits in the register
+       forever. The label has always carried the required marker — the guard was missing. */
+    if (!f.ownerUserId) {
+      setErr(
+        haveOwners
+          ? "Assign a primary action owner — a finding cannot be raised without someone accountable for remediating it."
+          : "No department heads exist yet. Add a department with a head in Settings, then add this finding.",
+      );
+      return;
+    }
+    setErr("");
     // Read everything needed from state up front — the mutate callback must not await.
     mutate((d) => {
       const dept = departments(d).find((x) => x.headUserId === f.ownerUserId);
@@ -498,7 +509,14 @@ export function ExtRaiseDialog() {
       title="Add external finding — assign owner"
       footer={
         <>
-          <button className="btn sec" type="button" onClick={() => setStep(1)}>
+          <button
+            className="btn sec"
+            type="button"
+            onClick={() => {
+              setErr("");
+              setStep(1);
+            }}
+          >
             ← Back
           </button>
           <button className="btn" type="button" onClick={save}>
@@ -522,8 +540,8 @@ export function ExtRaiseDialog() {
       />
       {haveOwners ? null : (
         <div className="hint" style={{ color: "var(--crit)", marginTop: 4 }}>
-          No department heads exist yet — add departments in Settings (you can still add the
-          finding without an owner).
+          No department heads exist yet — add a department with a head in Settings to assign an
+          owner. A finding cannot be raised without one.
         </div>
       )}
       <label style={{ marginTop: 8 }}>
@@ -542,6 +560,11 @@ export function ExtRaiseDialog() {
         follows the same respond → verify → close flow as observations, but is tracked only on this
         page (not the Remediation Tracker).
       </div>
+      {err ? (
+        <div style={{ marginTop: 8 }}>
+          <div className="ai-err">{err}</div>
+        </div>
+      ) : null}
     </ModalFrame>
   );
 }

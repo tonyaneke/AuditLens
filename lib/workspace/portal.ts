@@ -57,6 +57,33 @@ export function myExtList(db: WorkspaceDb, userId: string | undefined): ExtFindi
   );
 }
 
+/* ---------------- "still on my plate" counts (sidebar pending dots) ----------------
+   What an action owner has NOT finished. Deliberately narrower than the list pages: an item
+   only counts while the owner still owes something — once they have marked it Ready for
+   Closure the ball is with Internal Audit, so the dot clears even though it is still open. */
+
+/** Observations awaiting this owner's response. */
+export function myObsPendingCount(db: WorkspaceDb, userId: string | undefined): number {
+  return myObsList(db, userId).filter(
+    (o) => (o.status || "Open") !== "Closed" && !o.withdrawn && !o.ownerRectifiedAt,
+  ).length;
+}
+
+/** External findings awaiting this owner's response. */
+export function myExtPendingCount(db: WorkspaceDb, userId: string | undefined): number {
+  return myExtList(db, userId).filter(
+    (f) => (f.status || "Open") !== "Closed" && !f.ownerRectifiedAt,
+  ).length;
+}
+
+/** Fraud prevention actions this owner has not implemented yet. */
+export function myFraudPendingCount(db: WorkspaceDb, userId: string | undefined): number {
+  return myFraudRisks(db, userId).reduce(
+    (n, f) => n + myFraudActionsFor(f, userId).filter((a) => a.status !== "Implemented").length,
+    0,
+  );
+}
+
 /** Fraud risks whose prevention actions this owner implements (primary owner only). */
 export function myFraudRisks(db: WorkspaceDb, userId: string | undefined): FraudRisk[] {
   // A risk is "mine" when it is assigned to me at risk level OR any of its prevention

@@ -206,6 +206,12 @@ export function ProcMetaDialog({ id }: { id: string }) {
   if (!p) return null;
 
   function save() {
+    // The create dialog requires both of these; without the same guard here an edit could
+    // silently blank the review's business unit or title.
+    if (!f.unit.trim() || !f.sop.trim()) {
+      toast("Business unit and SOP title are both required.", "error");
+      return;
+    }
     mutate((d) => {
       const cur = procList(d).find((x) => x.id === id);
       if (!cur) return;

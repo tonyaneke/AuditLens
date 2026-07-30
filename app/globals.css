@@ -2283,6 +2283,30 @@ td.timeline-cell {
   .nav-badge { animation: none; }
 }
 
+/* "New responses" digest rows (dashboard) — a full-width button so the whole row is the target */
+.newresp-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  text-align: left;
+  background: var(--card, #fff);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.newresp-row:hover { border-color: var(--accent); background: color-mix(in oklch, var(--accent) 5%, #fff); }
+.newresp-row .newresp-text { flex: 1; font-weight: 600; line-height: 1.45; }
+.newresp-row .newresp-when { white-space: nowrap; margin-top: 0; }
+@media (max-width: 560px) {
+  .newresp-row { flex-wrap: wrap; }
+  .newresp-row .newresp-text { flex-basis: 100%; }
+}
+
 .due-date {
   font-size: 12.5px;
   font-weight: 600;

@@ -1564,6 +1564,18 @@ export function ModalReassignObsDialog({
   if (!o) return null;
 
   function save() {
+    /* Reassigning to nobody silently unassigns the observation — both notifyBoth calls no-op on
+       an empty id, so it would report "the action owner has been notified" having told no one,
+       and the observation could never be marked Ready for Closure again. */
+    if (!ownerId) {
+      toast(
+        ownerDepts.length
+          ? "Select a primary action owner — an observation cannot be left without one."
+          : "No department heads exist yet. Add a department with a head in Settings first.",
+        "error",
+      );
+      return;
+    }
     mutate((d) => {
       const cur = findObsIn(d, auditId, reportId, obsId);
       if (!cur) return;

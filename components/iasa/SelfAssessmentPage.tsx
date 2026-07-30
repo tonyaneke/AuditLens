@@ -41,6 +41,7 @@ function GenerateContextDialog({ rec }: { rec: IaSaRecord }) {
   const { db, mutate } = useWorkspace();
   const modal = useModal();
   const [ctx, setCtx] = useState(String(rec.aiContext || ""));
+  const [err, setErr] = useState("");
   return (
     <ModalFrame
       title="Generate self-assessment"
@@ -53,8 +54,15 @@ function GenerateContextDialog({ rec }: { rec: IaSaRecord }) {
             className="btn dark ai-generate-btn"
             busyLabel="Generating…"
             onClick={async () => {
+              // Regenerating overwrites all 52 standard ratings, so it must not run on an empty
+              // context — the same guard the New-assessment dialog already applies.
+              const context = ctx.trim();
+              if (!context) {
+                setErr("Describe the IA function first — the AI evaluates against this context.");
+                return;
+              }
               modal.close();
-              await generateIASA(db, rec.id, mutate, ctx.trim());
+              await generateIASA(db, rec.id, mutate, context);
             }}
           >
             Generate assessment
@@ -73,6 +81,11 @@ function GenerateContextDialog({ rec }: { rec: IaSaRecord }) {
         onChange={(e) => setCtx(e.target.value)}
         placeholder="e.g. one-person in-house function (Head of Internal Audit); board-approved IA charter; functionally reports to the Board Audit Committee; risk-based annual plan approved; uses IIA methodology; whistleblowing programme; no external quality assessment yet; …"
       />
+      {err ? (
+        <div style={{ marginTop: 8 }}>
+          <div className="ai-err">{err}</div>
+        </div>
+      ) : null}
     </ModalFrame>
   );
 }

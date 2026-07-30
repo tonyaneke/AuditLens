@@ -22,6 +22,11 @@ import {
 } from "@hugeicons/core-free-icons";
 import type { SessionUser } from "@/lib/permissions";
 import { effectiveRole, isAdmin, visibleViews } from "@/lib/permissions";
+import {
+  myExtPendingCount,
+  myFraudPendingCount,
+  myObsPendingCount,
+} from "@/lib/workspace/portal";
 import { pendingApprovalCount } from "@/lib/workspace/selectors";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 import RoleSwitcher from "./RoleSwitcher";
@@ -33,6 +38,9 @@ import {
 } from "@/lib/routes";
 
 const ICON_SIZE = 20;
+
+// Portal items that carry an outstanding-work dot (shown to whoever owns the items).
+const PORTAL_DOT_VIEWS: ReadonlySet<ViewKey> = new Set<ViewKey>(["myobs", "myext", "myfraud"]);
 
 type NavItem = {
   view: ViewKey;
@@ -108,6 +116,28 @@ function ApprovalsBadge() {
   return <span className="nav-badge">{n}</span>;
 }
 
+/* Action-owner portal: a red count on a portal item shows how many items are still open and
+   awaiting the owner's response, so they can see what is outstanding without opening each page.
+   Items they have already sent back to Internal Audit are excluded — the ball is not with them. */
+function PendingDot({ view, userId }: { view: ViewKey; userId: string }) {
+  const { db } = useWorkspace();
+  const n =
+    view === "myobs"
+      ? myObsPendingCount(db, userId)
+      : view === "myext"
+        ? myExtPendingCount(db, userId)
+        : view === "myfraud"
+          ? myFraudPendingCount(db, userId)
+          : 0;
+  if (!n) return null;
+  const label = `${n} open item${n === 1 ? "" : "s"} awaiting your response`;
+  return (
+    <span className="nav-badge" title={label} aria-label={label}>
+      {n}
+    </span>
+  );
+}
+
 // Legacy-shell navigation: prefer window.go (the script's router — its bridge redirects
 // migrated views to real URLs), with the historical fallbacks kept intact.
 function legacyNavigate(view: string) {
@@ -167,6 +197,8 @@ export default function SidebarNav({ user, shell = "legacy" }: SidebarNavProps) 
                   const badge =
                     item.view === "approvals" && effectiveRole(user) === "head_of_audit" ? (
                       <ApprovalsBadge />
+                    ) : PORTAL_DOT_VIEWS.has(item.view) ? (
+                      <PendingDot view={item.view} userId={user.id} />
                     ) : null;
                   // Migrated targets: client-side <Link>. Legacy targets: plain anchor —
                   // a full page load hands over to the audit-bot shell.

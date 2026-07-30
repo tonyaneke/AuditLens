@@ -60,6 +60,11 @@ export default function SopUpdatePage({
   }
 
   function save() {
+    // Saving an empty box used to wipe an existing proposal and still report success.
+    if (!sopText.trim()) {
+      toast("Write the proposed SOP clause before saving.", "error");
+      return;
+    }
     mutate((d) => {
       const curA = (d.audits || []).find((x) => x.id === auditId);
       const curR = curA && (curA.reports || []).find((x) => x.id === reportId);

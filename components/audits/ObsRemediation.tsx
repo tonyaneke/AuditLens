@@ -329,24 +329,12 @@ export default function ObsRemediation({
                       ? "Awaiting auditor verification."
                       : "Awaiting Head of Audit closure.";
 
-  /* ---- closure package ---- */
+  /* ---- closure package ----
+     The action owner's closure response is deliberately NOT repeated here: obsThread() already
+     puts it in the conversation as a "closure" entry, so the comments page is its one home.
+     Reviewers still see it where they need it — inside the View-remediation and Head-close
+     modals, which is the point at which they are judging it. */
   const pkg: React.ReactNode[] = [];
-  if (o.ownerResponse && (closed || ownerViewer))
-    pkg.push(
-      <div className="obs-field" key="own">
-        <div className="ttl">Action owner&apos;s closure response</div>
-        <div className="txt">
-          <RichText text={o.ownerResponse} />
-          <Evidence files={o.ownerResponseEvidence} />
-          {o.ownerRectifiedByName ? (
-            <div className="hint" style={{ marginTop: 4 }}>
-              {o.ownerRectifiedByName}
-              {o.ownerRectifiedAt ? " · " + fmtDateTime(o.ownerRectifiedAt) : ""}
-            </div>
-          ) : null}
-        </div>
-      </div>,
-    );
   if (o.reportVerifiedAt && closed)
     pkg.push(
       <div className="obs-field" key="aud">

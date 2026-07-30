@@ -680,6 +680,12 @@ export function FraudActionDialog({ riskId, actionId }: { riskId: string; action
       toast("Action description required");
       return;
     }
+    /* An action with no owner is returned to nobody by myFraudActionsFor, so no one can ever
+       post progress on it — the same accountability rule as an observation's action owner. */
+    if (!a.ownerUserId && !a.owner.trim()) {
+      toast("Assign an owner — a prevention action needs someone accountable for it.", "error");
+      return;
+    }
     const prevOwnerId = String(existing?.ownerUserId || "");
     const assignedNew = !!a.ownerUserId && a.ownerUserId !== prevOwnerId;
     mutate((d) => {
