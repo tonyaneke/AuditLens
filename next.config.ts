@@ -3,44 +3,22 @@ import type { NextConfig } from "next";
 const isDev = process.env.NODE_ENV === "development";
 
 /* QA-016 — security response headers.
-   Set here rather than in proxy.ts so the set is identical on everything Next serves: the
-   document, /api/*, and static assets alike. The audit found HSTS present on /api/* but not
-   on the document; a single source removes that whole class of drift.
+   These have no per-request component, so they are set here once and apply identically to the
+   document, /api/*, and static assets. The audit found HSTS present on /api/* but not on the
+   document; a single source removes that whole class of drift.
 
-   On the CSP: script-src and style-src carry 'unsafe-inline' because this app renders inline
-   `style` attributes throughout and Next emits inline bootstrap scripts for the RSC payload.
-   The strict alternative is a per-request nonce, which — per the Next 16 CSP guide — forces
-   *every* page into dynamic rendering: no static generation, no CDN caching, PPR unavailable.
-   Everything other than inline script/style is locked to 'self'.
+   The Content-Security-Policy is NOT here — it lives in proxy.ts, because it carries a
+   per-request nonce that static config cannot express. Setting it in both places would emit two
+   CSP headers, which browsers enforce as the intersection of the two. See proxy.ts for the
+   policy and the reasoning behind each directive.
 
-   DEFERRED DECISION (QA-016): whether to go nonce-based is carried forward into the
-   Architecture/concurrency and Performance defect categories, to be taken once with real
-   numbers rather than twice on assumption. It needs an architecture call (rendering model)
-   and a performance measurement (cost of all-dynamic) — do not settle it in isolation here.
-   Until then this policy stops clickjacking and off-origin loading, but NOT injected inline
-   script. */
-const csp = [
-  "default-src 'self'",
-  // 'unsafe-eval' is required in dev only — React uses eval to rebuild server error stacks.
-  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
-  "style-src 'self' 'unsafe-inline'",
-  // Microsoft profile photos are fetched server-side and inlined as data URLs.
-  "img-src 'self' blob: data:",
-  // next/font/google self-hosts at build time, so no external font origin is needed.
-  "font-src 'self'",
-  // Every third-party call (Graph, SendGrid, Gemini) is made server-side — the browser never
-  // needs an off-origin connection.
-  "connect-src 'self'",
-  "object-src 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-  // The finding's stated business impact: clickjacking against approval / close-out flows.
-  "frame-ancestors 'none'",
-  "upgrade-insecure-requests",
-].join("; ");
-
+   DECIDED (was deferred from QA-016): the policy is now nonce-based, so an injected inline
+   <script> no longer executes. The cost that had been assumed prohibitive — losing static
+   generation — was measured on 2026-07-30 and is negligible here: every "static" route
+   prerendered a ~10.8 KB shell containing only the auth spinner and the text "Loading…",
+   because every page is a client component behind AuthGate. There was no cacheable content to
+   give up. */
 const securityHeaders = [
-  { key: "Content-Security-Policy", value: csp },
   // Redundant with frame-ancestors, kept for browsers that don't honour CSP Level 2.
   { key: "X-Frame-Options", value: "DENY" },
   { key: "X-Content-Type-Options", value: "nosniff" },
