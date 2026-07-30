@@ -1,7 +1,19 @@
 "use client";
 
-// Port of legacy stripMd/linkify/richText: multi-line text renders as a numbered list (one item
-// per line, leading bullets/numbers stripped), URLs become links, markdown asterisks removed.
+/* Renders stored audit text AS WRITTEN. URLs become links and stray markdown asterisks are
+   removed; nothing else is reformatted.
+
+   This used to turn any multi-line value into an <ol> — one numbered item per line — and strip
+   whatever bullet or number the author had put at the start of each line. On a management
+   response that is already structured prose with its own headings and sub-points, that produced
+   a flat numbered list that bore no relation to what was typed: every heading, every sub-bullet
+   and every ordinary sentence came out as a sibling numbered item, and the author's own
+   numbering was deleted.
+
+   These are contractual management responses and auditor notes quoted in Board papers. The
+   application must not restructure them — it must show what the author wrote. Whitespace is
+   preserved with white-space: pre-wrap, so line breaks, blank lines, indentation and the
+   author's own bullets all survive exactly as entered. */
 
 import { Fragment, type ReactNode } from "react";
 
@@ -27,17 +39,6 @@ export function linkifyText(s: string): ReactNode {
 export default function RichText({ text }: { text: unknown }) {
   if (text == null || text === "") return null;
   const s = stripMd(String(text).trim());
-  const parts = s
-    .split(/\r?\n+/)
-    .map((x) => x.replace(/^\s*(?:[-•·▪]|\d+[.)])\s+/, "").trim())
-    .filter(Boolean);
-  if (parts.length > 1)
-    return (
-      <ol className="rt-list">
-        {parts.map((l, i) => (
-          <li key={i}>{linkifyText(l)}</li>
-        ))}
-      </ol>
-    );
-  return <>{linkifyText(s)}</>;
+  if (!s) return null;
+  return <span className="rt-text">{linkifyText(s)}</span>;
 }

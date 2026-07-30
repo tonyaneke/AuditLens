@@ -53,10 +53,19 @@ export default function RaiseFlow({
      behind it, so whoever raised an observation typed the example. That is how "1.1" came to
      identify eleven different findings. Seeded with the next free reference instead; the field
      stays editable, but a duplicate is now rejected on submit. */
-  const [o, setO] = useState<Observation>(() => ({
-    ...draft,
-    ref: String(draft.ref || "").trim() || nextObsRef(db),
-  }));
+  const [o, setO] = useState<Observation>(() => {
+    /* The draft can arrive carrying a reference — an AI draft may invent one, and raising from
+       a test copies the TEST's ref ("T1"), which is a different numbering scheme and is shared
+       by every observation raised from that test. Accept a supplied reference only if it is
+       genuinely free; otherwise assign the next one. The field is read-only, so a collision
+       here would leave the user unable to submit and unable to correct it. */
+    const wanted = String(draft.ref || "").trim();
+    const taken = usedObsRefs(db);
+    return {
+      ...draft,
+      ref: wanted && !taken.has(wanted.toLowerCase()) ? wanted : nextObsRef(db),
+    };
+  });
   const [err, setErr] = useState("");
 
   // Step 2 state
@@ -241,12 +250,12 @@ export default function RaiseFlow({
         </div>
         <div className="f3">
           <div>
-            <label>Ref *</label>
+            <label>Ref</label>
             <input
               value={String(o.ref || "")}
-              onChange={set("ref")}
-              placeholder="auto-assigned"
-              title="Assigned automatically. Must be unique across all reports."
+              readOnly
+              className="field-readonly"
+              title="Assigned automatically and unique across all reports"
             />
           </div>
           <div>

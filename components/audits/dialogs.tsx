@@ -1762,7 +1762,8 @@ export function ModalObsDialog({
   const r = a && (a.reports || []).find((x) => x.id === reportId);
   const o = r && (r.observations || []).find((x) => x.id === obsId);
 
-  const [ref, setRef] = useState(String(o?.ref || ""));
+  // QA-9 — read-only: the reference is system-assigned, so there is no setter.
+  const [ref] = useState(String(o?.ref || ""));
   const [crit, setCrit] = useState(String(o?.criticality || "Moderate"));
   const [status, setStatus] = useState(String(o?.status || "Open"));
   const [title, setTitle] = useState(String(o?.title || ""));
@@ -1957,8 +1958,17 @@ Management's current draft response: ${mgmt || "(none provided — draft an appr
     >
       <div className="f3">
         <div>
+          {/* QA-9 — assigned by nextObsRef(), not typed. The old free-text field carried
+              "e.g. 1.1" as its placeholder, which is how that example became the reference for
+              fourteen different observations. Kept visible because it is the citation used in
+              Board papers, but read-only: uniqueness cannot be a matter of what someone types. */}
           <label>Ref</label>
-          <input value={ref} onChange={(e) => setRef(e.target.value)} placeholder="e.g. 1.1" />
+          <input
+            value={ref}
+            readOnly
+            className="field-readonly"
+            title="Assigned automatically and unique across all reports"
+          />
         </div>
         <div>
           <label>Criticality *</label>

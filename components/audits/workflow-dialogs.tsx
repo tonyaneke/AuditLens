@@ -22,6 +22,7 @@ import RichText from "@/components/ui/RichText";
 import { logAudit } from "@/lib/client/audit-log";
 import { dirUser, headUsers, ownerEmailFor } from "@/lib/client/directory";
 import { emailNotify } from "@/lib/client/notify";
+import { runAiText } from "@/lib/client/ai";
 import { extractEvidenceText, runClosureCheck, type ClosureVerdict } from "@/lib/client/obs-ai";
 import { uploadWithProgress } from "@/lib/client/uploads";
 import type { SessionUser } from "@/lib/permissions";
@@ -367,7 +368,35 @@ export function VerifyRemediationDialog({ auditId, reportId, obsId }: Ids) {
      rival buttons on the page: verify it onward for closure, or reject it back to the owner. */
   const [mode, setMode] = useState<"verify" | "reject">("verify");
   const [rejNote, setRejNote] = useState("");
+  const [noteErr, setNoteErr] = useState("");
   const head = isHead(user);
+
+  /* Draft the verification note from what is already on the record — the finding, the owner's
+     response and the evidence they attached. This note is the auditor's statement that the
+     remediation was tested and found effective, and it is quoted in the closure pack, so the
+     draft deliberately sticks to what the record supports and leaves a gap for the auditor to
+     say what they actually checked, rather than inventing an assurance nobody gave. */
+  async function generateNote() {
+    if (!o) return;
+    setNoteErr("");
+    const ev = (o.ownerResponseEvidence || []).map((f) => f.name).filter(Boolean).join(", ");
+    const prompt = `Act as an internal auditor at ${db.org} writing the verification and closure note for an audit observation whose remediation you have just reviewed. Write 2-4 sentences, first person plural ("we"), plain professional English.
+
+State what was implemented by the department, and that Internal Audit reviewed the response and supporting evidence. Do NOT invent specific tests, sample sizes, dates or documents that are not listed below — where the evidence is thin, say what was reviewed rather than overstating it. Do not restate the original finding at length. Return ONLY the note as plain text.
+
+Observation: ${o.title}
+What was found: ${o.description || "-"}
+Risk: ${o.risk || "-"}
+Auditor recommendation: ${o.recommendation || "-"}
+Management response: ${o.managementResponse || "-"}
+Action owner's closure response: ${o.ownerResponse || "-"}
+Evidence attached: ${ev || "none listed"}`;
+    try {
+      setNote((await runAiText(prompt)).trim());
+    } catch (e) {
+      setNoteErr(e instanceof Error ? e.message : "AI request failed.");
+    }
+  }
 
   if (!o) return null;
   if (!canVerifyItem(user, o, a)) {
@@ -509,8 +538,19 @@ export function VerifyRemediationDialog({ auditId, reportId, obsId }: Ids) {
             Closure evidence file <span className="hint">(optional upload)</span>
           </label>
           <FilePick onPick={setFile} label="📎 Choose file" />
-          <label htmlFor="co-note" style={{ marginTop: 10 }}>Closure note</label>
+          <label htmlFor="co-note" style={{ marginTop: 10 }}>
+            Closure note{" "}
+            <BusyButton
+              className="btn sec sm ai-generate-btn"
+              style={{ marginLeft: 6 }}
+              busyLabel="Generating…"
+              onClick={generateNote}
+            >
+              Generate
+            </BusyButton>
+          </label>
           <textarea id="co-note" style={{ minHeight: 90 }} value={note} onChange={(e) => setNote(e.target.value)} />
+          {noteErr ? <div className="ai-err" style={{ marginTop: 6 }}>{noteErr}</div> : null}
         </>
       )}
       {err ? <div className="ai-err" style={{ marginTop: 10 }}>{err}</div> : null}

@@ -4523,6 +4523,31 @@ body.ai-busy .ai-generate-btn:not(:disabled) {
 ol.rt-list { margin: 6px 0; padding-left: 22px; }
 ol.rt-list li { margin: 4px 0; }
 
+/* Names the self-assessment an improvement tracker belongs to, so the actions on screen are
+   never mistaken for a standalone register. */
+.tracker-scope {
+  margin-bottom: 10px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.tracker-scope b { color: var(--ink); }
+
+/* QA-9 — a system-assigned value shown for reference but not editable (observation Ref). */
+.field-readonly {
+  background: var(--bg);
+  color: var(--muted);
+  cursor: default;
+}
+
+/* Stored audit text is shown as the author wrote it — see components/ui/RichText.tsx.
+   pre-wrap keeps line breaks, blank lines, indentation and the author's own bullets, while
+   still wrapping long lines to the container. */
+.rt-text {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* Buttons rendered as links in the React shell keep button styling. */
 a.btn,
 a.btn-back {

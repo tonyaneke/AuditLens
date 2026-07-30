@@ -46,22 +46,40 @@ export default function TrackerPanel({ rec }: { rec: IaSaRecord }) {
     });
   }
 
+  /* Every improvement action here belongs to ONE self-assessment — the one open on the
+     Assessment tab — and is written back to that record. That was never stated on screen, and
+     the tracker carried its own free-text "Reporting period" that could disagree with the
+     assessment's period, which made it read as a standalone register. The assessment is now
+     named in the header, and the reporting period defaults to the assessment's own period
+     instead of an empty box. It stays editable, because a QAIP progress report is sometimes
+     issued for a narrower window than the assessment it draws on. */
+  const assessmentPeriod = String(rec.period || "").trim();
+  const reportingPeriod = String(qaip.period || "").trim() || assessmentPeriod;
+
   const header = (
-    <div className="row" style={{ marginBottom: 12, gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-      <label style={{ margin: 0, fontWeight: 600, color: "#475569", display: "flex", alignItems: "center", gap: 6 }}>
-        Reporting period{" "}
-        <CommitInput
-          style={{ width: 150, padding: "6px 8px", fontWeight: 400 }}
-          value={String(qaip.period || "")}
-          placeholder="e.g. Q3 2026"
-          onCommit={(v) => edit((r) => void (r.qaip = { ...(r.qaip || {}), period: v }))}
-        />
-      </label>
-      <div className="spacer" style={{ flex: 1 }} />
-      <button className="btn sec sm" type="button" onClick={() => exportQAIP(db, rec)}>
-        ⤓ QAIP progress report (Word)
-      </button>
-    </div>
+    <>
+      <div className="tracker-scope">
+        Improvement actions from the{" "}
+        <b>{assessmentPeriod || "current"} internal audit self-assessment</b>
+        {rec.status === "completed" ? " (completed)" : " (in progress)"}
+        {rec.assessor ? ` · assessed by ${rec.assessor}` : ""}
+      </div>
+      <div className="row" style={{ marginBottom: 12, gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <label style={{ margin: 0, fontWeight: 600, color: "#475569", display: "flex", alignItems: "center", gap: 6 }}>
+          Reporting period{" "}
+          <CommitInput
+            style={{ width: 150, padding: "6px 8px", fontWeight: 400 }}
+            value={reportingPeriod}
+            placeholder={assessmentPeriod || "e.g. Q3 2026"}
+            onCommit={(v) => edit((r) => void (r.qaip = { ...(r.qaip || {}), period: v }))}
+          />
+        </label>
+        <div className="spacer" style={{ flex: 1 }} />
+        <button className="btn sec sm" type="button" onClick={() => exportQAIP(db, rec)}>
+          ⤓ QAIP progress report (Word)
+        </button>
+      </div>
+    </>
   );
 
   if (!q.total) {

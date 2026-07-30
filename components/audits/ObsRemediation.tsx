@@ -223,9 +223,22 @@ export default function ObsRemediation({
   const head = isHead(user);
   const canVerify = canVerifyItem(user, o, a as Audit);
   const closed = o.status === "Closed";
+
   const withdrawn = isWithdrawn(o);
   const wStage = obsWithdrawStage(o);
   const rej = o.closureRejection || null;
+
+  /* A Head of Audit who is ALSO the auditor on this observation — the audit's lead auditor, or
+     the person who raised it — is both parties to a reject-to-auditor. The stage rules below
+     hid the auditor's action from anyone with the head role, on the assumption that the auditor
+     is somebody else. When they are the same person, that left nobody able to move the
+     observation: the head had returned it to "the auditor", and the auditor had no button. It
+     could not be closed, re-verified or escalated again. Treat the head as waiting on the
+     auditor only when the auditor really is another person. */
+  const isAlsoAuditor =
+    !!((a as Audit)?.leadAuditorId && (a as Audit).leadAuditorId === user.id) ||
+    !!(o.raisedBy && o.raisedBy === user.id);
+  const headAwaitingAuditor = head && !!rej && rej.target === "auditor" && !isAlsoAuditor;
 
   const thread = obsThread(o, ownerViewer);
   const canPost = ownerViewer && !closed && !withdrawn;
@@ -264,7 +277,7 @@ export default function ObsRemediation({
     /* After a Head reject-to-auditor, re-verification is the AUDITOR's job — the Head only waits.
        One entry point: the modal shows the owner's response and carries both outcomes —
        verify it onward for closure, or reject it back to the owner for more work. */
-    if (canVerify && o.ownerRectifiedAt && !o.reportVerifiedAt && !(head && rej && rej.target === "auditor"))
+    if (canVerify && o.ownerRectifiedAt && !o.reportVerifiedAt && !headAwaitingAuditor)
       actions.push(
         <button className="btn sm" type="button" key="verify"
           onClick={() => modal.open(<VerifyRemediationDialog auditId={a.id} reportId={r.id} obsId={o.id} />)}>
@@ -313,11 +326,14 @@ export default function ObsRemediation({
           "You are a co-owner of this observation — you can respond and mark it Ready for Closure just as the primary owner can."
         : secondary && !o.reportVerifiedAt
           ? "You have oversight of this observation — follow progress and add comments."
-          : head && rej && rej.target === "auditor" && o.ownerRectifiedAt && !o.reportVerifiedAt
+          : headAwaitingAuditor && o.ownerRectifiedAt && !o.reportVerifiedAt
             ? "You returned this to Internal Audit — the auditor will address your note and resend it for your closure sign-off."
             : canVerify && o.ownerRectifiedAt && !o.reportVerifiedAt
               ? rej && rej.target === "auditor"
-                ? "The Head of Audit returned this to Internal Audit — address the note above, then resend for closure verification."
+                ? head
+                  ? // Same person on both sides: say so, rather than telling them to wait for themselves.
+                    "You returned this to Internal Audit, and you are also the auditor on this observation — so it is back with you. Address the note above, then resend it for closure sign-off."
+                  : "The Head of Audit returned this to Internal Audit — address the note above, then resend for closure verification."
                 : "The action owner has marked this Ready for Closure — open View remediation to review their response and evidence, then either verify it to prepare closure or reject it back to the owner."
               : head && o.reportVerifiedAt && !o.headVerifiedAt
                 ? "Verified by the auditor and sent to you — review the closure and evidence, then close, reject to the auditor, or escalate to the owner."
