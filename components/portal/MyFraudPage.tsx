@@ -126,11 +126,7 @@ export default function MyFraudPage() {
         const done = A.filter((a) => a.status === "Implemented").length;
         const pct = A.length ? Math.round((done / A.length) * 100) : 0;
         return (
-          <div
-            className="card anim-fade-in mft-card"
-            key={f.id}
-            style={{ borderLeftColor: BAND_HEX[res] }}
-          >
+          <div className="card anim-fade-in mft-card" key={f.id}>
             <div className="mft-head">
               <span className="mft-scheme">{f.scheme}</span>
               <TintPill hex={BAND_HEX[res]} bold>{res} residual</TintPill>

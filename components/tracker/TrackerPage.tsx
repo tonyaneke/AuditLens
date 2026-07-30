@@ -64,7 +64,8 @@ const RECENT_COL: Record<string, string> = {
   closed: "#2e7d32",
 };
 
-type TrackerFilter = { crit: string; tl: string; status: string; repeat: boolean };
+type TrackerFilter = { crit: string; tl: string; status: string; owner: string; repeat: boolean };
+const NO_FILTER: TrackerFilter = { crit: "All", tl: "All", status: "All", owner: "All", repeat: false };
 
 export default function TrackerPage() {
   const { db, mutate } = useWorkspace();
@@ -74,7 +75,7 @@ export default function TrackerPage() {
   const router = useRouter();
   const search = useSearchParams();
   const mode = search.get("mode") === "insights" ? "insights" : search.get("mode") === "recent" ? "recent" : "actions";
-  const [filter, setFilter] = useState<TrackerFilter>({ crit: "All", tl: "All", status: "All", repeat: false });
+  const [filter, setFilter] = useState<TrackerFilter>(NO_FILTER);
 
   const obs = useMemo(() => allObs(db).filter(obsIsApproved), [db]);
 
@@ -296,15 +297,21 @@ export default function TrackerPage() {
   const overdue = openAll.filter(isOver).length;
   const repeats = openAll.filter((o) => o.isRepeat).length;
 
+  const owners = [...new Set(obs.map((o) => String(o.owner || "")).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b),
+  );
+
   let pool = obs.slice();
   if (filter.crit !== "All") pool = pool.filter((o) => o.criticality === filter.crit);
+  if (filter.owner !== "All") pool = pool.filter((o) => String(o.owner || "") === filter.owner);
   if (filter.repeat) pool = pool.filter((o) => o.isRepeat);
   const statusF = filter.status;
   const tlF = filter.tl;
   const showOpenGroups = statusF !== "Closed";
   const showClosedGroup = statusF === "All" || statusF === "Closed";
   const passStatus = (o: ObsWithContext) => statusF === "All" || (o.status || "Open") === statusF;
-  const filtersActive = filter.crit !== "All" || statusF !== "All" || tlF !== "All" || filter.repeat;
+  const filtersActive =
+    filter.crit !== "All" || statusF !== "All" || tlF !== "All" || filter.owner !== "All" || filter.repeat;
   const bucketOf = (o: ObsWithContext) => closeBucket(daysToClose(o, o._r)) ?? "No date";
 
   const CLOSE_GROUPS = ["Ready to Close", ...CLOSE_BUCKETS, "No date", "Recently Closed"];
@@ -321,7 +328,7 @@ export default function TrackerPage() {
   const applyKpi = (which: string) =>
     setFilter((f) => {
       const n = { ...f };
-      if (which === "open") return { crit: "All", tl: "All", status: "All", repeat: false };
+      if (which === "open") return NO_FILTER;
       if (which === "ready") n.tl = f.tl === "Ready to Close" ? "All" : "Ready to Close";
       else if (which === "watch") n.tl = f.tl === "≤ 2 weeks" ? "All" : "≤ 2 weeks";
       else if (which === "overdue") n.tl = f.tl === "Overdue" ? "All" : "Overdue";
@@ -410,6 +417,14 @@ export default function TrackerPage() {
               ))}
             </select>
           </div>
+          <div className="filter-group">
+            <span className="filter-label">Owner</span>
+            <select className="field-select field-select-sm" value={filter.owner} onChange={(e) => setFilter((f) => ({ ...f, owner: e.target.value }))}>
+              {["All", ...owners].map((x) => (
+                <option key={x}>{x}</option>
+              ))}
+            </select>
+          </div>
           <label className="filter-check" style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 500 }}>
             <input
               type="checkbox"
@@ -420,7 +435,7 @@ export default function TrackerPage() {
             Repeats only
           </label>
           {filtersActive ? (
-            <button className="btn ghost sm" type="button" onClick={() => setFilter({ crit: "All", tl: "All", status: "All", repeat: false })}>
+            <button className="btn ghost sm" type="button" onClick={() => setFilter(NO_FILTER)}>
               Clear filters
             </button>
           ) : null}

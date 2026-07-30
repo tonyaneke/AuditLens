@@ -4,9 +4,9 @@
 // riskGuideWord, reportWordInner, exportReport/exportAudit/exportTOR from audit-bot.js. All take
 // the workspace db explicitly; the org logo rides in as wordDoc's logo parameter (db.logo).
 
-import type { Audit, Observation, Report, WorkspaceDb } from "@/lib/workspace/types";
+import type { Audit, AuditPlan, Observation, Report, WorkspaceDb } from "@/lib/workspace/types";
 import { CRITS, ck, effectiveClose, fmtDate, isoToDate, obsAge } from "@/lib/workspace/selectors";
-import { worstCrit, zc } from "@/lib/workspace/observations";
+import { testControl, testResultNotes, testTitle, worstCrit, zc } from "@/lib/workspace/observations";
 import { esc, wordDoc } from "./exports";
 
 export function orgLogo(db: WorkspaceDb): string | undefined {
@@ -77,6 +77,28 @@ export function sopUpdatesWord(obs: Observation[]): string {
   return `<table><tr><th>#</th><th>Ref</th><th>Observation</th><th>Rating</th><th>Proposed SOP update</th></tr>${s.map((o, i) => `<tr><td>${i + 1}</td><td>${esc(o.ref || "")}</td><td><b>${esc(o.title)}</b></td><td><span class="pill ${ck(o.criticality)}">${o.criticality}</span></td><td>${esc(o.sopUpdate).replace(/\n/g, "<br>")}</td></tr>`).join("")}</table>`;
 }
 
+/* Highlights of Strengths (section 1.2 of the house report format). Two feeds:
+   the report's write-in `strengths` bullets, plus every audit-plan test that PASSED —
+   a control tested and found working is a strength the report should credit, not silence. */
+export function strengthsWord(a: Audit, r: Report): string {
+  const passed = (((a.plan || {}) as AuditPlan).tests || []).filter((t) => t.result === "Passed");
+  if (!r.strengths && !passed.length) return "";
+  const bullets = passed
+    .map((t) => {
+      const title = testTitle(t) || testControl(t) || "Control tested";
+      const detail =
+        testResultNotes(t) ||
+        (testControl(t) && testControl(t) !== title ? testControl(t) : "") ||
+        "Tested and found operating effectively; no exceptions noted.";
+      return `<li><b>${esc(title)}:</b> ${esc(detail).replace(/\n/g, "<br>")}</li>`;
+    })
+    .join("");
+  return `<h2>1.2 Highlights of Strengths</h2>
+    <div>During the review, we observed achievements and strengths demonstrating management's commitment to sound practices. Notable mentions include:</div>
+    ${wbul(r.strengths)}
+    ${bullets ? `<ul>${bullets}</ul>` : ""}`;
+}
+
 export function reportWordInner(db: WorkspaceDb, a: Audit, r: Report): string {
   const obs = (r.observations || []).slice().sort((x, y) => CRITS.indexOf(x.criticality) - CRITS.indexOf(y.criticality));
   const c = zc();
@@ -100,7 +122,7 @@ export function reportWordInner(db: WorkspaceDb, a: Audit, r: Report): string {
     <h2>1.1 Audit Objective and Scope</h2>
     ${wpar(r.objective || r.scope) || "<div class='meta'>Not yet documented.</div>"}
     ${r.outOfScope ? `<h3>Areas Out of Scope</h3>${wbul(r.outOfScope)}` : ""}
-    ${r.strengths ? `<h2>1.2 Highlights of Strengths</h2>${wbul(r.strengths)}` : ""}
+    ${strengthsWord(a, r)}
     ${r.areasForImprovement ? `<h2>1.3 Areas for Strategic Improvement</h2>${wbul(r.areasForImprovement)}` : ""}
     <h2>1.4 Internal Audit Opinion</h2>
     ${r.assuranceLevel ? `<div class="note"><b>Audit opinion: ${esc(r.assuranceLevel)}</b> is provided over the ${esc(a.name)} function.</div>` : ""}

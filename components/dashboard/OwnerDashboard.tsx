@@ -109,16 +109,13 @@ export default function OwnerDashboard() {
           <p className="dash-welcome-role">{user.department || "Action Owner"}</p>
         </div>
         <div className="spacer" />
-        <a className="btn" href={hrefForView("myobs")}>
-          My observations →
-        </a>
       </div>
       <div className="dash-kpis" style={{ gridTemplateColumns: "repeat(4,1fr)" }}>
         <Kpi
           tone="accent"
           label="Assigned to me"
           value={totalMine}
-          sub={`${intMine.length} Internal · ${extMine.length} External${fraudMine.length ? ` · ${fraudMine.length} Fraud action${fraudMine.length !== 1 ? "s" : ""}` : ""}`}
+          sub={`${intMine.length} Internal · ${extMine.length} External`}
         />
         <Kpi tone="warn" label="Open" value={totalOpen} sub="awaiting your action" />
         <Kpi tone="warn" label="Overdue" value={totalOverdue} sub="past expected close" />

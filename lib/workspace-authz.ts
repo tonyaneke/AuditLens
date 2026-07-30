@@ -12,15 +12,22 @@ import type { WorkspaceDb } from "./db-data";
 const HEAD_ROLE = "head_of_audit";
 const STAFF_ROLE = "audit_staff";
 
-// Top-level sections a non-head user may modify. Everything else (auditUniverse, fraudRisks,
+// Top-level sections a non-head user may modify. Everything else (auditUniverse,
 // processReviews, iaSA/iaSAList, planYear, org, signOff*, logo, branding, departments, exco*, …) is
 // locked to the stored value — the default-deny that closes head-only content to non-head writes.
+// fraudRisks is in the set because it is reconciled below: action owners may write ONLY the
+// implementation-progress surface of their own actions, never the register itself.
 const NON_HEAD_WRITABLE_SECTIONS = new Set([
   "audits",
   "extFindings",
   "approvals",
   "notifications",
+  "fraudRisks",
 ]);
+
+// The implementation-progress surface of a fraud prevention action — what an assigned action
+// owner reports back on. Everything else about a risk/action is IA-managed.
+const OWNER_FRAUD_ACTION_FIELDS = ["status", "update", "ownerUpdates"];
 
 // Observation fields that change only through an approved workflow or a head action. A non-head
 // write can never alter these directly; they are forced back to the stored value.
@@ -79,6 +86,13 @@ export function authorizeWorkspaceWrite(
   next.extFindings = inc.extFindings ?? cur.extFindings ?? []; // remediation-writable (owners respond)
   next.audits = reconcileAudits(asArray(cur.audits), asArray(inc.audits), effective, userId, violations);
   next.approvals = reconcileApprovals(asArray(cur.approvals), asArray(inc.approvals), violations);
+  next.fraudRisks = reconcileFraudRisks(
+    asArray(cur.fraudRisks),
+    asArray(inc.fraudRisks),
+    effective,
+    userId,
+    violations,
+  );
 
   // Note any attempt to change a locked section (informational — the change is already discarded).
   for (const key of Object.keys(inc)) {
@@ -248,6 +262,57 @@ function applyDerivedStageTransition(cur: Obj, inc: Obj, next: Obj, role: string
       next.updateRequestedBy = "";
     }
   }
+}
+
+/* The fraud register itself (schemes, ratings, controls, owners, the actions' definitions) is
+   IA-managed. What an action owner legitimately sends back is the implementation progress on
+   the actions assigned to them — status, the update text, and the ownerUpdates trail. This was
+   silently reverted before fraudRisks was reconciled at all, so owner updates never persisted
+   even though the "Internal Audit has been notified" bell did. */
+function reconcileFraudRisks(
+  curRisks: Obj[],
+  incRisks: Obj[],
+  role: string,
+  userId: string,
+  violations: string[],
+): Obj[] {
+  // Audit staff maintain the register alongside the Head (same trust as reports/extFindings).
+  if (role === STAFF_ROLE) return incRisks;
+
+  const incById = new Map(incRisks.map((f) => [f.id as string, f]));
+  const curIds = new Set(curRisks.map((f) => f.id as string));
+  const out = curRisks.map((curF) => {
+    const incF = incById.get(curF.id as string);
+    if (!incF) {
+      violations.push(`fraud_delete_blocked:${curF.id}`);
+      return curF;
+    }
+    const ownsRisk = curF.ownerUserId === userId;
+    const incActById = new Map(asArray(incF.actions).map((a) => [a.id as string, a]));
+    const actions = asArray(curF.actions).map((curA) => {
+      const incA = incActById.get(curA.id as string);
+      if (!incA) return curA; // owners cannot drop an action
+      if (!ownsRisk && curA.ownerUserId !== userId) return curA; // not theirs — fully locked
+      const outA = { ...curA };
+      for (const f of OWNER_FRAUD_ACTION_FIELDS) forceField(outA, f, incA[f]);
+      return outA;
+    });
+    // Risk metadata stays stored; the overall status is re-derived from the reconciled
+    // actions server-side (rollupFraud), never taken from the client.
+    const outF: Obj = { ...curF, actions };
+    if (actions.length) {
+      outF.status = actions.every((a) => a.status === "Implemented")
+        ? "Mitigated"
+        : actions.some((a) => a.status === "Implemented" || a.status === "In Progress")
+          ? "Mitigating"
+          : "Identified";
+    }
+    return outF;
+  });
+  for (const incF of incRisks) {
+    if (!curIds.has(incF.id as string)) violations.push(`fraud_create_blocked:${incF.id}`);
+  }
+  return out;
 }
 
 function reconcileWithdrawal(

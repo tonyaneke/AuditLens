@@ -3,7 +3,7 @@
 // iasaStats/eqaDue/…). The legacy code reached the "current" assessment through a global
 // (iaSA()/withIASA); here every helper takes the record explicitly.
 
-import { fmtDate, today0, uid } from "./selectors";
+import { fmtDate, looseDate, today0, uid } from "./selectors";
 import type { IaSaPrinciple, IaSaRecord, IaSaStandard, WorkspaceDb } from "./types";
 
 /* ---------------- the standards framework ---------------- */
@@ -259,6 +259,67 @@ export function iasaSummary(rec: IaSaRecord): {
 } {
   const st = iasaStats(rec);
   return { op: overallOpinion(rec), rated: st.rated, total: st.total, avgMat: st.avgMat };
+}
+
+/* ---------------- QAIP improvement tracker (prototype iasaTracker/qaipStats) ----------------
+   Every standard with an improvement action recorded becomes a trackable QAIP item: status,
+   owner, target and progress — the evidence that conformance gaps are actively being closed
+   (IIA Standard 12.1). */
+
+export const STD_ACT_STATUS = ["Not started", "In progress", "Implemented", "Closed"] as const;
+export const STD_ACT_HEX: Record<string, string> = {
+  "Not started": "#94a3b8",
+  "In progress": "#c9a300",
+  Implemented: "#2e7d32",
+  Closed: "#0d5a47",
+};
+
+export type StdActionRow = StandardRef & { it: IaSaStandard; c: string };
+
+/** Standards with an improvement action recorded on this assessment. */
+export function stdActions(rec: IaSaRecord | null): StdActionRow[] {
+  return allStandards()
+    .map((s) => ({ ...s, it: stdItem(rec, s.num), c: stdConf(rec, s.num) }))
+    .filter((s) => s.it.action);
+}
+
+export function stdActOverdue(x: StdActionRow): boolean {
+  const st = x.it.status || "Not started";
+  if (st === "Implemented" || st === "Closed") return false;
+  if (!x.it.target) return false;
+  const d = looseDate(x.it.target);
+  return !!(d && d < today0());
+}
+
+export type QaipStats = {
+  total: number;
+  cnt: Record<string, number>;
+  done: number;
+  overdue: number;
+  pct: number;
+  actions: StdActionRow[];
+};
+
+export function qaipStats(rec: IaSaRecord | null): QaipStats {
+  const a = stdActions(rec);
+  const cnt: Record<string, number> = { "Not started": 0, "In progress": 0, Implemented: 0, Closed: 0 };
+  a.forEach((x) => {
+    const s = x.it.status || "Not started";
+    if (cnt[s] != null) cnt[s]++;
+  });
+  const done = cnt["Implemented"] + cnt["Closed"];
+  const overdue = a.filter(stdActOverdue).length;
+  const pct = a.length ? Math.round((done / a.length) * 100) : 0;
+  return { total: a.length, cnt, done, overdue, pct, actions: a };
+}
+
+/** Legacy stdSet done-date rule: implemented/closed stamps a completion date, reopening clears it. */
+export function applyStdStatus(it: IaSaStandard, status: string, done?: string): void {
+  it.status = status;
+  it.done = done || it.done || "";
+  if ((status === "Implemented" || status === "Closed") && !it.done)
+    it.done = new Date().toISOString().slice(0, 10);
+  if (status === "Not started" || status === "In progress") it.done = "";
 }
 
 /* ---------------- cadence & external quality assessment ---------------- */

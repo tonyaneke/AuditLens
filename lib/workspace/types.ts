@@ -343,6 +343,10 @@ export type IaSaStandard = {
   action?: string;
   owner?: string;
   target?: string;
+  /* QAIP improvement tracking — the action's lifecycle on the Improvement Tracker tab. */
+  status?: "Not started" | "In progress" | "Implemented" | "Closed" | string;
+  progress?: string;
+  done?: string;
 };
 
 export type IaSaPrinciple = {
@@ -363,6 +367,8 @@ export type IaSaRecord = {
   commentary?: string;
   items: Record<string, IaSaPrinciple>;
   std: Record<string, IaSaStandard>;
+  /** Quality Improvement Programme (Improvement Tracker tab) reporting metadata. */
+  qaip?: { period?: string; commentary?: string };
   status?: "in_progress" | "completed" | string;
   startedAt?: string;
   completedAt?: string;

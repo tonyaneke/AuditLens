@@ -3,13 +3,17 @@
 // Word export of a self-assessment — port of exportIASA(). Principle conformance in the
 // document is the standard-level rollup (as on screen); maturity/notes come from the record.
 
+import { toast } from "@/components/feedback/ToastHost";
 import { esc, wordDoc } from "@/lib/client/exports";
 import {
   GIAS,
   MATURITY,
+  STD_ACT_STATUS,
   allPrinc,
   princItem,
+  qaipStats,
   rollupPrinc,
+  stdActOverdue,
   stdItem,
 } from "@/lib/workspace/iasa";
 import type { IaSaRecord, WorkspaceDb } from "@/lib/workspace/types";
@@ -73,6 +77,45 @@ export function exportIASA(db: WorkspaceDb, sa: IaSaRecord): void {
 
   wordDoc(
     "IA Self-Assessment" + (sa.period ? " - " + String(sa.period).replace(/[^\w \-]/g, "") : ""),
+    inner,
+    typeof db.logo === "string" ? db.logo : undefined,
+  );
+}
+
+/* QAIP progress report — port of the prototype's exportQAIP(): the Improvement Tracker tab
+   as a Board-ready Word document. */
+export function exportQAIP(db: WorkspaceDb, sa: IaSaRecord): void {
+  const q = qaipStats(sa);
+  const qaip = sa.qaip || {};
+  if (!q.total) {
+    toast("No improvement actions to report yet. Record an improvement action against a standard first.", "error");
+    return;
+  }
+  const rows = q.actions
+    .slice()
+    .sort(
+      (a, b) =>
+        Number(stdActOverdue(b)) - Number(stdActOverdue(a)) ||
+        STD_ACT_STATUS.indexOf((a.it.status || "Not started") as (typeof STD_ACT_STATUS)[number]) -
+          STD_ACT_STATUS.indexOf((b.it.status || "Not started") as (typeof STD_ACT_STATUS)[number]),
+    );
+  const inner =
+    `<h1>Quality Improvement Programme (QAIP) — Progress Report</h1>
+    <div class="meta">${esc(db.org)} — Internal Audit · improvement tracking against the Global Internal Audit Standards (2024)${qaip.period ? " · " + esc(qaip.period) : sa.period ? " · " + esc(sa.period) : ""}</div>
+    <div class="note"><b>${q.pct}% of improvement actions implemented or closed</b> (${q.done} of ${q.total}). In progress: ${q.cnt["In progress"]} · Not started: ${q.cnt["Not started"]} · Overdue: ${q.overdue}.</div>
+    ${qaip.commentary ? `<h2>Commentary</h2><div>${esc(qaip.commentary).replace(/\n/g, "<br>")}</div>` : ""}
+    <h2>Improvement Actions</h2>
+    <table><tr><th>Std</th><th>Standard</th><th>Conformance</th><th>Gap</th><th>Improvement action</th><th>Owner</th><th>Target</th><th>Status</th><th>Completed</th><th>Latest update</th></tr>` +
+    rows
+      .map(
+        (x) =>
+          `<tr><td>${esc(x.num)}</td><td>${esc(x.title)}</td><td>${esc(x.c)}</td><td>${esc(x.it.gap || "")}</td><td>${esc(x.it.action || "")}</td><td>${esc(x.it.owner || "")}</td><td>${esc(x.it.target || "")}${stdActOverdue(x) ? " (overdue)" : ""}</td><td>${esc(x.it.status || "Not started")}</td><td>${esc(x.it.done || "")}</td><td>${esc(x.it.progress || "")}</td></tr>`,
+      )
+      .join("") +
+    `</table>`;
+  wordDoc(
+    "QAIP Progress Report" +
+      (qaip.period || sa.period ? " - " + String(qaip.period || sa.period).replace(/[^\w \-]/g, "") : ""),
     inner,
     typeof db.logo === "string" ? db.logo : undefined,
   );

@@ -7,6 +7,7 @@ import { Empty } from "@/components/ui";
 import {
   CONF_HEX,
   GIAS,
+  STD_ACT_HEX,
   allStandards,
   eqaDue,
   iasaStats,
@@ -215,6 +216,10 @@ export default function InsightsPanel({ rec }: { rec: IaSaRecord }) {
 
       <div className="card">
         <div className="seclabel">Remediation roadmap</div>
+        <p className="hint" style={{ marginTop: -6 }}>
+          Improvement actions and their status. Track them through to completion on the{" "}
+          <b>Improvement Tracker</b> tab.
+        </p>
         <table>
           <thead>
             <tr>
@@ -222,7 +227,9 @@ export default function InsightsPanel({ rec }: { rec: IaSaRecord }) {
               <th scope="col">Standard</th>
               <th scope="col" style={{ width: 150 }}>Conformance</th>
               <th scope="col">Action</th>
+              <th scope="col">Owner</th>
               <th scope="col">Target</th>
+              <th scope="col" style={{ width: 110 }}>Status</th>
             </tr>
           </thead>
           <tbody>
@@ -235,12 +242,16 @@ export default function InsightsPanel({ rec }: { rec: IaSaRecord }) {
                   <td>{x.title}</td>
                   <td style={{ color: CONF_HEX[x.c], fontWeight: 600 }}>{x.c}</td>
                   <td>{x.it.action}</td>
+                  <td>{x.it.owner || "—"}</td>
                   <td>{x.it.target || "—"}</td>
+                  <td style={{ color: STD_ACT_HEX[x.it.status || "Not started"], fontWeight: 600 }}>
+                    {x.it.status || "Not started"}
+                  </td>
                 </tr>
               ))
             ) : (
               <tr>
-                <td colSpan={5} className="hint">
+                <td colSpan={7} className="hint">
                   No improvement actions recorded yet.
                 </td>
               </tr>

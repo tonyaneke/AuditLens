@@ -9,9 +9,11 @@ import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import { runAiText } from "@/lib/client/ai";
 import {
   MATURITY,
+  STD_ACT_STATUS,
   STD_CONF,
   allPrinc,
   allStandards,
+  applyStdStatus,
   ensureIaSaList,
   findPrinc,
   princItem,
@@ -35,15 +37,20 @@ export function StandardDialog({ rec, num }: { rec: IaSaRecord; num: string }) {
   const [evidence, setEvidence] = useState(it.evidence || "");
   const [gap, setGap] = useState(it.gap || "");
   const [action, setAction] = useState(it.action || "");
+  const [owner, setOwner] = useState(it.owner || "");
   const [target, setTarget] = useState(it.target || "");
+  const [status, setStatus] = useState(it.status || "Not started");
+  const [done, setDone] = useState(it.done || "");
+  const [progress, setProgress] = useState(it.progress || "");
   if (!s) return null;
 
   function save() {
     mutate((d) => {
       const r = recordIn(d, rec.id);
       if (!r) return;
-      const prev = r.std[num] || {};
-      r.std[num] = { conf, evidence, gap, action, owner: prev.owner || "", target };
+      const next = { conf, evidence, gap, action, owner, target, progress };
+      applyStdStatus(next, status, done);
+      r.std[num] = next;
     });
     modal.close();
   }
@@ -89,8 +96,39 @@ export function StandardDialog({ rec, num }: { rec: IaSaRecord; num: string }) {
         onChange={(e) => setAction(e.target.value)}
         placeholder="Action to close the gap..."
       />
-      <label>Target date</label>
-      <input type="date" value={target} onChange={(e) => setTarget(e.target.value)} />
+      <div className="f2">
+        <div>
+          <label>Action owner</label>
+          <input value={owner} onChange={(e) => setOwner(e.target.value)} />
+        </div>
+        <div>
+          <label>Target date</label>
+          <input type="date" value={target} onChange={(e) => setTarget(e.target.value)} />
+        </div>
+      </div>
+      <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px dashed var(--line)" }}>
+        <div className="hint" style={{ marginBottom: 6 }}>Improvement tracking (QAIP)</div>
+        <div className="f2">
+          <div>
+            <label>Status</label>
+            <select value={status} onChange={(e) => setStatus(e.target.value)}>
+              {STD_ACT_STATUS.map((o) => (
+                <option key={o}>{o}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label>Completion date</label>
+            <input type="date" value={done} onChange={(e) => setDone(e.target.value)} />
+          </div>
+        </div>
+        <label>Progress update</label>
+        <textarea
+          value={progress}
+          onChange={(e) => setProgress(e.target.value)}
+          placeholder="Latest progress on this improvement action (dated notes build the audit trail)..."
+        />
+      </div>
     </ModalFrame>
   );
 }

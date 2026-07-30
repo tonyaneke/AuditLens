@@ -4617,7 +4617,7 @@ a.btn-back {
 }
 
 /* ---- Fraud Risk Control Tracker (owner portal) ---- */
-.mft-card { border-left: 4px solid var(--line); transition: box-shadow 0.15s; }
+.mft-card { transition: box-shadow 0.15s; }
 .mft-card:hover { box-shadow: var(--shadow-sm); }
 .mft-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .mft-scheme { font-size: 15px; font-weight: 700; color: var(--brand-700, #0d5a47); }

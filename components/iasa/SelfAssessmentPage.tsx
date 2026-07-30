@@ -29,10 +29,11 @@ import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 import AssessmentPanel from "./AssessmentPanel";
 import IasaKpi from "./IasaKpi";
 import InsightsPanel from "./InsightsPanel";
+import TrackerPanel from "./TrackerPanel";
 import { exportIASA } from "./exports";
 import { generateIASA } from "./generate";
 
-type Tab = "overview" | "assessment" | "insights";
+type Tab = "overview" | "assessment" | "tracker" | "insights";
 
 // The AI evaluation is grounded in a context statement about the IA function, captured up
 // front (and editable on every regeneration). The generated ratings stay fully editable.
@@ -158,7 +159,8 @@ export default function SelfAssessmentPage() {
   const router = useRouter();
   const search = useSearchParams();
   const raw = search.get("tab");
-  const tab: Tab = raw === "assessment" ? "assessment" : raw === "insights" ? "insights" : "overview";
+  const tab: Tab =
+    raw === "assessment" ? "assessment" : raw === "tracker" ? "tracker" : raw === "insights" ? "insights" : "overview";
 
   const all = iaSaList(db)
     .slice()
@@ -392,6 +394,13 @@ export default function SelfAssessmentPage() {
             Assessment
           </button>
           <button
+            className={`iasa-tab${tab === "tracker" ? " active" : ""}`}
+            type="button"
+            onClick={() => goTab("tracker")}
+          >
+            Improvement Tracker
+          </button>
+          <button
             className={`iasa-tab${tab === "insights" ? " active" : ""}`}
             type="button"
             onClick={() => goTab("insights")}
@@ -407,7 +416,13 @@ export default function SelfAssessmentPage() {
           · 52 standards
         </span>
       </div>
-      {tab === "insights" ? <InsightsPanel rec={cur} /> : <AssessmentPanel rec={cur} />}
+      {tab === "insights" ? (
+        <InsightsPanel rec={cur} />
+      ) : tab === "tracker" ? (
+        <TrackerPanel rec={cur} />
+      ) : (
+        <AssessmentPanel rec={cur} />
+      )}
     </>
   );
 }

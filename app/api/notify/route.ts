@@ -15,6 +15,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Development: never send real email. Every notify flow still runs (and the in-app bell
+  // notifications live in the workspace, untouched by this) — only the email fan-out is
+  // suppressed so test data doesn't hit real inboxes.
+  if (process.env.NODE_ENV === "development") {
+    return NextResponse.json({ sent: false, suppressed: "development" });
+  }
+
   let body: {
     to?: unknown;
     subject?: unknown;
