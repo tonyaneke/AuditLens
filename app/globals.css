@@ -4447,72 +4447,9 @@ body.ai-busy .ai-generate-btn:not(:disabled) {
 
 /* ---- AI observation review textareas (taller, spaced) ---- */
 .rv-area { min-height: 100px; margin-bottom: 8px; }
-/* Roomy enough to read the spaced paragraphs of a pasted-in template without scrolling. */
-.rfc-response { min-height: 190px; line-height: 1.5; }
-
-/* The fill-in gaps in a Ready-for-Closure template. Everything around them is final wording, so
-   these are highlighted to mark the only spots the action owner has to replace. */
-.rfc-gap {
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-  color: var(--accent);
-  border-radius: 3px;
-  padding: 0 3px;
-  font-weight: 600;
-}
-
-/* ---- Ready-for-Closure editor: the same gaps, emphasised inside the editable box ----
-   A textarea cannot render bold, so the real one sits on top with its own text made transparent,
-   over a backdrop that mirrors the string and emphasises the gaps. */
-.gapta { position: relative; }
-
-/* Every metric below must match the shared input rules, or the backdrop wraps differently from the
-   textarea over it and the caret drifts away from the glyphs the owner is reading. */
-.gapta-back,
-.gapta .gapta-input {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 9px 11px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  font-family: inherit;
-  font-size: 13px;
-  line-height: 1.5;
-  letter-spacing: normal;
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
-  tab-size: 4;
-}
-
-.gapta-back {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  background: #fff;
-  color: var(--ink);
-  pointer-events: none;
-}
-
-.gapta .gapta-input {
-  position: relative;
-  background: transparent;
-  color: transparent;
-  caret-color: var(--ink);
-  border-color: var(--line);
-  /* It sizes itself to its content — a manual drag would only be undone by the next keystroke. */
-  resize: none;
-}
-
-.gapta .gapta-input::placeholder { color: #94a3b8; }
-.gapta .gapta-input::selection { background: rgba(14, 138, 107, 0.22); }
-
-/* Faux bold: a doubled shadow thickens the glyphs without changing their advance widths, so the
-   backdrop still wraps exactly like the textarea above it. A real font-weight would not. */
-.gapta-gap {
-  color: var(--accent);
-  text-shadow: 0 0 0.45px currentColor, 0 0 0.45px currentColor;
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  border-radius: 3px;
-}
+/* Roomy and airy enough that a whole pasted-in template is visible at once and the [gaps] left in
+   it are easy to spot — the box cannot bold them, so it earns the attention back with space. */
+.rfc-response { min-height: 240px; line-height: 1.8; }
 
 /* ---- Auto-detected links in rich text ---- */
 .rt-link { color: var(--accent); font-weight: 700; text-decoration: underline; word-break: break-all; }

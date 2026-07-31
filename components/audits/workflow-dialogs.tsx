@@ -193,17 +193,15 @@ const rfcWarned = new Set<string>();
 const rfcRoundKey = (o: Observation) =>
   `${o.id}|${o.ownerRectifiedAt || ""}|${o.closureRejection?.at || ""}`;
 
-/* Splits a template into its final wording and its [fill-in gaps], so both the preview and the
-   editor can emphasise the same spans. The stored text keeps the brackets — they are what marks a
-   gap as still unfilled, and RichText renders them harmlessly downstream. */
-function gapParts(text: string, cls: string) {
+/* Splits a template into its final wording and its [fill-in gaps] so the gaps can be shown in bold.
+   The stored text keeps the brackets — they are what marks a gap as still unfilled, and RichText
+   renders them harmlessly downstream. */
+function gapParts(text: string) {
   return text
     .split(/(\[[^\]]*\])/)
     .map((part, i) =>
       part.startsWith("[") && part.endsWith("]") ? (
-        <span key={i} className={cls}>
-          {part}
-        </span>
+        <b key={i}>{part}</b>
       ) : (
         <Fragment key={i}>{part}</Fragment>
       ),
@@ -211,49 +209,32 @@ function gapParts(text: string, cls: string) {
 }
 
 /* The template arrives as plain text — obs-ai strips the markdown the model would otherwise emit,
-   because the owner copies this straight into a plain textarea. Emphasis is applied at render time
-   instead, and only on the gaps: every word around them is final wording, so the highlight shows at
-   a glance that those are the only spots the owner has to touch. */
+   because the owner copies this straight into a plain textarea. The gaps are bolded at render time
+   instead: every word around them is final wording, so the bold marks the only spots to touch. */
 function TemplateText({ text }: { text: string }) {
-  return <>{gapParts(text, "rfc-gap")}</>;
+  return <>{gapParts(text)}</>;
 }
 
-/* The closure box has to show which bits still need filling in, and a textarea cannot render bold.
-   So the real textarea sits on top with its own text turned transparent, over a backdrop that
-   mirrors the same string and emphasises the gaps — see .gapta in globals.css for why the emphasis
-   is a colour and a shadow rather than a font-weight. */
-function GapTextarea({
-  id,
-  value,
-  placeholder,
-  onChange,
-  taRef,
-}: {
-  id: string;
-  value: string;
-  placeholder?: string;
-  onChange: (v: string) => void;
-  taRef: React.RefObject<HTMLTextAreaElement | null>;
-}) {
-  const backRef = useRef<HTMLDivElement | null>(null);
+/* The gaps still to be filled, as they stand right now. A textarea cannot render bold inside itself,
+   and the overlay that could — a mirrored backdrop under a transparent textarea — is not worth it:
+   the two boxes have to wrap identically or the caret sits somewhere other than the glyphs being
+   read, and backspace then appears to delete the wrong character. The moment the text outgrows the
+   box only one of them takes a scrollbar, so they cannot be kept identical. The editable box is
+   therefore left completely alone, and the gaps are called out beneath it instead. */
+const GAP_RE = /\[[^\]]{3,}\]/g;
+
+function GapsLeft({ text }: { text: string }) {
+  const gaps = text.match(GAP_RE) || [];
+  if (!gaps.length) return null;
   return (
-    <div className="gapta">
-      <div className="gapta-back" ref={backRef} aria-hidden="true">
-        {gapParts(value, "gapta-gap")}
-        {/* Keeps the final line visible once the box is scrolled all the way down. */}
-        {"\n"}
-      </div>
-      <textarea
-        id={id}
-        ref={taRef}
-        className="rfc-response gapta-input"
-        value={value}
-        placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
-        onScroll={() => {
-          if (backRef.current && taRef.current) backRef.current.scrollTop = taRef.current.scrollTop;
-        }}
-      />
+    <div style={{ margin: "10px 0 4px", fontSize: 12.5, lineHeight: 1.9 }}>
+      <b>{gaps.length === 1 ? "1 gap" : gaps.length + " gaps"} still to fill in</b> — find each one in
+      the box above and replace it, brackets and all:
+      {gaps.map((g, i) => (
+        <div key={i} style={{ marginTop: 4 }}>
+          <b>{g}</b>
+        </div>
+      ))}
     </div>
   );
 }
@@ -269,15 +250,16 @@ export function ReadyForClosureDialog({ auditId, reportId, obsId }: Ids) {
   const [err, setErr] = useState("");
   const [verdict, setVerdict] = useState<(ClosureVerdict & { heading: string }) | null>(null);
   const [passed, setPassed] = useState(false);
-  /* A pasted-in template runs to several spaced paragraphs, so a fixed box would hide most of it
-     behind a scrollbar. Grow to fit whatever is in it — measured off scrollHeight after a reset to
-     auto, otherwise the box can only ever get taller. Capped so the modal itself stays scrollable. */
+  /* A pasted-in template runs to several spaced paragraphs, so a fixed box would hide most of it —
+     and the gaps left in it — behind a scrollbar. Grow to fit whatever is in it, measured off
+     scrollHeight after a reset to auto, or the box could only ever get taller. The cap is high
+     enough for a full template to be on screen at once; past that the modal body scrolls. */
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   useEffect(() => {
     const el = taRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, 460) + "px";
+    el.style.height = Math.min(el.scrollHeight, 800) + "px";
   }, [text]);
 
   if (!o) return null;
@@ -301,7 +283,7 @@ export function ReadyForClosureDialog({ auditId, reportId, obsId }: Ids) {
     /* Not a quality judgement, so the once-per-round waiver does not cover it: an unfilled gap is a
        submission the owner has not finished. Without this, copying the template in and pressing
        Submit again would send "[date the matrix took effect, e.g. 12 June 2026]" to the auditor. */
-    const gaps = text.match(/\[[^\]]{3,}\]/g);
+    const gaps = text.match(GAP_RE);
     if (gaps) {
       setErr(
         `Still ${gaps.length === 1 ? "a gap" : gaps.length + " gaps"} to fill in — replace ${gaps.length === 1 ? "it" : "each of them"}, brackets and all, with your own details: ${gaps.slice(0, 3).join("  ")}${gaps.length > 3 ? " …" : ""}`,
@@ -356,7 +338,7 @@ export function ReadyForClosureDialog({ auditId, reportId, obsId }: Ids) {
       cur.ownerRectifiedByName = user.name || "";
       // The single field that drives the whole transition — workspace-authz derives the
       // status change, clears the progress-report request and drops an owner-targeted
-      // rejection from this. Writing those here would be silently reverted.
+      // rejection from this. Writing those here would be silently reverted. 
       cur.ownerRectifiedAt = at;
     });
     notifyIn((d, cur) => {
@@ -402,13 +384,15 @@ export function ReadyForClosureDialog({ auditId, reportId, obsId }: Ids) {
       <label htmlFor="rfc-text">
         Your closure response — what your department actually did to address this *
       </label>
-      <GapTextarea
+      <textarea
         id="rfc-text"
+        ref={taRef}
+        className="rfc-response"
         value={text}
-        onChange={setText}
-        taRef={taRef}
+        onChange={(e) => setText(e.target.value)}
         placeholder="Be specific: what was implemented or changed, when, and how it addresses the recommendation…"
       />
+      <GapsLeft text={text} />
       <FilePick onPick={setFile} />
       {err ? <div className="ai-err" style={{ marginTop: 10 }}>{err}</div> : null}
       {passed ? (
