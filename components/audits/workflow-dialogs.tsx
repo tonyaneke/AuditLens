@@ -178,10 +178,20 @@ const RFC_HEADINGS = [
 let rfcHeadingIdx = 0;
 
 /* DEPARTS FROM LEGACY: legacy re-ran the gate on every attempt, so a response the reviewer kept
-   calling vague could never be submitted. The gate is now advisory after the first miss — the
-   owner gets the feedback once, and the next Submit goes through as written. Keyed by observation
-   and module-level so closing and reopening the dialog doesn't reset it back to blocking. */
+   calling vague could never be submitted. The gate is now advisory after the first miss — the owner
+   gets the feedback once, and the next Submit goes through as written. Module-level so closing and
+   reopening the dialog doesn't reset it back to blocking.
+
+   Keyed by SUBMISSION ROUND, not by observation. Keying it on the id alone let the waiver outlive
+   the response it was granted for: once an observation had been warned, every later round on it
+   skipped the check too, so a response that came back from Internal Audit could be resubmitted
+   with anything and go straight through on the first attempt. Both stamps below are rewritten
+   when a round ends — ownerRectifiedAt when a submission lands, closureRejection.at when a
+   reviewer sends it back — so a new round produces a new key and the check re-arms by itself. */
 const rfcWarned = new Set<string>();
+
+const rfcRoundKey = (o: Observation) =>
+  `${o.id}|${o.ownerRectifiedAt || ""}|${o.closureRejection?.at || ""}`;
 
 /* Splits a template into its final wording and its [fill-in gaps], so both the preview and the
    editor can emphasise the same spans. The stored text keeps the brackets — they are what marks a
@@ -288,12 +298,23 @@ export function ReadyForClosureDialog({ auditId, reportId, obsId }: Ids) {
       setErr("Please describe what your department did before submitting.");
       return;
     }
+    /* Not a quality judgement, so the once-per-round waiver does not cover it: an unfilled gap is a
+       submission the owner has not finished. Without this, copying the template in and pressing
+       Submit again would send "[date the matrix took effect, e.g. 12 June 2026]" to the auditor. */
+    const gaps = text.match(/\[[^\]]{3,}\]/g);
+    if (gaps) {
+      setErr(
+        `Still ${gaps.length === 1 ? "a gap" : gaps.length + " gaps"} to fill in — replace ${gaps.length === 1 ? "it" : "each of them"}, brackets and all, with your own details: ${gaps.slice(0, 3).join("  ")}${gaps.length > 3 ? " …" : ""}`,
+      );
+      return;
+    }
 
-    /* runClosureCheck gate — first attempt only. Once this observation has been sent back with
-       feedback, the owner has been told what's missing and it's their call: skip the check
-       entirely (no AI round-trip, and an unavailable reviewer can't block them either). */
+    /* runClosureCheck gate — first attempt of this round only. Once the owner has been told what is
+       missing, the rest of the round is their call: skip the check entirely (no AI round-trip, and
+       an unavailable reviewer can't block them either). The next round re-arms it. */
     setBusy(true);
-    if (!rfcWarned.has(obsId)) {
+    const round = rfcRoundKey(o!);
+    if (!rfcWarned.has(round)) {
       setBusyLabel("Checking…");
       let v: ClosureVerdict | null = null;
       try {
@@ -309,7 +330,7 @@ export function ReadyForClosureDialog({ auditId, reportId, obsId }: Ids) {
       }
       if (!v.concrete) {
         setBusy(false);
-        rfcWarned.add(obsId);
+        rfcWarned.add(round);
         setVerdict({ ...v, heading: RFC_HEADINGS[rfcHeadingIdx % RFC_HEADINGS.length] });
         rfcHeadingIdx++;
         return;
@@ -392,7 +413,7 @@ export function ReadyForClosureDialog({ auditId, reportId, obsId }: Ids) {
       {err ? <div className="ai-err" style={{ marginTop: 10 }}>{err}</div> : null}
       {passed ? (
         <div className="hint" style={{ marginTop: 10, color: "var(--low)" }}>
-          {rfcWarned.has(obsId) ? "Submitting…" : "✓ Looks concrete. Submitting…"}
+          {rfcWarned.has(rfcRoundKey(o)) ? "Submitting…" : "✓ Looks concrete. Submitting…"}
         </div>
       ) : null}
       {verdict ? (

@@ -127,6 +127,18 @@ ${evidenceText ? `
 Attached evidence file content (extracted; may contain specifics not repeated in the response text — count it as part of the owner's submission):
 """${evidenceText}"""` : ""}
 
+THE JUDGEMENT COMES FIRST — decide "concrete" before you write anything else, and do not let the
+drafting rules below soften it. Mark it NOT concrete whenever the response, read on its own:
+- only asserts completion — "done", "noted", "resolved", "implemented", "we have complied", "the
+  issue has been addressed" — without saying what was actually done;
+- restates or paraphrases the ${rej ? "requested changes" : "recommendation"} back as if quoting it were evidence of having done it;
+- promises or plans rather than reports — "will be", "is being", "in progress", "shortly", "ongoing";
+- names no specific artefact, action, date or owner that an auditor could go and check;
+- is too short or too general to verify. When you are in any doubt, it is NOT concrete.
+Only an unfilled template counts worse than filler: if the response still carries square-bracket
+placeholders like "[date ...]", it is NOT concrete — say so plainly in "feedback" and return the
+same template back, since the owner has copied it in without filling the gaps.
+
 THE SUGGESTION IS A CONTRACT. The owner drops it straight into the response box, fills the brackets
 and submits it — and it must pass on that submission. Write "suggestion" as a FINISHED RESPONSE WITH
 GAPS, never as an outline, a form or a set of instructions:
