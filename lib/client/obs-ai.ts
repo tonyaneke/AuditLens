@@ -84,7 +84,28 @@ Return ONLY a JSON object: {"ok": true or false, "feedback": "one or two sentenc
   };
 }
 
-export type ClosureVerdict = { concrete: boolean; feedback: string; questions: string[]; suggestion: string };
+export type ClosureVerdict = {
+  concrete: boolean;
+  feedback: string;
+  questions: string[];
+  suggestion: string;
+  tips: string[];
+};
+
+/* The suggestion is copied verbatim into the closure response box — a plain textarea — and is then
+   re-rendered by RichText, which deletes markdown markers outright. So asterisks the model emits
+   despite being told not to read as literal punctuation in the template and then silently vanish
+   downstream. Strip them here, once, so what the owner previews, copies and submits is one and the
+   same text. Markdown bullets become a real bullet character rather than disappearing. */
+function plainAiText(s: unknown): string {
+  return String(s == null ? "" : s)
+    .replace(/\r\n/g, "\n")
+    .replace(/^[ \t]*[*+-][ \t]+/gm, "• ")
+    .replace(/^[ \t]*#{1,6}[ \t]+/gm, "")
+    .replace(/\*/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
 
 export async function runClosureCheck(
   o: Observation,
@@ -106,15 +127,61 @@ ${evidenceText ? `
 Attached evidence file content (extracted; may contain specifics not repeated in the response text — count it as part of the owner's submission):
 """${evidenceText}"""` : ""}
 
-Return ONLY a JSON object: {"concrete": true or false, "feedback": "one or two sentences of specific feedback", "questions": ["a short probing question the owner should answer","..."], "suggestion": "an improved, concrete rewrite the owner can adapt to what they actually did — only when not concrete, else empty string. If it contains numbered or sequential steps, put EACH step on its own line separated by a newline (\\n), not packed into one paragraph."}`;
-  const d = parseAiJson<{ concrete?: unknown; feedback?: string; questions?: unknown; suggestion?: string }>(
-    await aiGenerate(prompt, "json"),
-  );
+THE SUGGESTION IS A CONTRACT. The owner drops it straight into the response box, fills the brackets
+and submits it — and it must pass on that submission. Write "suggestion" as a FINISHED RESPONSE WITH
+GAPS, never as an outline, a form or a set of instructions:
+- ONE RESPONSE, BUT BROKEN INTO READABLE PARAGRAPHS. Flowing prose the owner could send as-is once
+  the gaps are filled — never one dense block. Write TWO TO FOUR short paragraphs of two or three
+  sentences each, each separated by a BLANK LINE (a \\n\\n between them), so it is easy to read once
+  pasted in. Group them by theme: what was done and when, then how it addresses what was asked and
+  what evidence backs it, then how it will be kept in place. Do NOT lay it out as labelled lines,
+  headings or bullets. Do NOT split it into "Recommendation 1 / 2 / 3" sections and do NOT repeat the
+  same structure per part — where the recommendation has several parts, cover them in sequence across
+  those same paragraphs.
+- EVERY WORD OUTSIDE THE BRACKETS IS FINAL WORDING. The owner should only ever be typing facts into
+  gaps, never composing a sentence of their own.
+- A PLACEHOLDER IS A SHORT FACTUAL VALUE the owner can look up — a name, a date, a number, a document
+  title, a system, a job title. Two to eight words. NEVER "[describe how ...]", "[explain ...]",
+  "[state the mechanism ...]": if something needs describing, YOU write the description as ordinary
+  prose and leave only the specific facts in brackets. Write "enforced by routing every proposal to
+  [job title of the approver] for sign-off before [name of the stage it gates]", NOT "[describe the
+  enforcement mechanism]".
+- Say inside each bracket exactly what belongs there, with an example — "[date the new approval
+  matrix took effect, e.g. 12 June 2026]", not "[date]". The owner must never have to guess.
+- Cover EVERY element you would check for, woven into that prose: what was actually done, when, who
+  did it or which unit owns it, how it addresses ${rej ? "the Head of Audit's request" : "the recommendation"}, what evidence backs it up, and how it
+  will be kept in place going forward. Drop an element ONLY if it genuinely does not apply here.
+- NAME ANY NEW OR REVISED DOCUMENT AND SAY IT IS ATTACHED. Whenever the action produced or changed a
+  document — a policy, procedure, checklist, workflow, matrix, register, terms of reference, training
+  record, system configuration — the template must name it and state that it accompanies this
+  response, leaving gaps for its exact title and its version or approval date: "the attached [exact
+  title of the new checklist, e.g. Strategic Initiative Review Checklist] ([version or approval date,
+  e.g. v1.0 approved 15 May 2026])". Where the action produced no document, name whatever evidence
+  does exist instead. Never put an instruction to the owner inside the template — the template IS the
+  response the auditor reads; the reminder to actually attach the file belongs in "tips".
+- TEST IT BEFORE YOU RETURN IT: if the owner replaces every bracket with a truthful specific and
+  changes nothing else, would you mark that response concrete? If not, the template is missing a
+  placeholder — add it. Never raise something later that the template did not ask for.
+- "questions" must only probe things the template already has a placeholder for. Do not ask for
+  anything the template failed to request.
+- PLAIN TEXT ONLY — no markdown. No asterisks, no ** bold markers, no # headings, no bullet
+  characters. The owner types this into a plain text box, so any markup shows up as literal
+  punctuation.
+
+Return ONLY a JSON object: {"concrete": true or false, "feedback": "one or two sentences of specific feedback", "questions": ["a short probing question the owner should answer","..."], "suggestion": "the finished-response-with-gaps described above, as one continuous piece of prose — only when not concrete, else empty string", "tips": ["3 to 5 very short notes on how to fill the gaps without getting flagged again — name the vague phrases to avoid and the kind of specific that satisfies each one, e.g. 'Give a real date, not \\"recently\\" or \\"soon\\"'. Whenever the template says a document is attached, one tip MUST tell the owner to attach that file here with the Attach file button. Empty array when concrete."]}`;
+  const d = parseAiJson<{
+    concrete?: unknown;
+    feedback?: string;
+    questions?: unknown;
+    suggestion?: string;
+    tips?: unknown;
+  }>(await aiGenerate(prompt, "json"));
   return {
     concrete: d.concrete === true || String(d.concrete).toLowerCase() === "true",
-    feedback: d.feedback || "",
-    questions: Array.isArray(d.questions) ? (d.questions as string[]) : [],
-    suggestion: d.suggestion || "",
+    feedback: plainAiText(d.feedback),
+    questions: Array.isArray(d.questions) ? d.questions.map(plainAiText).filter(Boolean) : [],
+    suggestion: plainAiText(d.suggestion),
+    tips: Array.isArray(d.tips) ? d.tips.map(plainAiText).filter(Boolean) : [],
   };
 }
 

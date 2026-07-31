@@ -12,7 +12,7 @@
    writes only the field its actor is permitted to set, and workspace-authz derives the rest
    (status, closedDateISO, clearing closureRejection / progressReport) on the server. */
 
-import { useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useUser } from "@/components/chrome/UserContext";
 import BusyButton from "@/components/feedback/BusyButton";
 import { toast } from "@/components/feedback/ToastHost";
@@ -177,6 +177,77 @@ const RFC_HEADINGS = [
 ];
 let rfcHeadingIdx = 0;
 
+/* DEPARTS FROM LEGACY: legacy re-ran the gate on every attempt, so a response the reviewer kept
+   calling vague could never be submitted. The gate is now advisory after the first miss — the
+   owner gets the feedback once, and the next Submit goes through as written. Keyed by observation
+   and module-level so closing and reopening the dialog doesn't reset it back to blocking. */
+const rfcWarned = new Set<string>();
+
+/* Splits a template into its final wording and its [fill-in gaps], so both the preview and the
+   editor can emphasise the same spans. The stored text keeps the brackets — they are what marks a
+   gap as still unfilled, and RichText renders them harmlessly downstream. */
+function gapParts(text: string, cls: string) {
+  return text
+    .split(/(\[[^\]]*\])/)
+    .map((part, i) =>
+      part.startsWith("[") && part.endsWith("]") ? (
+        <span key={i} className={cls}>
+          {part}
+        </span>
+      ) : (
+        <Fragment key={i}>{part}</Fragment>
+      ),
+    );
+}
+
+/* The template arrives as plain text — obs-ai strips the markdown the model would otherwise emit,
+   because the owner copies this straight into a plain textarea. Emphasis is applied at render time
+   instead, and only on the gaps: every word around them is final wording, so the highlight shows at
+   a glance that those are the only spots the owner has to touch. */
+function TemplateText({ text }: { text: string }) {
+  return <>{gapParts(text, "rfc-gap")}</>;
+}
+
+/* The closure box has to show which bits still need filling in, and a textarea cannot render bold.
+   So the real textarea sits on top with its own text turned transparent, over a backdrop that
+   mirrors the same string and emphasises the gaps — see .gapta in globals.css for why the emphasis
+   is a colour and a shadow rather than a font-weight. */
+function GapTextarea({
+  id,
+  value,
+  placeholder,
+  onChange,
+  taRef,
+}: {
+  id: string;
+  value: string;
+  placeholder?: string;
+  onChange: (v: string) => void;
+  taRef: React.RefObject<HTMLTextAreaElement | null>;
+}) {
+  const backRef = useRef<HTMLDivElement | null>(null);
+  return (
+    <div className="gapta">
+      <div className="gapta-back" ref={backRef} aria-hidden="true">
+        {gapParts(value, "gapta-gap")}
+        {/* Keeps the final line visible once the box is scrolled all the way down. */}
+        {"\n"}
+      </div>
+      <textarea
+        id={id}
+        ref={taRef}
+        className="rfc-response gapta-input"
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        onScroll={() => {
+          if (backRef.current && taRef.current) backRef.current.scrollTop = taRef.current.scrollTop;
+        }}
+      />
+    </div>
+  );
+}
+
 export function ReadyForClosureDialog({ auditId, reportId, obsId }: Ids) {
   const { o, editObs, notifyIn } = useObs({ auditId, reportId, obsId });
   const modal = useModal();
@@ -188,6 +259,16 @@ export function ReadyForClosureDialog({ auditId, reportId, obsId }: Ids) {
   const [err, setErr] = useState("");
   const [verdict, setVerdict] = useState<(ClosureVerdict & { heading: string }) | null>(null);
   const [passed, setPassed] = useState(false);
+  /* A pasted-in template runs to several spaced paragraphs, so a fixed box would hide most of it
+     behind a scrollbar. Grow to fit whatever is in it — measured off scrollHeight after a reset to
+     auto, otherwise the box can only ever get taller. Capped so the modal itself stays scrollable. */
+  const taRef = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => {
+    const el = taRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 460) + "px";
+  }, [text]);
 
   if (!o) return null;
   // DEPARTS FROM LEGACY: legacy refused anyone but the primary owner here. Co-owners now qualify.
@@ -208,27 +289,31 @@ export function ReadyForClosureDialog({ auditId, reportId, obsId }: Ids) {
       return;
     }
 
-    /* Legacy runClosureCheck gate. Unlike the comment gate, an unavailable reviewer BLOCKS
-       submission — a closure response is the one document the whole verify chain reads. */
-    setBusyLabel("Checking…");
+    /* runClosureCheck gate — first attempt only. Once this observation has been sent back with
+       feedback, the owner has been told what's missing and it's their call: skip the check
+       entirely (no AI round-trip, and an unavailable reviewer can't block them either). */
     setBusy(true);
-    let v: ClosureVerdict | null = null;
-    try {
-      const evText = await extractEvidenceText(file);
-      v = await runClosureCheck(o!, text.trim(), evText);
-    } catch {
-      v = null;
-    }
-    if (!v) {
-      setBusy(false);
-      setErr("The reviewer is unavailable right now. Please try again in a moment.");
-      return;
-    }
-    if (!v.concrete) {
-      setBusy(false);
-      setVerdict({ ...v, heading: RFC_HEADINGS[rfcHeadingIdx % RFC_HEADINGS.length] });
-      rfcHeadingIdx++;
-      return;
+    if (!rfcWarned.has(obsId)) {
+      setBusyLabel("Checking…");
+      let v: ClosureVerdict | null = null;
+      try {
+        const evText = await extractEvidenceText(file);
+        v = await runClosureCheck(o!, text.trim(), evText);
+      } catch {
+        v = null;
+      }
+      if (!v) {
+        setBusy(false);
+        setErr("The reviewer is unavailable right now. Please try again in a moment.");
+        return;
+      }
+      if (!v.concrete) {
+        setBusy(false);
+        rfcWarned.add(obsId);
+        setVerdict({ ...v, heading: RFC_HEADINGS[rfcHeadingIdx % RFC_HEADINGS.length] });
+        rfcHeadingIdx++;
+        return;
+      }
     }
     setPassed(true);
     setBusyLabel("Submitting…");
@@ -296,17 +381,19 @@ export function ReadyForClosureDialog({ auditId, reportId, obsId }: Ids) {
       <label htmlFor="rfc-text">
         Your closure response — what your department actually did to address this *
       </label>
-      <textarea
+      <GapTextarea
         id="rfc-text"
-        className="rfc-response"
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={setText}
+        taRef={taRef}
         placeholder="Be specific: what was implemented or changed, when, and how it addresses the recommendation…"
       />
       <FilePick onPick={setFile} />
       {err ? <div className="ai-err" style={{ marginTop: 10 }}>{err}</div> : null}
       {passed ? (
-        <div className="hint" style={{ marginTop: 10, color: "var(--low)" }}>✓ Looks concrete. Submitting…</div>
+        <div className="hint" style={{ marginTop: 10, color: "var(--low)" }}>
+          {rfcWarned.has(obsId) ? "Submitting…" : "✓ Looks concrete. Submitting…"}
+        </div>
       ) : null}
       {verdict ? (
         <div className="note" style={{ marginTop: 12, borderLeft: "3px solid var(--crit)" }}>
@@ -324,27 +411,40 @@ export function ReadyForClosureDialog({ auditId, reportId, obsId }: Ids) {
           {verdict.suggestion ? (
             <>
               <div className="hint" style={{ marginTop: 10 }}>
-                <b>Suggested wording — edit it to reflect what you actually did:</b>
+                <b>Ready-to-send wording — keep it as it is and just replace the highlighted gaps:</b>
               </div>
               <div className="note" style={{ marginTop: 4, background: "var(--card)", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
-                {verdict.suggestion}
+                <TemplateText text={verdict.suggestion} />
               </div>
               <div style={{ marginTop: 6 }}>
                 <button
-                  className="btn sec sm"
+                  className="btn sm"
                   type="button"
                   onClick={() => {
                     setText(verdict.suggestion);
                     // Without this the box just changes somewhere above the fold and the click
                     // reads as having done nothing.
-                    toast("Copied into your closure response — edit it to match what you did.", "success");
+                    toast("Copied in word for word — now replace each [bracket] with your details.", "success");
                   }}
                 >
-                  Copy
+                  Use this template
                 </button>
               </div>
             </>
           ) : null}
+          {verdict.tips.length ? (
+            <>
+              <div className="hint" style={{ marginTop: 10 }}>
+                <b>Things to note while filling it in:</b>
+              </div>
+              <ul style={{ margin: "4px 0 0", paddingLeft: 18, fontSize: 13 }}>
+                {verdict.tips.map((t) => (
+                  <li key={t}>{t}</li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+
         </div>
       ) : null}
     </ModalFrame>
