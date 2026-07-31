@@ -6,6 +6,7 @@
 // Tests for lib/workspace-authz.ts and lib/workspace-scope.ts.
 // Run with: npm test   (or: npx tsx scripts/workspace-authz.test.mts)
 import { authorizeWorkspaceWrite } from "../lib/workspace-authz";
+import { graftServerHeld, slimForClient } from "../lib/workspace-payload";
 import { scopeWorkspace } from "../lib/workspace-scope";
 
 let pass = 0, fail = 0;
@@ -31,6 +32,11 @@ function baseWorkspace(): any {
     ],
     auditUniverse: [{ id: "u1", name: "Credit Ops", factors: {} }],
     iaSAList: [{ id: "ia1", period: "H1 2026", std: {}, items: {} }],
+    // Both of these are withheld by slimForClient() from every non-head, so a staff client's
+    // saved document legitimately differs from storage in these two sections. Present in the
+    // fixture so the locked-section check is exercised against a realistic served payload.
+    processReviews: [{ id: "p1", name: "Disbursement SOP", sopPdfBase64: "JVBERi0xLjQK" }],
+    exco: { briefs: [{ id: "b1", period: "H1 2026", token: "secret-brief-token" }] },
     extFindings: [
       { id: "e1", title: "Weak access", status: "Open", severity: "High", ownerUserId: "own1", owner: "Ola" },
       // Assigned to somebody else — the control for every scoping assertion below.
@@ -153,7 +159,11 @@ console.log("\n== Staff cannot touch head-only sections ==");
 
 console.log("\n== Staff LEGITIMATE actions pass through ==");
 {
-  const cur = baseWorkspace(); const inc = clone(cur);
+  const cur = baseWorkspace();
+  // Start from what GET actually served, as a real client does — not from raw storage. A document
+  // built from storage carries the SOP PDF and brief token the server withheld, and sending those
+  // back is itself flagged (correctly: the client was never given them).
+  const inc = clone(slimForClient(cur, { id: STAFF.id, role: "audit_staff" }));
   // comment (updates append) + verification field + a new pending approval + supersede own pending
   inc.audits[0].reports[0].observations[0].updates.push({ id: "u1", text: "reviewed", by: "staff1" });
   inc.audits[0].reports[0].observations[0].reportVerifiedAt = "2026-07-22T10:00:00Z";
@@ -264,6 +274,26 @@ console.log("\n== SEC-01: the scoped round-trip logs NO violations ==");
   ok(r.data.auditUniverse.length === 1 && r.data.iaSAList.length === 1, "head-only sections survive");
   ok(r.data.departments[0].headEmail === "o@x.com", "department head details survive the stripped copy");
   ok(r.data.audits[0].reports[0].execSummary === "orig", "exec summary survives the stripped copy");
+}
+
+console.log("\n== SEC-01: an AUDIT STAFF round trip logs no violations either ==");
+{
+  /* Regression: staff are full-scope, so scopeWorkspace() returns the document untouched — but
+     slimForClient() still strips SOP PDFs and exco brief tokens from them. Using the former as
+     the "what did they see" baseline flagged section:exco and section:processReviews on every
+     single staff save. Caught by scripts/verify-scope.mts against live data, not by fixtures. */
+  const cur = baseWorkspace();
+  const served = clone(slimForClient(cur, { id: STAFF.id, role: "audit_staff" }));
+  ok(served.processReviews[0].sopPdfBase64 === undefined, "SOP PDF is withheld from staff");
+  ok(served.exco.briefs[0].token === undefined, "brief token is withheld from staff");
+
+  const r = authorizeWorkspaceWrite(STAFF.role, STAFF.id, cur, served);
+  ok(r.violations.length === 0, `no violations for an untouched staff save (got ${JSON.stringify(r.violations)})`);
+
+  // And the withheld values must survive the save rather than being blanked by omission.
+  const grafted = graftServerHeld(cur, r.data, STAFF.id) as any;
+  ok(grafted.processReviews[0].sopPdfBase64 === "JVBERi0xLjQK", "the stored SOP PDF is grafted back");
+  ok(grafted.exco.briefs[0].token === "secret-brief-token", "the stored brief token is grafted back");
 }
 
 console.log("\n== SEC-01: echoing back a record that was never served is refused ==");

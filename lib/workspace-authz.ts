@@ -1,11 +1,11 @@
 import type { WorkspaceDb } from "./db-data";
+import { slimForClient } from "./workspace-payload";
 import {
   canSeeExt,
   canSeeFraudAction,
   canSeeFraudRisk,
   canSeeObs,
   isFullScope,
-  scopeWorkspace,
   viewerFor,
   visibleObsIds,
   type Viewer,
@@ -158,11 +158,17 @@ export function authorizeWorkspaceWrite(
   );
 
   /* Note any attempt to change a locked section (informational — the change is already
-     discarded). Compared against what this viewer was SHOWN, not against raw storage: a scoped
-     client receives e.g. departments as {id,name} only, so comparing to the stored rows would
-     flag `section:departments` on every legitimate save. Keys the client never received are not
-     in `inc` at all, so omission is never mistaken for a change. */
-  const shown = isFullScope(viewer) ? cur : (scopeWorkspace(current, viewer) as Obj);
+     discarded). Compared against what this viewer was actually SERVED, not against raw storage:
+     the GET payload withholds several things from a locked section, so storage is the wrong
+     baseline in three separate ways —
+       processReviews  SOP PDFs replaced by a sopPdfStored flag (every non-head)
+       exco            brief tokens withheld (every non-head)
+       departments     head name/email stripped (scoped viewers)
+     Comparing to storage flagged `section:exco` and `section:processReviews` on EVERY audit-staff
+     save. It must be slimForClient(), the same function GET calls, not scopeWorkspace() — which
+     is only the first of its four trims and returns the document untouched for full-scope roles.
+     Keys the client never received are absent from `inc`, so omission is never read as a change. */
+  const shown = slimForClient(current, viewer) as Obj;
   for (const key of Object.keys(inc)) {
     if (NON_HEAD_WRITABLE_SECTIONS.has(key)) continue;
     if (!jsonEq(inc[key], shown[key])) violations.push(`section:${key}`);

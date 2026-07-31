@@ -116,6 +116,10 @@ async function main() {
   let failures = 0;
 
   for (const u of users) {
+    /* The scope is decided by effectiveRole(), not the stored role: an `admin` who has not picked
+       a view acts as Head of Audit. activeRole lives only in the JWT, so this script cannot know
+       which view an admin is currently in — it reports the WIDEST scope they can hold, which is
+       the one worth checking. Both roles are shown so an admin is never mistaken for a head. */
     const role = u.role === "admin" ? "head_of_audit" : u.role;
     const viewer: Viewer = { id: u.id, role };
     // The exact payload GET /api/data builds — scope + SOP/notification/brief-token trims.
@@ -136,7 +140,8 @@ async function main() {
 
     rows.push({
       user: u.name,
-      role,
+      "db role": u.role,
+      "scoped as": u.role === "admin" ? `${role} (widest)` : role,
       payload: kb(served),
       obs: String(countObs(served)),
       ext: String(arr(served.extFindings).length),
