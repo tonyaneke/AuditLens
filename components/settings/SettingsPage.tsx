@@ -13,6 +13,7 @@ import { useModal } from "@/components/modals/ModalProvider";
 import { Avatar, Empty, RowOpen } from "@/components/ui";
 import { logAudit } from "@/lib/client/audit-log";
 import { loadDirectory, type DirectoryUser } from "@/lib/client/directory";
+import { MANUALS } from "@/lib/manuals";
 import { effectiveRole } from "@/lib/permissions";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 import {
@@ -311,6 +312,32 @@ export default function SettingsPage() {
             )}{" "}
             Unfilled <b>[bracketed gaps]</b> in a template are always refused, under either setting.
           </div>
+        </div>
+      </div>
+
+      {/* ---- User manuals ----
+           Both are built from AuditLens-User-Manual.html by scripts/build-docs.mts and served
+           from public/docs. They sit behind the session cookie like every other non-public path
+           (proxy.ts), so these links only work for someone already signed in — which is exactly
+           who they are for. Ordinary <a> rather than next/link: they are documents, not routes. */}
+      <div className="card">
+        <h3 style={{ margin: 0 }}>User manuals</h3>
+        <div className="hint" style={{ marginTop: 4 }}>
+          Both open in a new tab and print to PDF with <b>Ctrl</b>+<b>P</b>. Anyone signed in to
+          AuditLens can open these links, so they can be shared by email or pinned in Teams.
+        </div>
+        <div className="manual-links">
+          {MANUALS.map((m) => (
+            <a key={m.href} className="manual-link" href={m.href} target="_blank" rel="noopener noreferrer">
+              <span className="manual-link-ico" aria-hidden="true">{m.ico}</span>
+              <span className="manual-link-body">
+                <b>{m.title}</b>
+                <span className="hint">{m.blurb}</span>
+                <code className="manual-link-url">{m.href}</code>
+              </span>
+              <span className="manual-link-go" aria-hidden="true">↗</span>
+            </a>
+          ))}
         </div>
       </div>
 

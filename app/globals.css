@@ -296,6 +296,34 @@ a {
   border-color: rgba(255, 255, 255, 0.2);
 }
 
+/* Sits directly above Sign out and matches it, but quieter — it is a reference link, not an
+   action. Every role gets one; which manual it opens depends on the role (see lib/manuals.ts). */
+.sidebar-guide {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  color: #a8c9bc;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.sidebar-guide:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #fff;
+}
+
+.sidebar-guide:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.5);
+  outline-offset: 2px;
+}
+
 .nav-section {
   margin-bottom: 14px;
 }
@@ -4807,3 +4835,27 @@ a.btn-back {
 @media (max-width: 720px) {
   .mft-action-side { align-items: flex-start; width: 100%; }
 }
+
+/* ---- Settings → User manuals (lib/manuals.ts) ---- */
+.manual-links { display: grid; gap: 10px; margin-top: 12px; }
+@media (min-width: 900px) { .manual-links { grid-template-columns: 1fr 1fr; } }
+.manual-link {
+  display: flex; gap: 12px; align-items: flex-start;
+  padding: 14px; border: 1px solid var(--line); border-radius: 12px;
+  text-decoration: none; color: inherit; background: var(--card);
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+.manual-link:hover {
+  border-color: var(--accent); box-shadow: var(--shadow-md); transform: translateY(-2px);
+}
+.manual-link:focus-visible { outline: 2px solid var(--brand-700); outline-offset: 2px; }
+.manual-link-ico { font-size: 22px; line-height: 1.2; flex: none; }
+.manual-link-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.manual-link-body b { font-size: 14px; }
+.manual-link-url {
+  font-size: 11.5px; color: var(--muted); background: #f4f8f6;
+  border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px;
+  align-self: flex-start; margin-top: 3px; word-break: break-all;
+}
+.manual-link-go { color: var(--muted); font-size: 14px; flex: none; }
+.manual-link:hover .manual-link-go { color: var(--accent); }

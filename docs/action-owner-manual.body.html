@@ -1,0 +1,483 @@
+<!-- The body of the Action Owner Guide — sections only.
+     scripts/build-docs.mts wraps this in the shared shell, and generates the rail and the table of
+     contents FROM THE HEADINGS BELOW, so two things must hold:
+
+       * every section is <section class="sheet" id="sN"> with a <div class="sec-num">Section N</div>
+       * every subsection is <h3 id="…"><span class="n">N.N</span>Title</h3>, in that exact order
+
+     Figures are written as FIG tokens, numbered by the nth <img> in AuditLens-User-Manual.html in
+     document order — NOT counting the watermark data: URL in its stylesheet, which is not an <img>.
+     The build substitutes the real data: URL, so the screenshots never exist as separate files that
+     could be fetched without a session. EACH TOKEN MAY BE USED ONCE — the build fails on a reuse,
+     which is deliberate: a figure appearing twice in one document is nearly always a copy-paste slip.
+     That count includes tokens written in a comment, so the five used here are listed by number only:
+
+       1  the sign-in page                     6   the Mark Ready for Closure dialog
+       10 the Internal Observations portal     7   the closure response check
+       5  the Remediation & verification block
+
+     Written for department heads, so it never mentions a screen they cannot open. Where Internal
+     Audit does something, it is described as something that happens TO their item, not as a
+     procedure they could follow. The full manual is the place for the rest.
+-->
+
+<!-- ============ 1. GETTING STARTED ============ -->
+<section class="sheet" id="s1">
+  <div class="band"><span>Document Classification – Internal</span><span class="folio">1</span></div>
+
+  <div class="sec-head">
+    <div class="sec-num">Section 1</div>
+    <h2>Getting Started</h2>
+    <p class="sec-lede">AuditLens is where Internal Audit records what it found and where you record what
+    your department did about it. As an <b>Action Owner</b> you have one job in the system: respond to the
+    observations assigned to you, attach the evidence, and send each one back for verification.</p>
+  </div>
+
+  <h3 id="s1-1"><span class="n">1.1</span>What you are expected to do</h3>
+  <p class="p">When Internal Audit raises an observation against your department, it is assigned to you by
+  name. You are notified in the app and by email. From that point the item sits with you until you
+  respond to it.</p>
+  <ol class="steps">
+    <li>Read the observation — the finding, the criteria it was measured against, the impact, and the
+    recommendation.</li>
+    <li>Carry out the remediation in your department.</li>
+    <li>Record what you did in AuditLens and attach the evidence.</li>
+    <li>Mark it <b>Ready for Closure</b>. Internal Audit verifies it and the Head of Internal Audit closes
+    it.</li>
+  </ol>
+  <div class="note">
+    <b>You do not close observations yourself.</b> Marking an item Ready for Closure sends it for
+    verification; it is closed by the Head of Internal Audit after an auditor has checked the evidence.
+    See <a href="#s3-1">3.1</a>.
+  </div>
+
+  <h3 id="s1-2"><span class="n">1.2</span>How to sign in</h3>
+  <ol class="steps">
+    <li>In your browser, open the AuditLens address supplied by Internal Audit.</li>
+    <li>Click <b>Sign in with Microsoft</b>.</li>
+    <li>Complete Microsoft sign-in with your <b>@credicorp.ng</b> work account.</li>
+    <li>If sign-in succeeds you are taken to your dashboard.
+      <div class="sub">Your name, role and profile photo are read from your Microsoft account and shown at
+      the bottom of the side navigation bar. There is no separate AuditLens password to remember.</div>
+    </li>
+  </ol>
+  <div class="note warn">
+    <b>If sign-in is refused.</b> "Your Microsoft account isn't set up in AuditLens yet" means no account
+    has been created for you — ask the Head of Internal Audit to add you. "Your AuditLens account is
+    inactive" means your access has been suspended; contact the Head of Internal Audit.
+  </div>
+  <div class="fig">
+    <img src="{{FIG:1}}" alt="The AuditLens sign-in page, showing the CREDICORP logo, the AuditLens name and a Sign in with Microsoft button.">
+    <div class="figcap"><b>Figure 1:</b> The AuditLens sign-in page. Sign in with your work account — there
+    is no separate AuditLens password.</div>
+  </div>
+
+  <h3 id="s1-3"><span class="n">1.3</span>How to sign out</h3>
+  <ol class="steps">
+    <li>Go to the bottom of the side navigation bar, where your name and role are shown.</li>
+    <li>Click <b>Sign out</b>.</li>
+  </ol>
+
+  <h3 id="s1-4"><span class="n">1.4</span>Your dashboard</h3>
+  <p class="p">The dashboard is the first view after sign-in, and is reached at any time by clicking
+  <b>Dashboard</b> at the top of the side navigation bar.</p>
+  <p class="p">You see a single <b>Needs your attention</b> list, drawing together every internal
+  observation, external finding and fraud prevention action assigned to you — with its type, the audit it
+  came from, its priority, its expected close date and its current status. Click any row to open the item
+  and respond. If the list is empty, nothing is waiting on you.</p>
+
+  <h3 id="s1-5"><span class="n">1.5</span>The side navigation bar</h3>
+  <p class="p">The side navigation bar is on the left of every screen. Your items are in the <b>Portal</b>
+  group:</p>
+  <div class="tw">
+    <table>
+      <thead><tr><th>Item</th><th>What it holds</th></tr></thead>
+      <tbody>
+        <tr><th>Internal Observations</th><td>Findings raised against your department by Internal Audit.</td></tr>
+        <tr><th>External Observations</th><td>Findings raised against your department by regulators and
+          external auditors.</td></tr>
+        <tr><th>Fraud Risk Control Tracker</th><td>Fraud prevention actions assigned to you, each with its
+          control type, target date and status.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="p">A red count on a Portal item shows how many of your items are still open and awaiting your
+  response. Items you have already sent back to Internal Audit are <b>not</b> counted — so the number
+  falling to zero means nothing is with you, not that everything is closed.</p>
+  <p class="p">The rest of AuditLens — the audit files, the reports, the assessment modules and
+  administration — belongs to Internal Audit and is not shown to you. There is nothing missing from your
+  side navigation bar.</p>
+
+  <h3 id="s1-6"><span class="n">1.6</span>Notifications</h3>
+  <p class="p">The bell icon in the top bar carries a count of unread notifications — an observation
+  assigned to you, a reply on one of your items, or a request for a progress report. Click the bell to
+  open the list, then click any entry to go straight to the item.</p>
+  <p class="p">Key events are also emailed to your work address, so an observation raised against your
+  department reaches you whether or not you are signed in that day.</p>
+</section>
+
+<!-- ============ 2. YOUR OBSERVATIONS ============ -->
+<section class="sheet" id="s2">
+  <div class="band"><span>Document Classification – Internal</span><span class="folio">2</span></div>
+
+  <div class="sec-head">
+    <div class="sec-num">Section 2</div>
+    <h2>Your Observations</h2>
+    <p class="sec-lede">Everything assigned to you sits in the <b>Portal</b> group of the side navigation
+    bar. All three lists behave the same way: open an item, read it, respond to it, attach evidence, and
+    send it back.</p>
+  </div>
+
+  <h3 id="s2-1"><span class="n">2.1</span>Finding your observations</h3>
+  <ol class="steps">
+    <li>Click <b>Internal Observations</b> in the Portal group.</li>
+    <li>The observations raised against your department are split into those <b>needing your response</b>
+    and those <b>already with Internal Audit</b>. Start with the first list — the second is waiting on
+    someone else.</li>
+    <li>Click a row to open the observation.</li>
+  </ol>
+  <p class="p">Each row shows the criticality, the audit the finding came from, the expected close date and
+  the current status, so you can work through the list worst-first or by date without opening every item.</p>
+  <div class="fig">
+    <img src="{{FIG:10}}" alt="The action owner's Internal Observations portal, listing the observations assigned to them with criticality, source audit, expected close date and status.">
+    <div class="figcap"><b>Figure 2:</b> The <b>Internal Observations</b> portal. The Portal group in the
+    side navigation bar carries a count of the items still awaiting your response.</div>
+  </div>
+
+  <h3 id="s2-2"><span class="n">2.2</span>Reading an observation</h3>
+  <p class="p">An observation is written in four parts. Read all four before responding — the
+  recommendation is what your response will be judged against.</p>
+  <div class="tw">
+    <table>
+      <thead><tr><th>Part</th><th>What it tells you</th></tr></thead>
+      <tbody>
+        <tr><th>Observation</th><td>What was found.</td></tr>
+        <tr><th>Criteria</th><td>The policy, procedure or standard it was measured against.</td></tr>
+        <tr><th>Impact</th><td>What the finding exposes the Corporation to.</td></tr>
+        <tr><th>Recommendation</th><td>What Internal Audit expects to be done. <b>Your response should
+          address this line for line.</b></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="p">The observation also names the auditor who raised it, its criticality rating (see
+  <a href="#s5-1">5.1</a>), and its expected close date.</p>
+
+  <h3 id="s2-3"><span class="n">2.3</span>Asking a question or reporting progress</h3>
+  <p class="p">Use the comment box on the observation to ask the auditor a question, report interim
+  progress, or attach a document — without closing anything. The auditor who raised the item, the lead
+  auditor and the Head of Internal Audit all see it.</p>
+  <div class="note">
+    <b>Note.</b> Comments marked private are visible only to you and your co-owner. Everything else in the
+    conversation is shared with Internal Audit. Where an observation has both a primary and a secondary
+    action owner, either of you can comment and either of you can mark it Ready for Closure.
+  </div>
+
+  <h3 id="s2-4"><span class="n">2.4</span>External Observations</h3>
+  <ol class="steps">
+    <li>Click <b>External Observations</b> in the Portal group.</li>
+    <li>Review the findings raised against your department by regulators and external auditors.</li>
+    <li>Open a finding, respond, attach evidence and mark it ready for closure — the workflow is the same
+    one described in <a href="#s3">Section 3</a>.</li>
+  </ol>
+
+  <h3 id="s2-5"><span class="n">2.5</span>Fraud Risk Control Tracker</h3>
+  <ol class="steps">
+    <li>Click <b>Fraud Risk Control Tracker</b> in the Portal group.</li>
+    <li>Review the fraud prevention actions assigned to you, each with its control type, target date and
+    status.</li>
+    <li>Open an action to record progress, then click <b>Mark completed</b> when it is done.</li>
+  </ol>
+</section>
+
+<!-- ============ 3. RESPONDING & CLOSING ============ -->
+<section class="sheet" id="s3">
+  <div class="band"><span>Document Classification – Internal</span><span class="folio">3</span></div>
+
+  <div class="sec-head">
+    <div class="sec-num">Section 3</div>
+    <h2>Responding &amp; Closing</h2>
+    <p class="sec-lede">This is the part of AuditLens you will use most. Every observation is closed through
+    the same four stages, and only the second one is yours. The <b>Remediation &amp; verification</b> block
+    on the observation always shows where the item stands and what happens next.</p>
+  </div>
+
+  <h3 id="s3-1"><span class="n">3.1</span>The closure workflow</h3>
+  <div class="flow">
+    <div><div class="st">Stage 1</div><div class="ti">Raised</div><div class="by">Internal Audit raises the
+      observation and assigns it to you.</div></div>
+    <div><div class="st">Stage 2</div><div class="ti">Ready for closure</div><div class="by"><b>Yours.</b>
+      You remediate, respond and attach evidence.</div></div>
+    <div><div class="st">Stage 3</div><div class="ti">Auditor verified</div><div class="by">Internal Audit
+      reviews your response and verifies it for closure.</div></div>
+    <div><div class="st">Stage 4</div><div class="ti">Head verified &amp; closed</div><div class="by">The
+      Head of Internal Audit signs off and the observation is closed.</div></div>
+  </div>
+  <p class="p">The stepper on each observation marks completed stages with <b>✓</b> and names who completed
+  them and when. A stage that has been sent back is marked <b>↩ returned</b> rather than reverting to
+  blank, so a rejection is never mistaken for a fresh start — and the note giving the reason sits directly
+  beneath the stepper.</p>
+  <p class="p">Beneath the stepper, a <b>Next step</b> line always states what has to happen next and who
+  has to do it. <b>If you are unsure where an item stands, read that line first.</b></p>
+  <div class="fig">
+    <img src="{{FIG:5}}" alt="The Remediation and verification block: a four-stage stepper with Raised complete and Ready for closure marked returned, an escalation note from the Head of Audit, the conversation, a comment box, and the Request review and Ready for Closure buttons.">
+    <div class="figcap"><b>Figure 3:</b> The <b>Remediation &amp; verification</b> block. Here stage 2 shows
+    <b>↩ Returned</b> — the item was sent back to the action owner, and the note giving the reason sits
+    directly beneath the stepper.</div>
+  </div>
+
+  <h3 id="s3-2"><span class="n">3.2</span>Mark an observation Ready for Closure</h3>
+  <ol class="steps">
+    <li>Click <b>Internal Observations</b> in the Portal group, or open the item from your dashboard or a
+    notification.</li>
+    <li>Open the observation and read the description, criteria, impact and recommendation.</li>
+    <li>Carry out the remediation in your department.</li>
+    <li>Click <b>✓ Ready for Closure</b>.</li>
+    <li>In <b>Your closure response</b>, describe what your department actually did to address the
+    finding.</li>
+    <li>Click <b>Attach file</b> to add supporting evidence — the revised procedure, the signed memo, the
+    system screenshot, the training register.</li>
+    <li>Click <b>Submit</b>. Your response is checked before it is sent — see <a href="#s3-3">3.3</a>.</li>
+  </ol>
+  <div class="note">
+    <b>Do this once the work is actually done.</b> Ready for Closure means the remediation is complete and
+    the evidence exists. To report that work is under way, leave a comment instead
+    (<a href="#s2-3">2.3</a>) — it keeps the auditor informed without starting a verification that will
+    only be sent back.
+  </div>
+  <div class="fig">
+    <img src="{{FIG:6}}" alt="The Mark Ready for Closure dialog, showing the observation title, the closure response text box, and the Attach file control.">
+    <div class="figcap"><b>Figure 4:</b> The <b>Mark Ready for Closure</b> dialog.</div>
+  </div>
+
+  <h3 id="s3-3"><span class="n">3.3</span>The closure response check</h3>
+  <p class="p">When you press <b>Submit</b>, AuditLens reads your response before it reaches the auditor.
+  The point is to save you a rejection: a response that only says the work is done gets sent back by the
+  auditor anyway, and that round trip costs days.</p>
+
+  <h4>What is checked</h4>
+  <p class="p">Two checks run, in order.</p>
+  <ol class="steps">
+    <li><b>Unfilled gaps.</b> If your response still contains square-bracket placeholders such as
+    <b>[date the matrix took effect]</b>, submission stops and the remaining gaps are listed. Replace each
+    one, brackets and all, with your own details. This check always applies — it is not a judgement about
+    quality, it simply means the response is not finished.</li>
+    <li><b>Specifics.</b> The response is then read for whether it concretely addresses the recommendation.
+    Any PDF or Word evidence you attached is read as part of your submission, so detail that lives in the
+    document counts even if it is not repeated in the box.</li>
+  </ol>
+  <p class="p">A response is sent back to you for more detail when it:</p>
+  <ul class="bul">
+    <li>only asserts completion — "done", "noted", "resolved", "we have complied" — without saying what was
+    done;</li>
+    <li>restates the recommendation back as though quoting it were evidence of having acted on it;</li>
+    <li>promises rather than reports — "will be", "is being", "in progress", "shortly";</li>
+    <li>names no specific document, action, date or owner an auditor could go and check.</li>
+  </ul>
+
+  <h4>What you get back</h4>
+  <p class="p">If more detail is needed, the dialog shows four things:</p>
+  <div class="tw">
+    <table>
+      <thead><tr><th>What is shown</th><th>What to do with it</th></tr></thead>
+      <tbody>
+        <tr><th>Feedback</th><td>A sentence or two naming exactly what is missing.</td></tr>
+        <tr><th>Questions</th><td>The specific points your response has not yet answered.</td></tr>
+        <tr><th>Ready-to-send wording</th><td>A complete draft response with the facts left as
+          <b>[bold gaps]</b>. Click <b>Use this template</b> to copy it into the response box word for word,
+          then replace each gap with your own details. Everything outside the brackets is final wording —
+          you should only be typing facts.</td></tr>
+        <tr><th>Things to note</th><td>Short notes on filling the gaps without being sent back again — give
+          a real date rather than "recently", attach the documents the template names, and so on.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="fig">
+    <img src="{{FIG:7}}" alt="The closure response check: a warning heading reading This needs more detail before it can go through, feedback explaining the response is vague, two probing questions, a ready-to-send template with bracketed gaps shown in bold, a Use this template button, and notes on filling it in.">
+    <div class="figcap"><b>Figure 5:</b> The closure response check. The response submitted was
+    "Noted. This has been resolved and we have complied." — the check names what is missing, then supplies
+    finished wording with the facts left as bracketed gaps.</div>
+  </div>
+
+  <h3 id="s3-4"><span class="n">3.4</span>After you submit</h3>
+  <p class="p">When the response passes, the dialog confirms <b>✓ Looks concrete</b> and submits. The
+  observation moves to stage 2, and the auditor who raised it, the lead auditor and the Head of Internal
+  Audit are all notified in the app and by email. It leaves your <b>needing your response</b> list and the
+  red count in the side navigation bar falls by one.</p>
+  <p class="p">One of two things then happens:</p>
+  <ul class="bul">
+    <li><b>It is verified and closed.</b> The auditor checks your evidence and sends it to the Head of
+    Internal Audit, who signs it off. The observation is stamped with its closure date and moves to
+    <b>Closed</b>. Nothing further is required of you.</li>
+    <li><b>It comes back to you.</b> The stepper shows <b>↩ returned</b> with a note explaining what more
+    is needed, and the item reappears in your list. Add what was asked for and mark it Ready for Closure
+    again — the same dialog, and your previous response is still there to build on.</li>
+  </ul>
+  <div class="note">
+    <b>Being asked for a progress report.</b> Internal Audit can request an interim update without closing
+    anything. A banner stays on the observation until you mark it Ready for Closure. Answer it in the
+    comment box (<a href="#s2-3">2.3</a>) — a progress report is not a closure response.
+  </div>
+
+  <h3 id="s3-5"><span class="n">3.5</span>If you disagree with an observation</h3>
+  <p class="p">Where you believe an observation is not valid, it can be put forward for withdrawal.
+  Withdrawal requires the Head of Internal Audit's sign-off — you cannot remove an observation
+  yourself.</p>
+  <ol class="steps">
+    <li>Open the observation and click <b>Request review</b>.</li>
+    <li>State the reason the observation is considered invalid, and submit.</li>
+    <li>Internal Audit reviews the request and either:
+      <ul>
+        <li><b>Forwards it for withdrawal</b> — it goes to the Head of Internal Audit for sign-off; or</li>
+        <li><b>Declines the request</b> — the observation remains active and the reason is recorded.</li>
+      </ul>
+    </li>
+    <li>Where it is forwarded, the Head of Internal Audit either approves the withdrawal or does not. Both
+    outcomes are recorded on the observation with the reason given.</li>
+  </ol>
+  <div class="note">
+    <b>Note.</b> A withdrawn observation is neither Open nor Closed. It is retained in full with its reason
+    and sign-off, and is listed separately from the active observations on the report. A request that is
+    declined leaves the observation exactly as it was — still assigned to you, still awaiting a response.
+  </div>
+</section>
+
+<!-- ============ 4. GETTING IT RIGHT ============ -->
+<section class="sheet" id="s4">
+  <div class="band"><span>Document Classification – Internal</span><span class="folio">4</span></div>
+
+  <div class="sec-head">
+    <div class="sec-num">Section 4</div>
+    <h2>Getting It Right</h2>
+    <p class="sec-lede">The short answers to the things action owners most often ask, and the handful of
+    habits that keep items from coming back.</p>
+  </div>
+
+  <h3 id="s4-1"><span class="n">4.1</span>Common questions</h3>
+  <div class="tw">
+    <table>
+      <thead><tr><th>Question</th><th>Answer</th></tr></thead>
+      <tbody>
+        <tr><th>I cannot see an observation I was told about.</th>
+          <td>It may not have been approved yet — an observation is only assigned once the Head of Internal
+          Audit approves it. Check again, or ask the auditor who raised it.</td></tr>
+        <tr><th>Can I edit an observation?</th>
+          <td>No. Internal Audit owns the wording of the finding. If something in it is wrong, say so in the
+          comment box or use <b>Request review</b> (<a href="#s3-5">3.5</a>).</td></tr>
+        <tr><th>Can I change the expected close date?</th>
+          <td>Not directly. Explain the position in the comment box and ask the auditor to revise it.</td></tr>
+        <tr><th>Someone else in my department did the work.</th>
+          <td>Respond on their behalf, and name them in the response. Where a secondary action owner is
+          assigned, they can respond themselves.</td></tr>
+        <tr><th>I am going on leave.</th>
+          <td>Tell Internal Audit before you go — they can add a secondary action owner so your items do not
+          sit untouched.</td></tr>
+        <tr><th>What file types can I attach?</th>
+          <td>Documents and images. PDF and Word evidence is read as part of the closure response check
+          (<a href="#s3-3">3.3</a>), so detail inside those files counts.</td></tr>
+        <tr><th>My response was sent back a second time.</th>
+          <td>Read the note on the stepper — it names what is still missing. If it is not clear, ask the
+          auditor in the comment box rather than resubmitting the same wording.</td></tr>
+        <tr><th>Can I print or save an item?</th>
+          <td>Press <b>Ctrl</b>+<b>P</b> on any page, including this manual, and choose <b>Save as
+          PDF</b>.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 id="s4-2"><span class="n">4.2</span>Five things that keep items from coming back</h3>
+  <ol class="steps">
+    <li><b>Answer the recommendation, not the observation.</b> The recommendation is what closure is
+    measured against.</li>
+    <li><b>Give a date.</b> Almost every response sent back is missing one.</li>
+    <li><b>Attach the evidence you name.</b> A response that refers to a revised procedure without attaching
+    it will be sent back for it.</li>
+    <li><b>Report, do not promise.</b> "Will be implemented" is not a closure response — leave it as a
+    comment until it is done.</li>
+    <li><b>Do not wait for the deadline to say something.</b> A comment reporting progress costs nothing and
+    stops the item being chased.</li>
+  </ol>
+
+  <h3 id="s4-3"><span class="n">4.3</span>If you get stuck</h3>
+  <p class="p">Every observation names the auditor who raised it. Contact them, or the Head of Internal
+  Audit, rather than working around the system — a note left on the observation itself is always visible to
+  both of you, and it stays with the item as part of its record.</p>
+</section>
+
+<!-- ============ 5. REFERENCE ============ -->
+<section class="sheet" id="s5">
+  <div class="band"><span>Document Classification – Internal</span><span class="folio">5</span></div>
+
+  <div class="sec-head">
+    <div class="sec-num">Section 5</div>
+    <h2>Reference</h2>
+    <p class="sec-lede">The ratings, statuses and timelines you will see on your items, and what each of
+    them means for you.</p>
+  </div>
+
+  <h3 id="s5-1"><span class="n">5.1</span>Criticality ratings</h3>
+  <p class="p">Every observation carries one of five ratings. The rating is set by Internal Audit and drives
+  how quickly a response is expected.</p>
+  <div class="tw">
+    <table>
+      <thead><tr><th>Rating</th><th>Definition</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="rate r-crit">Critical<small>Immediate remediation</small></td>
+          <td>Contravenes the Corporation's zero risk-tolerance indicators and risk appetite statement.
+          Requires immediate remediation.</td>
+        </tr>
+        <tr>
+          <td class="rate r-high">High<small>Immediate remediation</small></td>
+          <td>Significant vulnerability with potentially severe consequences if unaddressed — a major
+          control failure, a regulatory breach or a critical weakness. Requires immediate action and close
+          monitoring by executive management and the Board Audit Committee.</td>
+        </tr>
+        <tr>
+          <td class="rate r-mod">Moderate<small>Short-term, 1–3 months</small></td>
+          <td>Notable weakness causing inefficiencies and moderate financial or reputational harm if
+          unresolved. Timely corrective action prevents escalation.</td>
+        </tr>
+        <tr>
+          <td class="rate r-low">Low<small>Medium-term, 4–6 months</small></td>
+          <td>Minor control weakness or process deviation with minimal operational impact. Manageable
+          through routine improvement.</td>
+        </tr>
+        <tr>
+          <td class="rate r-pi">Process<br>Improvement<small>Flexible timing</small></td>
+          <td>An opportunity to improve efficiency and adopt best practice rather than a risk.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="p mut">This guide is also shown inside AuditLens under <b>How to use AuditLens</b>.</p>
+
+  <h3 id="s5-2"><span class="n">5.2</span>Observation status</h3>
+  <div class="tw">
+    <table>
+      <thead><tr><th>Status</th><th>Meaning</th><th>Is it with you?</th></tr></thead>
+      <tbody>
+        <tr><th>Open</th><td>Raised and not yet resolved.</td><td>Yes</td></tr>
+        <tr><th>In Progress</th><td>Remediation is under way.</td><td>Yes</td></tr>
+        <tr><th>Closed</th><td>Verified by the auditor and signed off by the Head of Internal Audit. Stamped
+          with the closure date.</td><td>No</td></tr>
+        <tr><th>Withdrawn</th><td>Approved for withdrawal by the Head of Internal Audit. Neither Open nor
+          Closed, and listed separately.</td><td>No</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 id="s5-3"><span class="n">5.3</span>Resolution timelines</h3>
+  <div class="tw">
+    <table>
+      <thead><tr><th>Timeline</th><th class="num">Expected closure</th></tr></thead>
+      <tbody>
+        <tr><th>Immediate</th><td class="num">Within 30 days</td></tr>
+        <tr><th>Short-term</th><td class="num">Within 60 days</td></tr>
+        <tr><th>Long-term</th><td class="num">Within 120 days</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="p">Where no closure date is set on your observation, the timeline determines the expected close
+  date shown against it. Open observations that are overdue, or due within two weeks, are on the watchlist
+  Internal Audit reviews — which is when you can expect to be chased.</p>
+</section>

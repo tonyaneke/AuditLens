@@ -79,6 +79,15 @@ console.log(`  (${noReport} planned/completed engagements carry no report — no
 console.log(`\nEXTERNAL FINDINGS: ${(db.extFindings || []).length}`);
 console.log(`  Unowned: ${(db.extFindings || []).filter((f) => !f.ownerUserId).length}`);
 
+const recips = db.exco?.recipientList || [];
+console.log(`\nMD & EXCO BRIEF RECIPIENTS: ${recips.length}`);
+for (const r of recips) console.log(`  ${String(r.name || "").padEnd(20)} ${String(r.email || "").padEnd(26)} ${r.role || ""}`);
+// A recipient with an account would be a quiet access grant — the brief is meant to reach them
+// as a tokenised link, not to put them inside the app.
+const withAccounts = recips.filter((r) => users.some((u) => u.email.toLowerCase() === String(r.email || "").toLowerCase()));
+console.log(`  Recipients who also hold an AuditLens account: ${withAccounts.length}`);
+console.log(`  Duplicate recipient emails: ${recips.length - new Set(recips.map((r) => String(r.email || "").toLowerCase())).size} (must be 0)`);
+
 console.log("\nNOTIFICATIONS: " + (db.notifications || []).length + "  (must be 0 — owners are not to be alerted)");
 console.log("APPROVALS: " + (db.approvals || []).length);
 console.log("FRAUD RISKS: " + (db.fraudRisks || []).length + " · PROCESS REVIEWS: " + (db.processReviews || []).length + " · IA SELF-ASSESSMENTS: " + (db.iaSAList || []).length);

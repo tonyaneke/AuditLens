@@ -23,6 +23,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import type { SessionUser } from "@/lib/permissions";
 import { displayRoleLabel, effectiveRole, isAdmin, visibleViews } from "@/lib/permissions";
+import { FULL_MANUAL, OWNER_MANUAL } from "@/lib/manuals";
 import {
   myExtPendingCount,
   myFraudPendingCount,
@@ -394,6 +395,19 @@ export default function SidebarNav({ user, shell = "legacy" }: SidebarNavProps) 
             character per line. It only ever reproduced for admins, because only admins render
             this control. It belongs on its own row anyway; its margin-top always assumed that. */}
         {isAdmin(user) && <RoleSwitcher user={user} />}
+        {/* The manuals are Settings-linked for the Head of Audit, but an action owner never sees
+            Settings — so the guide written FOR them would be unreachable. Everyone gets the link
+            here instead, pointed at the manual for their role. A plain <a>: it is a static
+            document under /docs, not an app route, and it opens in its own tab. */}
+        <a
+          className="sidebar-guide"
+          href={effectiveRole(user) === "action_owner" ? OWNER_MANUAL.href : FULL_MANUAL.href}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <HugeiconsIcon icon={BookOpen01Icon} size={16} strokeWidth={1.75} />
+          User guide
+        </a>
         <button
           type="button"
           className="sidebar-signout"
