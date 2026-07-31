@@ -1,9 +1,19 @@
 /* The two published user manuals.
  *
  * Both are generated into public/docs by scripts/build-docs.mts and served as ordinary static
- * documents at these relative paths. They are NOT in proxy.ts's PUBLIC_PATHS, so a request without
- * a valid session is redirected to /login like any other page — the figures inside them are real
- * screenshots of real observations, names and email addresses, and must stay behind the cookie.
+ * documents at these relative paths. THEY DIFFER IN WHO MAY READ THEM:
+ *
+ *   user-manual.html          requires a session. Its Figure 11 is the Settings page — the live
+ *                             user directory, with names, work addresses and personal Gmail
+ *                             addresses — so it is absent from proxy.ts's PUBLIC_PATHS and a
+ *                             request without a valid cookie is redirected to /login.
+ *   action-owner-manual.html  is public, and listed in PUBLIC_PATHS. Action owners are given the
+ *                             link before their accounts exist, so requiring a session to read the
+ *                             page that explains how to sign in would defeat the point. Its figures
+ *                             carry staff names and observation titles, but no addresses.
+ *
+ * Anything added to this list is NOT public by default — say so in proxy.ts deliberately, having
+ * looked at the figures the document actually embeds.
  *
  * Kept here rather than inline so the Settings card and the sidebar's Help entry cannot drift
  * apart, and so a rename is one edit.

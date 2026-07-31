@@ -23,7 +23,10 @@
  *     The figures stay inline: `img-src` already allows data:, AND — the reason this matters —
  *     proxy.ts's matcher EXCLUDES .png/.jpg/.jpeg/… from authentication. Extracting the figures
  *     to files would publish screenshots of real observations, names and email addresses to
- *     anyone with the URL. Inside the .html they stay behind the session cookie.
+ *     anyone with the URL, INCLUDING those in user-manual.html, which is the one document here
+ *     that still requires a session (see PUBLIC_PATHS in proxy.ts — the owner guide is public, the
+ *     full manual is not, because only the full manual embeds the user directory). Inline, each
+ *     document's figures inherit that document's access rule instead of escaping it.
  *
  *  3. IT HAS TO BE A REAL DOCUMENT.  The source has no <!doctype>, no <html lang>, and — the one
  *     that actually breaks phones — no <meta name="viewport">. Without it a mobile browser lays

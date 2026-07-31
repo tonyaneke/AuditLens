@@ -10,6 +10,22 @@ const PUBLIC_PATHS = [
   "/api/branding",
   "/brief",
   "/api/cron",
+  /* The Action Owner Guide is readable without a session, because the people it is written for are
+     department heads who have not been given accounts yet — the guide explaining how to sign in is
+     no use if reading it requires being signed in.
+
+     ONLY THIS ONE DOCUMENT. /docs/user-manual.html is deliberately absent and must stay absent: its
+     Figure 11 is the Settings page, which is a screenshot of the live user directory — thirteen
+     people with their names, departments, roles, work addresses and two personal Gmail addresses.
+     Publishing that is not the same decision as publishing the owner guide, whose figures carry
+     staff names and observation titles but no addresses. Listing the file explicitly rather than
+     the "/docs" prefix is what keeps the two apart: a prefix would take the whole directory, and
+     the next document built into it would go public without anyone choosing that. */
+  "/docs/action-owner-manual.html",
+  // The embedded typeface, which the guide loads relatively. Without it the font 302s to /login and
+  // the page silently falls back to system-ui for a signed-out reader. Written by
+  // scripts/build-docs.mts; it is the only file in that directory.
+  "/docs/assets/manual-jakarta.woff2",
 ];
 
 function isPublic(pathname: string) {
