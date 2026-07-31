@@ -65,8 +65,12 @@ export default function SettingsPage() {
 
   /* ---- setUserActive: inactive (block sign-in, keep history) / active again ---- */
   function setUserActive(u: ManagedUser, active: boolean) {
+    // Someone who has never been welcomed is being released to the system for the first time —
+    // say so, because activating them is what sends the "your account is ready" email.
+    const firstTime = active && u.welcomeEmailSentAt == null;
     const msg = active
-      ? `Make ${u.name} active again? They will be able to sign in with their Microsoft account.`
+      ? `Make ${u.name} active${firstTime ? "" : " again"}? They will be able to sign in with their Microsoft account.` +
+        (firstTime ? ` A welcome email will be sent to ${u.email} letting them know their account is ready.` : "")
       : `Make ${u.name} inactive? They can no longer sign in (any open session ends immediately), but the account, their observations and full history are kept. You can make them active again at any time.`;
     void modal.confirm({
       title: active ? "Make user active" : "Make user inactive",
@@ -93,7 +97,15 @@ export default function SettingsPage() {
         }
         // The server writes the user.deactivated / user.reactivated audit-trail entry.
         await reload();
-        toast(`${u.name} is now ${active ? "active" : "inactive"} — recorded in the audit trail.`, "success");
+        const base = `${u.name} is now ${active ? "active" : "inactive"} — recorded in the audit trail.`;
+        if (data.welcomeEmailSent === true) {
+          toast(`${base} Welcome email sent to ${u.email}.`, "success");
+        } else if (data.welcomeEmailSent === false) {
+          // The account is active regardless; only the notification failed.
+          toast(`${base} The welcome email could not be sent — ${String(data.welcomeEmailError || "unknown error")}`, "error");
+        } else {
+          toast(base, "success");
+        }
       },
     });
   }
@@ -161,6 +173,27 @@ export default function SettingsPage() {
         });
       },
     });
+  }
+
+  /* ---- Settings → closure response check (db.strictClosureCheck) ----
+     The AI check on an owner's closure response is advisory by default: it gives the feedback and
+     a fill-in template once per submission round, and the next Submit goes through whatever the
+     owner does with it. That deliberately can't wedge an owner out of the workflow, but it also
+     means a thin response reaches the auditor. Turning this on removes the waiver — the check runs
+     on every attempt and refuses anything it judges vague. Head-only, and enforced against
+     db.strictClosureCheck in ReadyForClosureDialog. */
+  const strictClosure = !!db.strictClosureCheck;
+  function setStrictClosure(on: boolean) {
+    mutate((w) => {
+      w.strictClosureCheck = on;
+    });
+    logAudit(
+      "settings.closure_check",
+      on
+        ? "Closure response check set to strict — vague responses cannot be submitted"
+        : "Closure response check set to advisory — owners may submit after one warning",
+    );
+    toast(on ? "Closure responses must now pass the check." : "Owners may submit after one warning.", "success");
   }
 
   return (
@@ -241,6 +274,43 @@ export default function SettingsPage() {
               </tbody>
             </table>
           )}
+        </div>
+      </div>
+
+      {/* ---- Remediation closure rules ---- */}
+      <div className="card">
+        <h3 style={{ margin: 0 }}>Remediation closure rules</h3>
+        <div className="hint" style={{ marginTop: 4 }}>
+          How strictly AuditLens checks an action owner&rsquo;s closure response before it reaches
+          the auditor who raised the observation.
+        </div>
+        <div style={{ marginTop: 12 }}>
+          <label className="filter-check" style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+            <input
+              type="checkbox"
+              style={{ width: "auto", marginTop: 3 }}
+              checked={strictClosure}
+              onChange={(e) => setStrictClosure(e.target.checked)}
+            />
+            <span>
+              <b>Require the closure response check to pass</b>
+              <div className="hint" style={{ marginTop: 2 }}>
+                When ticked, a response the check judges vague cannot be submitted at all — the
+                owner must revise it, even after the check has supplied ready-to-send wording. When
+                unticked (the default), the check gives its feedback and template once per round and
+                the next Submit goes through as written; the auditor can still send it back.
+              </div>
+            </span>
+          </label>
+          <div className="hint" style={{ marginTop: 10 }}>
+            Currently:{" "}
+            {strictClosure ? (
+              <b>Strict — a vague response is refused.</b>
+            ) : (
+              <b>Advisory — the owner may submit after one warning.</b>
+            )}{" "}
+            Unfilled <b>[bracketed gaps]</b> in a template are always refused, under either setting.
+          </div>
         </div>
       </div>
 

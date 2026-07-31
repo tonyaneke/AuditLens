@@ -24,6 +24,7 @@ export async function GET() {
       sidebarAccess: true,
       photo: true,
       active: true,
+      welcomeEmailSentAt: true,
       createdAt: true,
       updatedAt: true,
     },
@@ -52,6 +53,7 @@ export async function POST(request: Request) {
     department?: string;
     role?: string;
     sidebarAccess?: string[];
+    active?: boolean;
   };
   try {
     body = await request.json();
@@ -64,6 +66,9 @@ export async function POST(request: Request) {
   const department = body.department?.trim() || "";
   const role = normalizeRole(body.role);
   const sidebarAccess = normalizeSidebarAccess(body.sidebarAccess);
+  // Provisioning ahead of go-live: create the account but leave sign-in blocked. No welcome
+  // email goes out now — PATCH sends it when the Head of Audit makes the account active.
+  const active = body.active !== false;
 
   if (!name || !email) {
     return NextResponse.json(
@@ -89,6 +94,7 @@ export async function POST(request: Request) {
       email,
       department,
       role,
+      active,
       sidebarAccess:
         role === "audit_staff"
           ? sidebarAccess.filter((v) =>
@@ -98,21 +104,31 @@ export async function POST(request: Request) {
     },
   });
 
-  const emailResult = await sendWelcomeEmail({
-    to: email,
-    name,
-    loginUrl: loginUrlFromRequest(request),
-  });
+  const emailResult = active
+    ? await sendWelcomeEmail({
+        to: email,
+        name,
+        loginUrl: loginUrlFromRequest(request),
+      })
+    : ({ sent: false, error: undefined } as const);
+
+  if (emailResult.sent) {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { welcomeEmailSentAt: new Date() },
+    });
+  }
 
   await writeAuditLog({
     user: session,
     action: "user.created",
     category: "user",
-    summary: `Created user ${name} (${email})`,
+    summary: `Created user ${name} (${email})${active ? "" : " — inactive, welcome email deferred until activation"}`,
     metadata: {
       targetUserId: user.id,
       targetEmail: email,
       role,
+      active,
       emailSent: emailResult.sent,
     },
   });
@@ -120,6 +136,7 @@ export async function POST(request: Request) {
   return NextResponse.json(
     {
       user: userToSession(user),
+      active,
       emailSent: emailResult.sent,
       emailError: emailResult.sent ? undefined : emailResult.error,
     },

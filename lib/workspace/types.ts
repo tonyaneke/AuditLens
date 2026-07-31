@@ -480,6 +480,9 @@ export type WorkspaceDb = {
   /** Plan years opened from "New audit plan" (planYear is the one currently in view). */
   planYears?: (string | number)[];
   departments?: Department[];
+  /** Settings → closure response check. When true the AI check blocks every submission it judges
+   *  vague; when false (the default) it advises once per round and the next Submit goes through. */
+  strictClosureCheck?: boolean;
   notifications?: NotificationItem[];
   approvals?: Approval[];
   exco?: ExcoMeta;

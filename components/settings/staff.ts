@@ -103,6 +103,8 @@ export type ManagedUser = {
   photo?: string | null;
   active?: boolean;
   createdAt?: string;
+  /** null until the "your account is ready" email has gone out — see PATCH /api/users/:id. */
+  welcomeEmailSentAt?: string | null;
 };
 
 export async function fetchUsers(): Promise<ManagedUser[] | null> {

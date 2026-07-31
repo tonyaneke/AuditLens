@@ -149,8 +149,11 @@ export function visibleObsIds(db: WorkspaceDb, viewer: Viewer): Set<string> {
    one of those sits outside NON_HEAD_WRITABLE_SECTIONS in lib/workspace-authz.ts, so the write
    path restores them from storage — omitting them here cannot lose data. */
 
-// Branding and labels the shell renders for every role.
-const OWNER_KEPT_SCALARS = ["org", "signOffName", "signOffTitle", "planYear"];
+/* Branding and labels the shell renders for every role, plus `strictClosureCheck` — a policy flag
+   the ACTION OWNER's own Ready-for-Closure dialog has to honour, so it has to reach them. It is
+   head-only to WRITE (it sits outside NON_HEAD_WRITABLE_SECTIONS in lib/workspace-authz.ts) and
+   carries no confidential content. */
+const OWNER_KEPT_SCALARS = ["org", "signOffName", "signOffTitle", "planYear", "strictClosureCheck"];
 
 /**
  * The workspace document as this viewer is allowed to see it.

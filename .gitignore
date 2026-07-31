@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# migration snapshots — full dumps of production data (staff emails, every finding, the audit
+# trail) written by scripts/_migration.mts before any write. Restore points, never commits.
+/scripts/.snapshots/

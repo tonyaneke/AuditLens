@@ -24,6 +24,13 @@ model User {
   photo         String?  // Microsoft profile picture as a data URL (fetched on SSO sign-in)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  // Stamped the first (and only) time the "your account is ready" email actually goes out.
+  // Accounts provisioned ahead of go-live are created inactive and un-emailed — telling someone
+  // their account is ready while sign-in is still blocked is worse than silence. The Head of
+  // Audit making them active is what releases the email, and this column is what stops a later
+  // deactivate/reactivate cycle from sending it a second time.
+  welcomeEmailSentAt DateTime?
 }
 
 model WorkspaceData {

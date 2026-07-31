@@ -182,6 +182,10 @@ let rfcHeadingIdx = 0;
    gets the feedback once, and the next Submit goes through as written. Module-level so closing and
    reopening the dialog doesn't reset it back to blocking.
 
+   Settings → "Closure response check" turns that waiver off (db.strictClosureCheck): with it on,
+   the check re-runs on every attempt and a response it judges vague cannot be submitted at all,
+   template supplied or not. Off is the default and is the behaviour described below.
+
    Keyed by SUBMISSION ROUND, not by observation. Keying it on the id alone let the waiver outlive
    the response it was granted for: once an observation had been warned, every later round on it
    skipped the check too, so a response that came back from Internal Audit could be resubmitted
@@ -220,7 +224,7 @@ function TemplateText({ text }: { text: string }) {
 const GAP_RE = /\[[^\]]{3,}\]/g;
 
 export function ReadyForClosureDialog({ auditId, reportId, obsId }: Ids) {
-  const { o, editObs, notifyIn } = useObs({ auditId, reportId, obsId });
+  const { db, o, editObs, notifyIn } = useObs({ auditId, reportId, obsId });
   const modal = useModal();
   const user = useUser();
   const [text, setText] = useState(o?.ownerResponse || "");
@@ -230,6 +234,8 @@ export function ReadyForClosureDialog({ auditId, reportId, obsId }: Ids) {
   const [err, setErr] = useState("");
   const [verdict, setVerdict] = useState<(ClosureVerdict & { heading: string }) | null>(null);
   const [passed, setPassed] = useState(false);
+  // Settings → Closure response check. Strict removes the once-per-round waiver entirely.
+  const strict = !!db.strictClosureCheck;
   /* A pasted-in template runs to several spaced paragraphs, so a fixed box would hide most of it —
      and the gaps left in it — behind a scrollbar. Grow to fit whatever is in it, measured off
      scrollHeight after a reset to auto, or the box could only ever get taller. The cap is high
@@ -271,12 +277,14 @@ export function ReadyForClosureDialog({ auditId, reportId, obsId }: Ids) {
       return;
     }
 
-    /* runClosureCheck gate — first attempt of this round only. Once the owner has been told what is
-       missing, the rest of the round is their call: skip the check entirely (no AI round-trip, and
-       an unavailable reviewer can't block them either). The next round re-arms it. */
+    /* runClosureCheck gate — first attempt of this round only, unless the Head has turned the
+       waiver off. Once the owner has been told what is missing, the rest of the round is their
+       call: skip the check entirely (no AI round-trip, and an unavailable reviewer can't block
+       them either). The next round re-arms it. Under `strict` the check runs every time and a
+       vague response is refused however many times it is resubmitted. */
     setBusy(true);
     const round = rfcRoundKey(o!);
-    if (!rfcWarned.has(round)) {
+    if (strict || !rfcWarned.has(round)) {
       setBusyLabel("Checking…");
       let v: ClosureVerdict | null = null;
       try {
@@ -292,7 +300,8 @@ export function ReadyForClosureDialog({ auditId, reportId, obsId }: Ids) {
       }
       if (!v.concrete) {
         setBusy(false);
-        rfcWarned.add(round);
+        // Strict: no waiver is granted, so the next attempt is checked again from scratch.
+        if (!strict) rfcWarned.add(round);
         setVerdict({ ...v, heading: RFC_HEADINGS[rfcHeadingIdx % RFC_HEADINGS.length] });
         rfcHeadingIdx++;
         return;
@@ -376,7 +385,7 @@ export function ReadyForClosureDialog({ auditId, reportId, obsId }: Ids) {
       {err ? <div className="ai-err" style={{ marginTop: 10 }}>{err}</div> : null}
       {passed ? (
         <div className="hint" style={{ marginTop: 10, color: "var(--low)" }}>
-          {rfcWarned.has(rfcRoundKey(o)) ? "Submitting…" : "✓ Looks concrete. Submitting…"}
+          {!strict && rfcWarned.has(rfcRoundKey(o)) ? "Submitting…" : "✓ Looks concrete. Submitting…"}
         </div>
       ) : null}
       {verdict ? (
@@ -428,7 +437,13 @@ export function ReadyForClosureDialog({ auditId, reportId, obsId }: Ids) {
               </ul>
             </>
           ) : null}
-
+          {/* Say which rule is in force, so the owner isn't left guessing whether pressing Submit
+              again will work. */}
+          <div className="hint" style={{ marginTop: 10, fontSize: 12.5 }}>
+            {strict
+              ? "Internal Audit requires this check to pass before a response can be submitted — revise the response above and submit again."
+              : "You have had this feedback once, so pressing Submit again will send the response as it stands. It will go to your auditor, who can still send it back."}
+          </div>
         </div>
       ) : null}
     </ModalFrame>

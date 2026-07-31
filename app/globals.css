@@ -2832,6 +2832,9 @@ td.timeline-cell {
   padding: 12px 14px;
   margin: 8px 0;
   cursor: pointer;
+  /* Also an <a> — keep the card text unlinked-looking. */
+  text-decoration: none;
+  color: inherit;
   transition: border-color 0.15s ease-out, box-shadow 0.15s ease-out;
 }
 
@@ -3122,6 +3125,9 @@ td.timeline-cell {
   border-radius: 12px;
   padding: 14px;
   cursor: pointer;
+  /* The card is an <a>; without this the UA underlines every line of the card. */
+  text-decoration: none;
+  color: inherit;
   transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
   min-height: 140px;
   display: flex;
