@@ -215,29 +215,9 @@ function TemplateText({ text }: { text: string }) {
   return <>{gapParts(text)}</>;
 }
 
-/* The gaps still to be filled, as they stand right now. A textarea cannot render bold inside itself,
-   and the overlay that could — a mirrored backdrop under a transparent textarea — is not worth it:
-   the two boxes have to wrap identically or the caret sits somewhere other than the glyphs being
-   read, and backspace then appears to delete the wrong character. The moment the text outgrows the
-   box only one of them takes a scrollbar, so they cannot be kept identical. The editable box is
-   therefore left completely alone, and the gaps are called out beneath it instead. */
+/* An unfilled gap left in the response — matched on submit, so a copied-in template cannot be sent
+   to the auditor with its placeholders still in it. */
 const GAP_RE = /\[[^\]]{3,}\]/g;
-
-function GapsLeft({ text }: { text: string }) {
-  const gaps = text.match(GAP_RE) || [];
-  if (!gaps.length) return null;
-  return (
-    <div style={{ margin: "10px 0 4px", fontSize: 12.5, lineHeight: 1.9 }}>
-      <b>{gaps.length === 1 ? "1 gap" : gaps.length + " gaps"} still to fill in</b> — find each one in
-      the box above and replace it, brackets and all:
-      {gaps.map((g, i) => (
-        <div key={i} style={{ marginTop: 4 }}>
-          <b>{g}</b>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 export function ReadyForClosureDialog({ auditId, reportId, obsId }: Ids) {
   const { o, editObs, notifyIn } = useObs({ auditId, reportId, obsId });
@@ -392,7 +372,6 @@ export function ReadyForClosureDialog({ auditId, reportId, obsId }: Ids) {
         onChange={(e) => setText(e.target.value)}
         placeholder="Be specific: what was implemented or changed, when, and how it addresses the recommendation…"
       />
-      <GapsLeft text={text} />
       <FilePick onPick={setFile} />
       {err ? <div className="ai-err" style={{ marginTop: 10 }}>{err}</div> : null}
       {passed ? (

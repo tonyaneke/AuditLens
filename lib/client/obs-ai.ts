@@ -142,14 +142,15 @@ same template back, since the owner has copied it in without filling the gaps.
 THE SUGGESTION IS A CONTRACT. The owner drops it straight into the response box, fills the brackets
 and submits it — and it must pass on that submission. Write "suggestion" as a FINISHED RESPONSE WITH
 GAPS, never as an outline, a form or a set of instructions:
-- ONE RESPONSE, BUT BROKEN INTO READABLE PARAGRAPHS. Flowing prose the owner could send as-is once
-  the gaps are filled — never one dense block. Write TWO TO FOUR short paragraphs of two or three
-  sentences each, each separated by a BLANK LINE (a \\n\\n between them), so it is easy to read once
-  pasted in. Group them by theme: what was done and when, then how it addresses what was asked and
-  what evidence backs it, then how it will be kept in place. Do NOT lay it out as labelled lines,
-  headings or bullets. Do NOT split it into "Recommendation 1 / 2 / 3" sections and do NOT repeat the
-  same structure per part — where the recommendation has several parts, cover them in sequence across
-  those same paragraphs.
+- SHORT: TWO PARAGRAPHS AT THE MOST. Flowing prose the owner could send as-is once the gaps are
+  filled. Write ONE short paragraph, or TWO if there is genuinely too much for one — never three,
+  and never more than about three sentences each. Separate the two with a BLANK LINE (a \\n\\n
+  between them) so it is easy to read once pasted in: the first covers what was done and when, the
+  second how it addresses what was asked, what evidence backs it and how it is kept in place. Keep
+  it tight — cover every required element in as few words as it takes, not in as many as it allows.
+  Do NOT lay it out as labelled lines, headings or bullets. Do NOT split it into "Recommendation 1 /
+  2 / 3" sections and do NOT repeat the same structure per part — where the recommendation has
+  several parts, cover them in the same two paragraphs.
 - EVERY WORD OUTSIDE THE BRACKETS IS FINAL WORDING. The owner should only ever be typing facts into
   gaps, never composing a sentence of their own.
 - A PLACEHOLDER IS A SHORT FACTUAL VALUE the owner can look up — a name, a date, a number, a document
@@ -160,9 +161,12 @@ GAPS, never as an outline, a form or a set of instructions:
   enforcement mechanism]".
 - Say inside each bracket exactly what belongs there, with an example — "[date the new approval
   matrix took effect, e.g. 12 June 2026]", not "[date]". The owner must never have to guess.
-- Cover EVERY element you would check for, woven into that prose: what was actually done, when, who
-  did it or which unit owns it, how it addresses ${rej ? "the Head of Audit's request" : "the recommendation"}, what evidence backs it up, and how it
-  will be kept in place going forward. Drop an element ONLY if it genuinely does not apply here.
+- SHORT IS ABOUT WORDING, NEVER ABOUT COVERAGE. Every element you would check for must still be in
+  there, woven into those two paragraphs: what was actually done, when, who did it or which unit owns
+  it, how it addresses ${rej ? "the Head of Audit's request" : "the recommendation"}, what evidence backs it up, and how it will be kept in place
+  going forward. Drop an element ONLY if it genuinely does not apply here — never because you are
+  running out of room. Pack several elements into one sentence instead: "Implemented on [date …] by
+  [job title …], evidenced by the attached [document title …]" carries three of them in one line.
 - NAME ANY NEW OR REVISED DOCUMENT AND SAY IT IS ATTACHED. Whenever the action produced or changed a
   document — a policy, procedure, checklist, workflow, matrix, register, terms of reference, training
   record, system configuration — the template must name it and state that it accompanies this
@@ -173,7 +177,10 @@ GAPS, never as an outline, a form or a set of instructions:
   response the auditor reads; the reminder to actually attach the file belongs in "tips".
 - TEST IT BEFORE YOU RETURN IT: if the owner replaces every bracket with a truthful specific and
   changes nothing else, would you mark that response concrete? If not, the template is missing a
-  placeholder — add it. Never raise something later that the template did not ask for.
+  placeholder — add it. Never raise something later that the template did not ask for. When a missing
+  element will not fit, cut adjectives, throat-clearing and any restatement of the finding to make
+  room — never leave the element out, and never spill into a third paragraph. Two tight paragraphs
+  that would pass are the goal; a short template that would fail the check is worthless.
 - "questions" must only probe things the template already has a placeholder for. Do not ask for
   anything the template failed to request.
 - PLAIN TEXT ONLY — no markdown. No asterisks, no ** bold markers, no # headings, no bullet
