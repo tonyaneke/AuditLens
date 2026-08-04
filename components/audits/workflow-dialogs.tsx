@@ -24,7 +24,6 @@ import { dirUser, headUsers, ownerEmailFor } from "@/lib/client/directory";
 import { emailNotify } from "@/lib/client/notify";
 import { runAiText } from "@/lib/client/ai";
 import { extractEvidenceText, runClosureCheck, type ClosureVerdict } from "@/lib/client/obs-ai";
-import { uploadWithProgress } from "@/lib/client/uploads";
 import type { SessionUser } from "@/lib/permissions";
 import {
   canVerifyItem,
@@ -41,6 +40,7 @@ import {
 import { STATUSES, approvals, fmtDate, fmtDateTime, isoToDate, isoNow, uid } from "@/lib/workspace/selectors";
 import type { EvidenceFile, Observation, WorkspaceDb } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
+import { FilePick, uploadEvidence } from "./attach";
 
 type Ids = { auditId: string; reportId: string; obsId: string };
 
@@ -61,36 +61,6 @@ function useObs({ auditId, reportId, obsId }: Ids) {
       if (cur) fn(d, cur);
     });
   return { db, o, editObs, notifyIn };
-}
-
-async function uploadEvidence(obsId: string, file: File | undefined): Promise<EvidenceFile | null> {
-  if (!file) return null;
-  const fd = new FormData();
-  fd.append("file", file);
-  fd.append("obsId", obsId);
-  const data = await uploadWithProgress("/api/files", fd);
-  return (data.file as EvidenceFile) || null;
-}
-
-function FilePick({ onPick, label = "📎 Attach file" }: { onPick: (f: File | undefined) => void; label?: string }) {
-  const [name, setName] = useState("");
-  return (
-    <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
-      <label className="btn sec sm" style={{ display: "inline-block", margin: 0 }}>
-        {label}
-        <input
-          type="file"
-          style={{ display: "none" }}
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            setName(f?.name || "");
-            onPick(f);
-          }}
-        />
-      </label>
-      <span className="hint">{name || "No file chosen (optional)"}</span>
-    </div>
-  );
 }
 
 /* ---- the shared "send it back" write ----

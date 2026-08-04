@@ -38,6 +38,7 @@ import {
   VerifyRemediationDialog,
   useOwnerRequests,
 } from "./workflow-dialogs";
+import AuditorCommentDialog from "./ObsCommentDialog";
 import ObsComposer from "./ObsComposer";
 
 /* ---- evidence link ---- */
@@ -420,15 +421,28 @@ export default function ObsRemediation({
       {pkg}
 
       <div className="obs-notes-label obs-updates-label">Conversation &amp; evidence</div>
-      {thread.length ? (
-        <div className="row" style={{ margin: "6px 0 2px" }}>
+      {/* Internal Audit's way in. The "View comments" link only appears once a thread exists, so
+          on a freshly raised observation an auditor had no route to the comments page at all —
+          and the composer below is owner-only. That left the person who raised the observation
+          unable to attach the supporting documents behind it. */}
+      <div className="row" style={{ margin: "6px 0 2px", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        {thread.length ? (
           <Link className="btn sec sm" href={commentsHref}>
             {ownerViewer ? "View your past comments" : "View comments"} ({thread.length})
           </Link>
-        </div>
-      ) : (
-        <div className="hint">No comments yet.</div>
-      )}
+        ) : (
+          <span className="hint">No comments yet.</span>
+        )}
+        {!ownerViewer ? (
+          <button
+            className="btn sm"
+            type="button"
+            onClick={() => modal.open(<AuditorCommentDialog auditId={a.id} reportId={r.id} obsId={o.id} />)}
+          >
+            ＋ Add comment &amp; attach
+          </button>
+        ) : null}
+      </div>
 
       {canPost ? (
         <ObsComposer

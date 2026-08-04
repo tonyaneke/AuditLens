@@ -40,6 +40,7 @@ import {
   obsAge,
   uid,
 } from "@/lib/workspace/selectors";
+import type { EvidenceFile } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 import { ModalObsDialog, ModalReassignObsDialog } from "./lazy";
 import ObsRemediation from "./ObsRemediation";
@@ -58,6 +59,28 @@ function Section({ title, text }: { title: string; text: string | undefined }) {
       <h4 className="obs-detail-label">{title}</h4>
       <div className="obs-detail-content">
         <RichText text={text} />
+      </div>
+    </section>
+  );
+}
+
+/* Supporting documents attached when the observation was raised. Kept out of the remediation
+   block on purpose: that block is the conversation, and these are the basis of the finding —
+   they belong beside the description an action owner reads first. */
+function Attachments({ files }: { files: EvidenceFile[] | undefined }) {
+  if (!files || !files.length) return null;
+  return (
+    <section className="obs-detail-section">
+      <h4 className="obs-detail-label">Supporting documents</h4>
+      <div className="obs-detail-content">
+        {files.map((e) => (
+          <div key={e.itemId} style={{ marginTop: 4 }}>
+            📎{" "}
+            <a href={`/api/files/${e.itemId}`} target="_blank" rel="noopener noreferrer">
+              {e.name}
+            </a>
+          </div>
+        ))}
       </div>
     </section>
   );
@@ -252,6 +275,7 @@ export default function ObsDetailPage({
             the report's "Proposed SOP updates" roll-up — never from a button on this page. */}
         <Section title="Proposed SOP update" text={o.sopUpdate} />
         <Section title="Management response" text={o.managementResponse} />
+        <Attachments files={o.attachments} />
       </div>
 
       <ObsRemediation

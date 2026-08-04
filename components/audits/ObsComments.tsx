@@ -11,27 +11,22 @@
 import { useMemo, useState } from "react";
 import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useUser } from "@/components/chrome/UserContext";
-import BusyButton from "@/components/feedback/BusyButton";
-import { toast } from "@/components/feedback/ToastHost";
-import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
+import { useModal } from "@/components/modals/ModalProvider";
 import { Avatar, BackButton } from "@/components/ui";
 import RichText from "@/components/ui/RichText";
-import { logAudit } from "@/lib/client/audit-log";
-import { dirUser, ownerEmailFor } from "@/lib/client/directory";
-import { emailNotify } from "@/lib/client/notify";
-import { effectiveRole } from "@/lib/permissions";
+import { dirUser } from "@/lib/client/directory";
 import {
   OBS_COMMENT_TAGS,
   findObsIn,
   isOwnerViewer,
-  notify,
   obsCommentTag,
   obsThread,
   roleLabel,
   type ThreadEntry,
 } from "@/lib/workspace/observations";
-import { fmtDateTime, uid } from "@/lib/workspace/selectors";
+import { fmtDateTime } from "@/lib/workspace/selectors";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
+import AuditorCommentDialog from "./ObsCommentDialog";
 
 const TYPE_TAG: Record<string, string> = {
   Feedback: "feedback",
@@ -75,72 +70,6 @@ function CommentRow({ u }: { u: ThreadEntry }) {
   );
 }
 
-/* Auditor / Head add a comment from here; owners post from the composer on the detail page. */
-function AuditorCommentDialog({ auditId, reportId, obsId }: { auditId: string; reportId: string; obsId: string }) {
-  const { mutate } = useWorkspace();
-  const modal = useModal();
-  const user = useUser();
-  const [text, setText] = useState("");
-  const [err, setErr] = useState("");
-
-  function post() {
-    if (!text.trim()) {
-      setErr("Write a comment first.");
-      return;
-    }
-    const body = text.trim();
-    const snippet = ` "${body.slice(0, 140)}${body.length > 140 ? "…" : ""}"`;
-    mutate((d) => {
-      const cur = findObsIn(d, auditId, reportId, obsId);
-      if (!cur) return;
-      cur.updates = cur.updates || [];
-      cur.updates.push({
-        id: uid(),
-        by: user.id || "",
-        byName: user.name || "",
-        role: effectiveRole(user) || "",
-        at: new Date().toISOString(),
-        text: body,
-        evidence: [],
-        audience: "",
-      });
-      // Legacy addObsUpdate: both owners are told in app AND by email.
-      notify(d, cur.ownerUserId, "update", "New comment on: " + cur.title, "myobs", cur.id);
-      notify(d, cur.secondaryOwnerUserId, "update", "New comment on: " + cur.title, "myobs", cur.id);
-      const emails = [ownerEmailFor(d, cur.ownerUserId), ownerEmailFor(d, cur.secondaryOwnerUserId)].filter(Boolean);
-      emailNotify(
-        [...new Set(emails)],
-        "AuditLens — new comment on your observation",
-        `Internal Audit${user.name ? " (" + user.name + ")" : ""} posted a comment on the observation "${cur.title}" raised against your department.${snippet ? " Comment:" + snippet + "." : ""} Sign in to AuditLens to respond.`,
-      );
-    });
-    logAudit("obs.update", "Comment posted", { observationId: obsId });
-    modal.close();
-    toast("Comment sent.", "success");
-  }
-
-  return (
-    <ModalFrame
-      title="Add comment"
-      footer={
-        <>
-          <button className="btn sec" type="button" onClick={modal.close}>Cancel</button>
-          {/* QA-18 — a plain button here meant a second click before the modal unmounted posted
-              the comment twice AND sent the action owner a second email. */}
-          <BusyButton className="btn" busyLabel="Posting…" disabled={!text.trim()} onClick={post}>
-            Post comment
-          </BusyButton>
-        </>
-      }
-    >
-      <label htmlFor="ac-text">Comment for the action owner *</label>
-      <textarea id="ac-text" style={{ minHeight: 110 }} value={text} onChange={(e) => setText(e.target.value)}
-        placeholder="Add a comment on this observation…" />
-      {err ? <div className="ai-err" style={{ marginTop: 10 }}>{err}</div> : null}
-    </ModalFrame>
-  );
-}
-
 export default function ObsComments({
   auditId,
   reportId,
@@ -176,7 +105,7 @@ export default function ObsComments({
           type="button"
           onClick={() => modal.open(<AuditorCommentDialog auditId={auditId} reportId={reportId} obsId={obsId} />)}
         >
-          ＋ Add comment
+          ＋ Add comment &amp; attach
         </button>
       ) : null,
     },

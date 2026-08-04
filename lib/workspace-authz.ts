@@ -81,9 +81,12 @@ const CONTROLLED_OBS_FIELDS = [
   "headVerifiedAt", "headVerifiedByName", "headComment", "closureRejection",
 ];
 // Also locked for action owners: only auditors/head verify remediation or request updates.
+// `attachments` is here because it is Internal Audit's supporting-document set for the finding —
+// an owner adds their own evidence through `updates` and their closure response, and must not be
+// able to rewrite or drop the papers the observation was raised on.
 const AUDITOR_ONLY_OBS_FIELDS = [
   "reportVerifiedAt", "reportVerifiedByName", "closureNote", "closureEvidence", "closureFile",
-  "updateRequestedAt", "updateRequestedBy", "progressReport",
+  "updateRequestedAt", "updateRequestedBy", "progressReport", "attachments",
 ];
 const WITHDRAWAL_HEAD_FIELDS = ["headBy", "headByName", "headAt", "headReason"];
 const WITHDRAWAL_FINAL_STAGES = ["withdrawn", "rejected"];

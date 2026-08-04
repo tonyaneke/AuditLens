@@ -84,6 +84,28 @@ export function MyObsCard({ item }: { item: PortalItem }) {
 
 /* ---------------- open / closed sections (myObsSectionsHTML) ---------------- */
 
+/** One titled, counted grid of portal cards. Split out of MyObsSections so a status-filtered
+ *  portal can render a single bucket instead of an Open/Closed pair where one side is always
+ *  empty ("Open observations (0)" above the closed ones reads like a bug). */
+export function PortalSection({ title, items }: { title: string; items: PortalItem[] }) {
+  return (
+    <>
+      <div className="seclabel" style={{ margin: "20px 0 12px" }}>
+        {title} <span className="hint" style={{ fontWeight: 400 }}>({items.length})</span>
+      </div>
+      {items.length ? (
+        <div className="myobs-grid">
+          {items.map((x) => (
+            <MyObsCard key={x.o.id} item={x} />
+          ))}
+        </div>
+      ) : (
+        <div className="hint" style={{ marginBottom: 8 }}>Nothing here.</div>
+      )}
+    </>
+  );
+}
+
 export function MyObsSections({
   items,
   labels,
@@ -93,26 +115,10 @@ export function MyObsSections({
 }) {
   const open = items.filter((x) => (x.o.status || "Open") !== "Closed");
   const closed = items.filter((x) => (x.o.status || "Open") === "Closed");
-  const section = (title: string, arr: PortalItem[]) => (
-    <>
-      <div className="seclabel" style={{ margin: "20px 0 12px" }}>
-        {title} <span className="hint" style={{ fontWeight: 400 }}>({arr.length})</span>
-      </div>
-      {arr.length ? (
-        <div className="myobs-grid">
-          {arr.map((x) => (
-            <MyObsCard key={x.o.id} item={x} />
-          ))}
-        </div>
-      ) : (
-        <div className="hint" style={{ marginBottom: 8 }}>Nothing here.</div>
-      )}
-    </>
-  );
   return (
     <>
-      {section(labels[0], open)}
-      {section(labels[1], closed)}
+      <PortalSection title={labels[0]} items={open} />
+      <PortalSection title={labels[1]} items={closed} />
     </>
   );
 }

@@ -27,6 +27,24 @@ export const EXT_SEV_HEX: Record<string, string> = {
   Low: "#2e7d32",
 };
 
+/* ---------------- portal status buckets ----------------
+   An action owner's portal was one undifferentiated list per register, which for a head of
+   department carrying dozens of observations meant scrolling to find the two that still needed
+   them. These are the buckets they actually think in.
+
+   "Ready for Closure" is not a stored status — nothing writes it. It is the state between the
+   owner's response (ownerRectifiedAt) and Internal Audit's verification, and the stored status
+   over that whole span is "In Progress". Deriving it here is what lets an owner separate
+   "still mine" from "with Internal Audit"; it matches the pill MyObsCard already renders. */
+
+export const OWNER_STATUSES = ["Open", "In Progress", "Ready for Closure", "Closed"] as const;
+
+export function ownerStatusOf(o: { status?: string; ownerRectifiedAt?: string }): string {
+  const s = o.status || "Open";
+  if (s === "Closed") return "Closed";
+  return o.ownerRectifiedAt ? "Ready for Closure" : s;
+}
+
 /* ---------------- owner matching (by user id, as in legacy) ---------------- */
 
 /** Internal observations assigned to this owner (primary or secondary), approved only. */

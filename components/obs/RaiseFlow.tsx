@@ -7,7 +7,9 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { FilePickMulti, MAX_UPLOAD_BYTES, tooLarge, uploadAllEvidence } from "@/components/audits/attach";
 import { useUser } from "@/components/chrome/UserContext";
+import BusyButton from "@/components/feedback/BusyButton";
 import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import { runAiJson } from "@/lib/client/ai";
@@ -30,7 +32,7 @@ import {
   validateObservation,
 } from "@/lib/workspace/obs-validation";
 import { approvals, ck, uid } from "@/lib/workspace/selectors";
-import type { Observation } from "@/lib/workspace/types";
+import type { EvidenceFile, Observation } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 
 export default function RaiseFlow({
@@ -48,7 +50,7 @@ export default function RaiseFlow({
   const router = useRouter();
   const head = isHead(user);
 
-  const [step, setStep] = useState<1 | 2>(1);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
   /* QA-9 — the Ref field was free text with `e.g. 1.1` as its placeholder and no generator
      behind it, so whoever raised an observation typed the example. That is how "1.1" came to
      identify eleven different findings. Seeded with the next free reference instead; the field
@@ -68,7 +70,7 @@ export default function RaiseFlow({
   });
   const [err, setErr] = useState("");
 
-  // Step 2 state
+  // Step 3 state
   const [ownerId, setOwnerId] = useState(String(o.ownerUserId || ""));
   const [owner2Id, setOwner2Id] = useState(String(o.secondaryOwnerUserId || ""));
   const [timeline, setTimeline] = useState(String(o.timeline || ""));
@@ -78,6 +80,10 @@ export default function RaiseFlow({
   const [repMenuOpen, setRepMenuOpen] = useState(false);
   const [aiRepMsg, setAiRepMsg] = useState<React.ReactNode>(null);
   const [dirVersion, setDirVersion] = useState(0);
+  /* Supporting documents are held as Files and uploaded inside submit(), not on pick: the draft
+     is not an observation yet, and a wizard the auditor backs out of would otherwise leave
+     orphaned uploads in SharePoint with no record pointing at them. */
+  const [files, setFiles] = useState<File[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -150,7 +156,7 @@ export default function RaiseFlow({
     }
   }
 
-  function submit() {
+  async function submit() {
     /* An observation with no action owner has nobody accountable for remediating it: it can
        never be marked Ready for Closure, so it would sit in the tracker forever. */
     if (!ownerId) {
@@ -172,7 +178,28 @@ export default function RaiseFlow({
       setErr(firstError(problems));
       return;
     }
+    const big = tooLarge(files);
+    if (big) {
+      setErr(`"${big.name}" exceeds the ${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} MB limit.`);
+      return;
+    }
     setErr("");
+
+    /* Upload first: a raise that succeeds with its supporting documents silently missing is
+       worse than one that fails and can be retried, so a failed upload aborts the raise. */
+    let attachments: EvidenceFile[] = [];
+    if (files.length) {
+      try {
+        attachments = await uploadAllEvidence(o.id, files);
+      } catch (e) {
+        setErr(
+          (e instanceof Error ? e.message : "Upload failed.") +
+            " The observation has not been raised — fix the attachment and try again.",
+        );
+        return;
+      }
+    }
+
     const dept = departments(db).find((d) => d.headUserId === ownerId);
     const sec2 = ownerId && owner2Id === ownerId ? "" : owner2Id;
     const dept2 = departments(db).find((d) => d.headUserId === sec2);
@@ -188,6 +215,7 @@ export default function RaiseFlow({
       departmentId: dept ? dept.id : "",
       secondaryOwnerUserId: sec2 || "",
       secondaryOwner: dept2 ? dept2.headName : "",
+      attachments,
       raisedBy: user.id || "",
       raisedByName: user.name || "",
       raisedAt: now,
@@ -240,13 +268,14 @@ export default function RaiseFlow({
               Cancel
             </button>
             <button className="btn" type="button" onClick={next}>
-              Next: assign owner →
+              Next: supporting documents →
             </button>
           </>
         }
       >
         <div className="hint" style={{ marginBottom: 12 }}>
-          Review what was drafted and edit anything before assigning an owner.
+          Step 1 of 3 — review what was drafted and edit anything before attaching evidence and
+          assigning an owner.
         </div>
         <div className="f3">
           <div>
@@ -291,6 +320,64 @@ export default function RaiseFlow({
       </ModalFrame>
     );
 
+  /* Step 2 — supporting documents on their own screen. It was a field at the bottom of the
+     assign-owner step, where it sat below the repeat search and the AI scan and was routinely
+     scrolled past: the auditor reached the Raise button without ever seeing it. Its own step
+     cannot be missed, and nothing here can fail validation, so it costs a click and no more. */
+  if (step === 2)
+    return (
+      <ModalFrame
+        title="Supporting documents"
+        footer={
+          <>
+            <button
+              className="btn sec"
+              type="button"
+              onClick={() => {
+                setErr("");
+                setStep(1);
+              }}
+            >
+              ← Back
+            </button>
+            <button
+              className="btn"
+              type="button"
+              onClick={() => {
+                setErr("");
+                setStep(3);
+              }}
+            >
+              Next: assign owner →
+            </button>
+          </>
+        }
+      >
+        <div className="hint" style={{ marginBottom: 12 }}>
+          Step 2 of 3 — attach the working papers, extracts, screenshots or correspondence behind
+          this observation. Optional, and you can add more later from the observation itself.
+        </div>
+        <div className="note" style={{ marginBottom: 12 }}>
+          <b>
+            {o.ref ? o.ref + " — " : ""}
+            {String(o.title)}
+          </b>{" "}
+          · <span className={`pill c-${ck(String(o.criticality))}`}>{String(o.criticality)}</span>
+        </div>
+        <FilePickMulti files={files} onChange={setFiles} />
+        <div className="hint" style={{ marginTop: 12 }}>
+          Files are uploaded when you raise the observation, not now — so nothing is stored if you
+          cancel. The action owner can open them from the observation. Maximum{" "}
+          {Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} MB per file.
+        </div>
+        {err ? (
+          <div style={{ marginTop: 8 }}>
+            <div className="ai-err">{err}</div>
+          </div>
+        ) : null}
+      </ModalFrame>
+    );
+
   const visiblePriors = priors.filter((p) => {
     const q = repQ.toLowerCase().trim();
     if (!q) return true;
@@ -307,23 +394,38 @@ export default function RaiseFlow({
             type="button"
             onClick={() => {
               setErr("");
-              setStep(1);
+              setStep(2);
             }}
           >
             ← Back
           </button>
-          <button className="btn" type="button" onClick={submit}>
+          {/* Files are uploaded inside submit(), so this must disable itself while that runs —
+              a second click would otherwise raise the observation twice. */}
+          <BusyButton
+            className="btn"
+            busyLabel={files.length ? "Uploading…" : "Raising…"}
+            onClick={submit}
+          >
             {head ? "Raise & notify owner" : "Submit for approval"}
-          </button>
+          </BusyButton>
         </>
       }
     >
+      <div className="hint" style={{ marginBottom: 12 }}>
+        Step 3 of 3 — assign who is accountable for remediating this and by when.
+      </div>
       <div className="note" style={{ marginBottom: 10 }}>
         <b>
           {o.ref ? o.ref + " — " : ""}
           {String(o.title)}
         </b>{" "}
         · <span className={`pill c-${ck(String(o.criticality))}`}>{String(o.criticality)}</span>
+        {/* Confirms what is about to be uploaded without a trip back to step 2. */}
+        {files.length ? (
+          <div className="hint" style={{ marginTop: 4 }}>
+            📎 {files.length} supporting document{files.length === 1 ? "" : "s"} attached
+          </div>
+        ) : null}
       </div>
       <label>Primary action owner (responds &amp; closes) *</label>
       <select value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>

@@ -69,6 +69,10 @@ export type Observation = {
   isRepeat?: boolean;
   repeatOf?: string;
   createdAt?: string;
+  /** Supporting documents Internal Audit attached when raising (working papers, extracts,
+   *  correspondence). Distinct from the evidence on `updates`, which is the conversation trail:
+   *  these are the basis of the finding itself and are set at raise time. */
+  attachments?: EvidenceFile[];
   obsApproval?: "pending" | "approved" | "rejected";
   raisedBy?: string;
   raisedByName?: string;
