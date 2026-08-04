@@ -3,18 +3,19 @@
 Generated from `DEPARTMENTS` and `STAFF_DIRECTORY` in [components/settings/staff.ts](components/settings/staff.ts).
 Emails are derived by `staffEmail()` — first initial + surname `@credicorp.ng`.
 
-**41 staff across 11 departments.** Departments are listed in canonical `DEPARTMENTS` order; within each,
+**42 staff across 11 departments.** Departments are listed in canonical `DEPARTMENTS` order; within each,
 the department lead is listed first.
 
 ---
 
-## Strategy Department — 5
+## Strategy Department — 6
 
 | Name | Job title | Email |
 | --- | --- | --- |
 | Alexander Ehanire | Head, Strategy & Innovation | aehanire@credicorp.ng |
 | Solomon Aladegolu | Professional - IT | saladegolu@credicorp.ng |
 | Michael Ojo | Professional - Strategic Communications | mojo@credicorp.ng |
+| Anthony Aneke | Professional - Innovation | aaneke@credicorp.ng |
 | Chiamaka Ogoh | Management Trainee | cogoh@credicorp.ng |
 | Eniola Anishe | Intern - Strategy & Innovation | eanishe@credicorp.ng |
 

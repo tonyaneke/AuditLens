@@ -19,7 +19,7 @@ import { logAudit } from "@/lib/client/audit-log";
 import { dirUser, headUsers, ownerEmailFor } from "@/lib/client/directory";
 import { emailNotify } from "@/lib/client/notify";
 import { runCommentCheck } from "@/lib/client/obs-ai";
-import { uploadWithProgress } from "@/lib/client/uploads";
+import { uploadFile } from "@/lib/client/uploads";
 import { effectiveRole } from "@/lib/permissions";
 import { findObsIn, notify } from "@/lib/workspace/observations";
 import { uid } from "@/lib/workspace/selectors";
@@ -124,11 +124,10 @@ export default function ObsComposer({
     let evidence: EvidenceFile[] = [];
     if (f) {
       try {
-        const fd = new FormData();
-        fd.append("file", f);
-        fd.append("obsId", o.id);
         setPct(0);
-        const data = await uploadWithProgress("/api/files", fd, (p) => setPct(p));
+        // uploadFile slices anything over ~3 MB — an owner's evidence hits the same host body
+        // limit an auditor's does, so both go through the one entry point.
+        const data = await uploadFile(o.id, f, (p) => setPct(p));
         setPct(100);
         if (data.file) evidence = [data.file as EvidenceFile];
       } catch (e) {

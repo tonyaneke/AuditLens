@@ -96,12 +96,104 @@ function safeName(name: string): string {
   return name.replace(/[\\/:*?"<>|#%]+/g, "_").slice(0, 180) || "file";
 }
 
+/** Where an observation's attachments live in the library. Timestamped so re-uploading a file of
+ *  the same name keeps both rather than silently replacing the earlier evidence. */
+function uploadPath(obsId: string, fileName: string): string {
+  return `AuditLens/${safeName(obsId)}/${Date.now()}-${safeName(fileName)}`;
+}
+
 export type UploadedFile = {
   itemId: string;
   webUrl: string;
   name: string;
   size: number;
 };
+
+type DriveItem = { id: string; webUrl: string; name: string; size: number };
+
+/* Graph's simple upload (`PUT .../content`) is capped by Microsoft at 4 MB — a 5 MB working paper
+   came back as a Graph 413 no matter what our own limit said. Anything at or above this goes
+   through an upload session instead. */
+const SIMPLE_UPLOAD_MAX = 4 * 1024 * 1024;
+
+/* Graph requires every chunk except the last to be a multiple of 320 KiB. 10 MiB is Microsoft's
+   recommended size and is exactly 32 × 320 KiB. This is the server→Graph hop, so it is bounded by
+   Graph's rules alone, not by whatever limit sits in front of our own API. */
+const CHUNK_BYTES = 10 * 1024 * 1024;
+
+/** Open a Graph upload session for an observation attachment and return its (pre-authorised)
+ *  upload URL. Used both by the server-side chunker below and by /api/files/session, which hands
+ *  a sealed reference to the browser so a large file can be sent in pieces. */
+export async function openSharePointUploadSession(opts: {
+  obsId: string;
+  fileName: string;
+}): Promise<string> {
+  const token = await getToken();
+  const base = await driveBase(token);
+  return createUploadSession(token, base, uploadPath(opts.obsId, opts.fileName));
+}
+
+async function createUploadSession(token: string, base: string, path: string): Promise<string> {
+  const res = await fetch(`${GRAPH}${base}/root:/${encodeURI(path)}:/createUploadSession`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    // The path is uniquified with a timestamp, so a collision means a retry of the same upload.
+    body: JSON.stringify({ item: { "@microsoft.graph.conflictBehavior": "replace" } }),
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`Graph upload session ${res.status}: ${t.slice(0, 200)}`);
+  }
+  const json = (await res.json()) as { uploadUrl?: string };
+  if (!json.uploadUrl) throw new Error("Graph upload session returned no uploadUrl.");
+  return json.uploadUrl;
+}
+
+/** Relay one ordered slice into an upload session. The session URL is pre-authorised — Microsoft
+ *  explicitly says NOT to send the Authorization header with it.
+ *
+ *  Returns the created DriveItem on the slice that completes the file, and null while Graph is
+ *  still expecting more (202). */
+export async function putUploadChunk(
+  uploadUrl: string,
+  chunk: ArrayBuffer,
+  start: number,
+  total: number,
+): Promise<UploadedFile | null> {
+  const end = start + chunk.byteLength - 1;
+  const res = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: { "Content-Range": `bytes ${start}-${end}/${total}` },
+    body: chunk,
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    // Abandon the session so a failed upload doesn't hold the name for the next attempt.
+    await fetch(uploadUrl, { method: "DELETE" }).catch(() => {});
+    throw new Error(`Graph chunk ${start}-${end} failed ${res.status}: ${t.slice(0, 200)}`);
+  }
+  // 202 = accepted, more chunks expected. 200/201 = complete, and the body is the DriveItem.
+  if (res.status === 200 || res.status === 201) {
+    const item = (await res.json()) as DriveItem;
+    return { itemId: item.id, webUrl: item.webUrl, name: item.name, size: item.size };
+  }
+  await res.text().catch(() => "");
+  return null;
+}
+
+/** Server-side chunker for a file this process already holds whole (the small/simple path). */
+async function uploadInChunks(uploadUrl: string, data: ArrayBuffer): Promise<UploadedFile> {
+  const total = data.byteLength;
+  let start = 0;
+  let item: UploadedFile | null = null;
+  while (start < total) {
+    const end = Math.min(start + CHUNK_BYTES, total);
+    item = (await putUploadChunk(uploadUrl, data.slice(start, end), start, total)) || item;
+    start = end;
+  }
+  if (!item) throw new Error("Graph upload finished without returning the created file.");
+  return item;
+}
 
 export async function uploadToSharePoint(opts: {
   obsId: string;
@@ -111,7 +203,13 @@ export async function uploadToSharePoint(opts: {
 }): Promise<UploadedFile> {
   const token = await getToken();
   const base = await driveBase(token);
-  const path = `AuditLens/${safeName(opts.obsId)}/${Date.now()}-${safeName(opts.fileName)}`;
+  const path = uploadPath(opts.obsId, opts.fileName);
+
+  if (opts.data.byteLength >= SIMPLE_UPLOAD_MAX) {
+    const uploadUrl = await createUploadSession(token, base, path);
+    return uploadInChunks(uploadUrl, opts.data);
+  }
+
   const res = await fetch(
     `${GRAPH}${base}/root:/${encodeURI(path)}:/content`,
     {
@@ -127,7 +225,7 @@ export async function uploadToSharePoint(opts: {
     const t = await res.text().catch(() => "");
     throw new Error(`Graph upload ${res.status}: ${t.slice(0, 200)}`);
   }
-  const json = (await res.json()) as { id: string; webUrl: string; name: string; size: number };
+  const json = (await res.json()) as DriveItem;
   return { itemId: json.id, webUrl: json.webUrl, name: json.name, size: json.size };
 }
 

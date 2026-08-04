@@ -36,6 +36,7 @@ export const STAFF_DIRECTORY: [string, string, string][] = [
   ["Elizabeth Adu", "E.A to the E.D Operations", "Operations Department"],
   ["Jonathan Aderibigbe", "Chief Financial Officer", "Finance Department"],
   ["Eniola Anishe", "Intern - Strategy & Innovation", "Strategy Department"],
+  ["Anthony Aneke", "Professional - Innovation", "Strategy Department"],
   ["Solomon Aladegolu", "Professional - IT", "Strategy Department"],
   ["Peter Esemuede", "Technical Adviser to the MD/CEO & Lead, External Relations", "Office of the Managing Director"],
   ["Emmanuel Okechukwu", "Professional - IT Risk & Compliance", "Risk Management"],

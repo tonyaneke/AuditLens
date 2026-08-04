@@ -4,7 +4,11 @@ import { sharepointConfigured, uploadToSharePoint } from "@/lib/sharepoint";
 
 export const runtime = "nodejs";
 
-const MAX_BYTES = 20 * 1024 * 1024; // 20 MB
+/* This route only ever sees small files now — the client sends anything at or above ~3 MB to
+   /api/files/session + /api/files/chunk instead, because the host refuses a bigger request body
+   before this handler runs. The limit stays generous rather than exact: it is a backstop for a
+   direct caller, not the number the UI advertises (see MAX_BYTES in ../session/route.ts). */
+const MAX_BYTES = 25 * 1024 * 1024;
 
 export async function POST(request: Request) {
   let session;

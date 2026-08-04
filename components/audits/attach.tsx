@@ -9,12 +9,14 @@
    pulling in the whole workflow-dialog bundle. */
 
 import { useRef, useState } from "react";
-import { uploadWithProgress } from "@/lib/client/uploads";
+import { uploadFile } from "@/lib/client/uploads";
 import type { EvidenceFile } from "@/lib/workspace/types";
 
-/** Mirrors MAX_BYTES in app/api/files/route.ts — checked here so an oversized file is refused
- *  before it is pushed over the wire and comes back as an opaque 413. */
-export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+/** Mirrors MAX_BYTES in app/api/files/session/route.ts — checked here so an oversized file is
+ *  refused before it is pushed over the wire. Files at or above ~3 MB are sliced client-side by
+ *  uploadFile(), which is what makes a limit this high reachable at all: the host in front of the
+ *  app refuses any single request body over ~4.5 MB. */
+export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 export function tooLarge(files: File[]): File | undefined {
   return files.find((f) => f.size > MAX_UPLOAD_BYTES);
@@ -22,10 +24,7 @@ export function tooLarge(files: File[]): File | undefined {
 
 export async function uploadEvidence(obsId: string, file: File | undefined): Promise<EvidenceFile | null> {
   if (!file) return null;
-  const fd = new FormData();
-  fd.append("file", file);
-  fd.append("obsId", obsId);
-  const data = await uploadWithProgress("/api/files", fd);
+  const data = await uploadFile(obsId, file);
   return (data.file as EvidenceFile) || null;
 }
 
