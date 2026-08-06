@@ -7,7 +7,8 @@ import { useRouter } from "next/navigation";
 import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useUser } from "@/components/chrome/UserContext";
 import { useModal } from "@/components/modals/ModalProvider";
-import RichText from "@/components/ui/RichText";
+import { BackButton, StatusPill } from "@/components/ui";
+import { DetailHero, Meta, Section } from "@/components/audits/detail-parts";
 import ObsRemediation from "@/components/audits/ObsRemediation";
 import { ensureExtList } from "@/lib/workspace/external";
 import { isActionOwner, isHead } from "@/lib/workspace/observations";
@@ -55,12 +56,14 @@ export default function ExtFindingDetailPage({ fid }: { fid: string }) {
 
   usePageChrome(
     {
-      title: f?.title || "External Finding",
+      title: f ? `${f.ref ? f.ref + " — " : ""}${f.title}` : "External Finding",
+      /* Back belongs on the LEFT of the chrome, as it does on every other detail page. It used to
+         be the first item in `actions`, which the chrome renders right-aligned alongside Edit and
+         Delete — so on this one page the way out sat at the far right, beside a destructive
+         button. */
+      back: <BackButton href={backHref} />,
       actions: f ? (
-        <div style={{ display: "flex", gap: 8 }}>
-          <Link href={backHref} className="btn sec sm">
-            ← Back to List
-          </Link>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           {canManage && !owner ? (
             <button
               className="btn sm"
@@ -100,85 +103,52 @@ export default function ExtFindingDetailPage({ fid }: { fid: string }) {
     );
   }
 
+  /* Same shape as an internal observation's page — hero, meta strip, prose sections, remediation
+     block — using the shared parts in components/audits/detail-parts.tsx. A regulator's finding
+     and an internal one are the same kind of thing to the person answering it, and they now read
+     that way. */
   return (
-    <div className="card" style={{ marginBottom: 20 }}>
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center", marginBottom: 16 }}>
-        <span className={`pill ${ck(f.severity)}`}>{f.severity} Severity</span>
-        <span className={`pill ${f.status === "Closed" ? "c-Low" : f.status === "In Progress" ? "c-Medium" : "c-High"}`}>
-          Status: {f.status || "Open"}
-        </span>
-        {f.isRepeat ? <span className="pill repeat-pill">↻ REPEAT</span> : null}
-        {f.theme ? <span className="tag">Theme: {f.theme}</span> : null}
-        {f.source ? <span className="tag">{f.source}</span> : null}
-        {f.sourceRef ? <span className="tag">Ref: {f.sourceRef}</span> : null}
+    <div className="obs-detail-page anim-fade-in">
+      <DetailHero
+        title={`${f.ref ? f.ref + " — " : ""}${f.title}`}
+        badges={
+          <>
+            <span className={`pill ${ck(f.severity)}`}>{f.severity || "—"} Severity</span>
+            <StatusPill status={f.status} />
+            {f.isRepeat ? (
+              <span className="pill repeat-pill" title={f.repeatOf || "Repeat finding"}>↻ REPEAT</span>
+            ) : null}
+            <span className="tag">External</span>
+            {f.theme ? <span className="tag">Theme: {f.theme}</span> : null}
+            {f.source ? <span className="tag">{f.source}</span> : null}
+            {f.sourceRef ? <span className="tag">Ref: {f.sourceRef}</span> : null}
+          </>
+        }
+      />
+
+      <div className="obs-detail-meta">
+        <Meta label="Action owner">{f.owner || "Unassigned"}</Meta>
+        <Meta label="Co-owner">{f.secondaryOwner}</Meta>
+        <Meta label="Year">{f.year}</Meta>
+        <Meta label="Target date">
+          {f.targetDate ? fmtDate(isoToDate(f.targetDate)) || f.targetDate : "Not specified"}
+        </Meta>
+        <Meta label="Closed date">
+          {f.closedDateISO ? fmtDate(isoToDate(f.closedDateISO)) : ""}
+        </Meta>
+        <Meta label="Verified by">{f.verifiedBy}</Meta>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 20 }}>
-        <div>
-          <div className="ttl">Action Owner</div>
-          <div>{f.owner || "Unassigned"}</div>
-        </div>
-        {f.secondaryOwner ? (
-          <div>
-            <div className="ttl">Secondary Owner</div>
-            <div>{f.secondaryOwner}</div>
-          </div>
-        ) : null}
-        {f.year ? (
-          <div>
-            <div className="ttl">Year</div>
-            <div>{f.year}</div>
-          </div>
-        ) : null}
-        <div>
-          <div className="ttl">Target Date</div>
-          <div>{f.targetDate ? fmtDate(isoToDate(f.targetDate)) || f.targetDate : "Not specified"}</div>
-        </div>
-        {f.closedDateISO ? (
-          <div>
-            <div className="ttl">Closed Date</div>
-            <div>{fmtDate(isoToDate(f.closedDateISO))}</div>
-          </div>
-        ) : null}
-        {f.verifiedBy ? (
-          <div>
-            <div className="ttl">Verified By</div>
-            <div>{f.verifiedBy}</div>
-          </div>
+      <div className="obs-detail-sections">
+        <Section title="Detailed description" text={f.detail} />
+        <Section title="Impact / risk" text={f.risk} />
+        <Section title="Recommendation" text={f.recommendation} />
+        <Section title="Management response" text={f.managementResponse} />
+        <Section title="Closure evidence / notes" text={f.closureEvidence} />
+        {f.isRepeat && f.repeatOf ? (
+          <Section title="Repeat of" text={String(f.repeatOf)} />
         ) : null}
       </div>
-
-      {f.detail ? (
-        <div style={{ marginBottom: 16 }}>
-          <div className="ttl">Detailed Description</div>
-          <div className="txt"><RichText text={f.detail} /></div>
-        </div>
-      ) : null}
-
-      {f.risk ? (
-        <div style={{ marginBottom: 16 }}>
-          <div className="ttl">Risk / Impact</div>
-          <div className="txt"><RichText text={f.risk} /></div>
-        </div>
-      ) : null}
-
-      {f.recommendation ? (
-        <div style={{ marginBottom: 16 }}>
-          <div className="ttl">Recommendation</div>
-          <div className="txt"><RichText text={f.recommendation} /></div>
-        </div>
-      ) : null}
-
-      {f.isRepeat && f.repeatOf ? (
-        <div className="hint" style={{ marginBottom: 16 }}>Repeat of: {f.repeatOf}</div>
-      ) : null}
-
-      {f.closureEvidence ? (
-        <div style={{ marginBottom: 16 }}>
-          <div className="ttl">Closure Evidence / Notes</div>
-          <div className="txt"><RichText text={f.closureEvidence} /></div>
-        </div>
-      ) : null}
 
       {/* Legacy renderExtFinding called the SAME obsRemediationHTML as observations, keyed by
           the sentinel ids {id:"ext"} that findObsIn resolves against the external register.
@@ -189,6 +159,15 @@ export default function ExtFindingDetailPage({ fid }: { fid: string }) {
         r={{ id: "ext" }}
         commentsHref={`/external/${f.id}/comments`}
       />
+
+      {f.status === "Closed" ? (
+        <div className="obs-detail-closure hint">
+          ✓ Closed{f.closedDateISO ? " " + fmtDate(isoToDate(f.closedDateISO)) : ""} · Verified by{" "}
+          {f.headVerifiedByName || f.verifiedBy || "—"}
+          {f.raisedByName ? (<><br />Raised by {f.raisedByName}</>) : null}
+          {f.reportVerifiedByName ? " · Verified by auditor " + f.reportVerifiedByName : ""}
+        </div>
+      ) : null}
     </div>
   );
 }

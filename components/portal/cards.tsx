@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { useState, useSyncExternalStore, type ReactNode } from "react";
 import { useUser } from "@/components/chrome/UserContext";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
-import { CritPill, StatusPill, TintPill } from "@/components/ui";
+import { CritPill, Empty, StatusPill, TintPill } from "@/components/ui";
 import { hrefForView, isLegacyPath } from "@/lib/routes";
 import { EXT_SEV_HEX, isAssignedTo } from "@/lib/workspace/portal";
 import { effectiveClose, fmtDate, type ObsWithContext } from "@/lib/workspace/selectors";
@@ -100,7 +100,16 @@ export function MyObsCard({ item }: { item: PortalItem }) {
 /** One titled, counted grid of portal cards. Split out of MyObsSections so a status-filtered
  *  portal can render a single bucket instead of an Open/Closed pair where one side is always
  *  empty ("Open observations (0)" above the closed ones reads like a bug). */
-export function PortalSection({ title, items }: { title: string; items: PortalItem[] }) {
+export function PortalSection({
+  title,
+  items,
+  empty,
+}: {
+  title: string;
+  items: PortalItem[];
+  /** What this particular bucket being empty means. Defaults to the neutral wording. */
+  empty?: { icon: string; text: ReactNode };
+}) {
   return (
     <>
       <div className="seclabel" style={{ margin: "20px 0 12px" }}>
@@ -113,7 +122,12 @@ export function PortalSection({ title, items }: { title: string; items: PortalIt
           ))}
         </div>
       ) : (
-        <div className="hint" style={{ marginBottom: 8 }}>Nothing here.</div>
+        /* Was a bare line of grey text, which read as the page having failed to load rather than
+           as a section with nothing in it — and an empty "Open observations" is usually good news,
+           so it should look deliberate. Same .empty card every other empty list on the site uses. */
+        <div className="card">
+          <Empty big={empty?.icon || "—"}>{empty?.text || "Nothing here."}</Empty>
+        </div>
       )}
     </>
   );
@@ -130,8 +144,26 @@ export function MyObsSections({
   const closed = items.filter((x) => (x.o.status || "Open") === "Closed");
   return (
     <>
-      <PortalSection title={labels[0]} items={open} />
-      <PortalSection title={labels[1]} items={closed} />
+      <PortalSection
+        title={labels[0]}
+        items={open}
+        empty={{
+          icon: "✅",
+          text: (
+            <>
+              Nothing open — everything raised against your department has been closed.
+              <br />
+              <br />
+              Anything new will appear here, and anyone in the department can respond to it.
+            </>
+          ),
+        }}
+      />
+      <PortalSection
+        title={labels[1]}
+        items={closed}
+        empty={{ icon: "📭", text: "Nothing has been closed yet." }}
+      />
     </>
   );
 }

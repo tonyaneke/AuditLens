@@ -15,7 +15,6 @@ import { useUser } from "@/components/chrome/UserContext";
 import { toast } from "@/components/feedback/ToastHost";
 import { useModal } from "@/components/modals/ModalProvider";
 import { BackButton, CritPill, StatusPill } from "@/components/ui";
-import RichText from "@/components/ui/RichText";
 import { logAudit } from "@/lib/client/audit-log";
 import {
   canVerifyItem,
@@ -40,8 +39,8 @@ import {
   obsAge,
   uid,
 } from "@/lib/workspace/selectors";
-import type { EvidenceFile } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
+import { Attachments, Meta, Section } from "./detail-parts";
 import { ModalObsDialog, ModalReassignObsDialog } from "./lazy";
 import ObsRemediation from "./ObsRemediation";
 
@@ -52,48 +51,9 @@ function ApprovalBadge({ approval }: { approval: string | undefined }) {
   return null;
 }
 
-function Section({ title, text }: { title: string; text: string | undefined }) {
-  if (!text) return null;
-  return (
-    <section className="obs-detail-section">
-      <h4 className="obs-detail-label">{title}</h4>
-      <div className="obs-detail-content">
-        <RichText text={text} />
-      </div>
-    </section>
-  );
-}
+/* Section / Attachments / Meta now live in ./detail-parts so the external register's page renders
+   a finding exactly the same way — see the note at the top of that file. */
 
-/* Supporting documents attached when the observation was raised. Kept out of the remediation
-   block on purpose: that block is the conversation, and these are the basis of the finding —
-   they belong beside the description an action owner reads first. */
-function Attachments({ files }: { files: EvidenceFile[] | undefined }) {
-  if (!files || !files.length) return null;
-  return (
-    <section className="obs-detail-section">
-      <h4 className="obs-detail-label">Supporting documents</h4>
-      <div className="obs-detail-content">
-        {files.map((e) => (
-          <div key={e.itemId} style={{ marginTop: 4 }}>
-            📎{" "}
-            <a href={`/api/files/${e.itemId}`} target="_blank" rel="noopener noreferrer">
-              {e.name}
-            </a>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function Meta({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="obs-meta-item">
-      <span className="obs-meta-label">{label}</span>
-      <span className="obs-meta-value">{children}</span>
-    </div>
-  );
-}
 
 export default function ObsDetailPage({
   auditId,
