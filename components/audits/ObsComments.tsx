@@ -17,8 +17,8 @@ import RichText from "@/components/ui/RichText";
 import { dirUser } from "@/lib/client/directory";
 import {
   OBS_COMMENT_TAGS,
+  canActOnObs,
   findObsIn,
-  isOwnerViewer,
   obsCommentTag,
   obsThread,
   roleLabel,
@@ -85,7 +85,10 @@ export default function ObsComments({
   const user = useUser();
   const modal = useModal();
   const o = findObsIn(db, auditId, reportId, obsId);
-  const ownerViewer = isOwnerViewer(user, o ?? undefined);
+  /* The department side of the conversation, not just the two named owners: everyone in the
+     department shares the thread, including the private department-only notes, because they
+     share the work of answering it. */
+  const ownerViewer = canActOnObs(user, o ?? undefined, db);
 
   const [type, setType] = useState("All");
   const [by, setBy] = useState("All");

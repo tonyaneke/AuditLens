@@ -17,7 +17,15 @@ model User {
   id            String   @id @default(cuid())
   name          String
   email         String   @unique
+  // The person's home department — one value, so the Settings dropdown and every screen that
+  // prints "Role · Department" stay simple.
   department    String
+  // Departments they ALSO belong to. Since observations are department-scoped (lib/dept-scope.ts)
+  // department is an access control, and a few people genuinely straddle two: the Head of Admin,
+  // People & Culture, and the Chief of Staff who covers Strategic Comms alongside the MD's office.
+  // Modelling that as a second home department would have meant choosing which half of their job
+  // they could see. Both fields confer identical access.
+  extraDepartments Json  @default("[]")
   role          String
   sidebarAccess Json     @default("[]")
   active        Boolean  @default(true) // false = deactivated: sign-in blocked, history kept

@@ -35,7 +35,9 @@ export async function GET(request: Request) {
   const row = await prisma.workspaceData.findUnique({ where: { id: WORKSPACE_ID } });
   const data = (row?.data as WorkspaceDb) || defaultWorkspaceData();
   return NextResponse.json({
-    data: slimForClient(data, viewerFor(session)),
+    // The document itself resolves the viewer's department name to department records — see
+    // viewerFor() in lib/workspace-scope.ts.
+    data: slimForClient(data, viewerFor(session, data)),
     updatedAt: row?.updatedAt ?? null,
   });
 }
@@ -153,6 +155,8 @@ export async function PUT(request: Request) {
     current,
     incoming,
     session.activeRole,
+    session.department,
+    session.extraDepartments,
   );
 
   const payload = graftServerHeld(current, authorized, session.id) as Prisma.InputJsonValue;
@@ -198,8 +202,9 @@ export async function PUT(request: Request) {
     }).catch(() => {});
   }
 
+  const saved = row.data as WorkspaceDb;
   return NextResponse.json({
-    data: slimForClient(row.data as WorkspaceDb, viewerFor(session)),
+    data: slimForClient(saved, viewerFor(session, saved)),
     updatedAt: row.updatedAt,
   });
 }

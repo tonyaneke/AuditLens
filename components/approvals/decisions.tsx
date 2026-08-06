@@ -19,6 +19,7 @@ import {
   cancelPendingStatusChange,
   notify,
   notifyBoth,
+  notifyDeptOfObs,
   notifyOwnerAssigned,
   stampClosed,
   supersedePendingUpdate,
@@ -60,6 +61,10 @@ export function useApprovalDecisions() {
             if (o) {
               o.obsApproval = "approved";
               notifyOwnerAssigned(d, o);
+              /* Approval is the moment the finding becomes real to the department — before it,
+                 canSeeObs() withholds it from them, so this is the first point at which a
+                 notification would have anything to open. */
+              notifyDeptOfObs(d, o, "assigned", "Raised against your department: " + o.title);
               if (o.raisedBy)
                 notifyBoth(
                   d,

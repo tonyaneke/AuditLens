@@ -402,7 +402,14 @@ export default function SettingsPage() {
                           </RowOpen>
                         </div>
                       </td>
-                      <td>{u.department || "—"}</td>
+                      {/* Both departments, because both grant access — showing only the home one
+                          would understate what an action owner can see. */}
+                      <td>
+                        {u.department || "—"}
+                        {u.extraDepartments?.length ? (
+                          <div className="hint">+ {u.extraDepartments.join(" · ")}</div>
+                        ) : null}
+                      </td>
                       <td>{u.email}</td>
                       <td>{roleLabel(u.role)}</td>
                       <td>

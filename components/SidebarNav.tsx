@@ -248,20 +248,25 @@ function ApprovalsBadge() {
 }
 
 /* Action-owner portal: a red count on a portal item shows how many items are still open and
-   awaiting the owner's response, so they can see what is outstanding without opening each page.
-   Items they have already sent back to Internal Audit are excluded — the ball is not with them. */
-function PendingDot({ view, userId }: { view: ViewKey; userId: string }) {
+   awaiting a response, so they can see what is outstanding without opening each page.
+   Items already sent back to Internal Audit are excluded — the ball is not with them.
+   Observations count the whole DEPARTMENT (anyone in it can answer them); external findings and
+   fraud actions stay personal, because those are still assigned to an individual. */
+function PendingDot({ view, user }: { view: ViewKey; user: SessionUser }) {
   const { db } = useWorkspace();
   const n =
     view === "myobs"
-      ? myObsPendingCount(db, userId)
+      ? myObsPendingCount(db, user)
       : view === "myext"
-        ? myExtPendingCount(db, userId)
+        ? myExtPendingCount(db, user.id)
         : view === "myfraud"
-          ? myFraudPendingCount(db, userId)
+          ? myFraudPendingCount(db, user.id)
           : 0;
   if (!n) return null;
-  const label = `${n} open item${n === 1 ? "" : "s"} awaiting your response`;
+  const label =
+    view === "myobs"
+      ? `${n} open item${n === 1 ? "" : "s"} awaiting a response from your department`
+      : `${n} open item${n === 1 ? "" : "s"} awaiting your response`;
   return (
     <span className="nav-badge" title={label} aria-label={label}>
       {n}
@@ -329,7 +334,7 @@ export default function SidebarNav({ user, shell = "legacy" }: SidebarNavProps) 
                     item.view === "approvals" && effectiveRole(user) === "head_of_audit" ? (
                       <ApprovalsBadge />
                     ) : PORTAL_DOT_VIEWS.has(item.view) ? (
-                      <PendingDot view={item.view} userId={user.id} />
+                      <PendingDot view={item.view} user={user} />
                     ) : null;
                   // Migrated targets: client-side <Link>. Legacy targets: plain anchor —
                   // a full page load hands over to the audit-bot shell.

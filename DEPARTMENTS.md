@@ -1,41 +1,40 @@
 # Departments & Members
 
-Generated from `DEPARTMENTS` and `STAFF_DIRECTORY` in [components/settings/staff.ts](components/settings/staff.ts).
+Generated from `DEPARTMENTS`, `STAFF_DIRECTORY` and `STAFF_EXTRA_DEPARTMENTS` in
+[components/settings/staff.ts](components/settings/staff.ts), which is also what
+`scripts/apply-department-roster.mts` applies to the live accounts.
 Emails are derived by `staffEmail()` — first initial + surname `@credicorp.ng`.
 
-**42 staff across 11 departments.** Departments are listed in canonical `DEPARTMENTS` order; within each,
-the department lead is listed first.
+**36 staff across 13 departments**, as confirmed by the Head of Audit on 2026-08-06.
+
+Since 2026-08-05 a department is an **access control**, not a label: an Action Owner sees every
+internal observation raised against their department and any of them can respond to it and mark it
+Ready for Closure. The "Observations" figure below is what each department's members currently see.
+See [lib/dept-scope.ts](lib/dept-scope.ts) for how a record's department is resolved.
 
 ---
 
-## Strategy Department — 6
+## Administration Department — 4 · 0 observations
 
 | Name | Job title | Email |
 | --- | --- | --- |
-| Alexander Ehanire | Head, Strategy & Innovation | aehanire@credicorp.ng |
-| Solomon Aladegolu | Professional - IT | saladegolu@credicorp.ng |
-| Michael Ojo | Professional - Strategic Communications | mojo@credicorp.ng |
-| Anthony Aneke | Professional - Innovation | aaneke@credicorp.ng |
-| Chiamaka Ogoh | Management Trainee | cogoh@credicorp.ng |
-| Eniola Anishe | Intern - Strategy & Innovation | eanishe@credicorp.ng |
+| Wuraola Odubiyi | Head, Admin, People & Culture | wodubiyi@credicorp.ng |
+| Toyin Olaiya | Professional - Admin | tolaiya@credicorp.ng |
+| Delight Nwafor | Professional - Customer Support | dnwafor@credicorp.ng |
+| Peace Oyewumi | Management Trainee | poyewumi@credicorp.ng |
 
-## Credit Operations — 4
+Wuraola Odubiyi also belongs to **People & Culture Department**.
+
+## Credit Operations — 4 · 21 observations
 
 | Name | Job title | Email |
 | --- | --- | --- |
-| Aisha Abdullahi | Executive Director – Credit & Portfolio Management | aabdullahi@credicorp.ng |
 | Sadiq Mohammed | Head, Credit Operations | smohammed@credicorp.ng |
-| Fatima Bello | Professional - Credit Operations | fbello@credicorp.ng |
+| Sussan Omiete | Professional - Credit Operations | somiete@credicorp.ng |
+| Fatima Mustafa Bello | Professional - Credit Operations | fbello@credicorp.ng |
 | Saadatu Alkali | EA to the ED Credit and Portfolio Mgmt. | salkali@credicorp.ng |
 
-## Audit Department — 2
-
-| Name | Job title | Email |
-| --- | --- | --- |
-| Awa Michael | Head, Internal Audit | amichael@credicorp.ng |
-| Halima Ahmed | Intern | hahmed@credicorp.ng |
-
-## Finance Department — 4
+## Finance — 4 · 28 observations
 
 | Name | Job title | Email |
 | --- | --- | --- |
@@ -44,34 +43,59 @@ the department lead is listed first.
 | Najma Goni | Management Trainee | ngoni@credicorp.ng |
 | Tochukwu Chukwuani | Management Trainee | tchukwuani@credicorp.ng |
 
-## Legal Department — 3
+## Impact & Sustainability — 2 · 1 observation
 
 | Name | Job title | Email |
 | --- | --- | --- |
-| Obiageli Ohakim | Head, Legal & Company Secretary | oohakim@credicorp.ng |
+| Emmanuel Nwaka | Lead, Impact & Sustainability | enwaka@credicorp.ng |
+| Elizabeth Adu | E.A to the E.D Operations | eadu@credicorp.ng |
+
+## Internal Audit — 2 · all observations
+
+| Name | Job title | Email |
+| --- | --- | --- |
+| Awa Michael | Head, Internal Audit | amichael@credicorp.ng |
+| Halima Ahmed | Intern | hahmed@credicorp.ng |
+
+Internal Audit is scoped by role, not by department — both accounts see the whole register.
+
+## IT — 2 · 0 observations
+
+| Name | Job title | Email |
+| --- | --- | --- |
+| Solomon Aladegolu | Professional - IT | saladegolu@credicorp.ng |
+| Chiamaka Ogoh | Management Trainee | cogoh@credicorp.ng |
+
+## Legal — 2 · 2 observations
+
+| Name | Job title | Email |
+| --- | --- | --- |
+| Obiageli Vera Ohakim | Head, Legal & Company Secretary | oohakim@credicorp.ng |
 | Beulah Lekwauwa | Professional - Corporate Counsel | blekwauwa@credicorp.ng |
-| Diekololaoluwa Adewale | Intern - Legal | dadewale@credicorp.ng |
 
-## People & Culture Department — 6
+## Office of the Managing Director — 5 · 0 observations
 
 | Name | Job title | Email |
 | --- | --- | --- |
-| Wuraola Odubiyi | Head, Admin, People & Culture | wodubiyi@credicorp.ng |
+| Ladi Amusu | Chief of Staff | lamusu@credicorp.ng |
+| Elizabeth Faboyo | Technical Adviser to the MD/CEO & Lead, Fundraising | efaboyo@credicorp.ng |
+| Peter Esemuede | Technical Adviser to the MD/CEO & Lead, External Relations | pesemuede@credicorp.ng |
+| Dorcas Okolo | Management Trainee | dokolo@credicorp.ng |
+| Adanu Ayegba | Professional - Protocol | aayegba@credicorp.ng |
+
+Ladi Amusu also belongs to **Corporate Communications**, and holds the 7 external findings raised
+against the MD's office.
+
+## People & Culture Department — 2 · 8 observations
+
+| Name | Job title | Email |
+| --- | --- | --- |
 | Olusola Adetiba | Professional - People & Culture | oadetiba@credicorp.ng |
-| Delight Nwafor | Professional - Customer Support | dnwafor@credicorp.ng |
 | Ziga Paago | Management Trainee | zpaago@credicorp.ng |
-| Boluwatife Inaolaji | Intern - People Experience | binaolaji@credicorp.ng |
-| Oluwatoyosi Ibinaiye | Intern - Customer Experience | oibinaiye@credicorp.ng |
 
-## Risk Management — 3
+Plus Wuraola Odubiyi, whose home department is the Administration Department.
 
-| Name | Job title | Email |
-| --- | --- | --- |
-| Asari Etuk | Head, Risk and Compliance | aetuk@credicorp.ng |
-| Terry Akpata | Professional - Risk & Compliance | takpata@credicorp.ng |
-| Emmanuel Okechukwu | Professional - IT Risk & Compliance | eokechukwu@credicorp.ng |
-
-## Procurement Department — 3
+## Procurement — 3 · 5 observations
 
 | Name | Job title | Email |
 | --- | --- | --- |
@@ -79,47 +103,59 @@ the department lead is listed first.
 | Opeyemi Ayediran | Professional - Procurement | oayediran@credicorp.ng |
 | Yachat Kanwai | Management Trainee | ykanwai@credicorp.ng |
 
-## Operations Department — 3
+## Risk Management — 3 · 17 observations
 
 | Name | Job title | Email |
 | --- | --- | --- |
-| Olanike Kolawole | Executive Director – Operations | okolawole@credicorp.ng |
-| Emmanuel Nwaka | Lead, Impact & Sustainability | enwaka@credicorp.ng |
-| Elizabeth Adu | E.A to the E.D Operations | eadu@credicorp.ng |
+| Asari Etuk | Head, Risk and Compliance | aetuk@credicorp.ng |
+| Terry Akpata | Professional - Risk & Compliance | takpata@credicorp.ng |
+| Emmanuel Okechukwu | Professional - IT Risk & Compliance | eokechukwu@credicorp.ng |
 
-## Administration Department — 2
-
-| Name | Job title | Email |
-| --- | --- | --- |
-| Toyin Olaiya | Professional - Admin | tolaiya@credicorp.ng |
-| Peace Oyewumi | Management Trainee | poyewumi@credicorp.ng |
-
-## Office of the Managing Director — 6
+## Corporate Communications — 1 · 6 observations
 
 | Name | Job title | Email |
 | --- | --- | --- |
-| Uzoma Nwagba | Managing Director | unwagba@credicorp.ng |
-| Ladi Amusu | Chief of Staff | lamusu@credicorp.ng |
-| Peter Esemuede | Technical Adviser to the MD/CEO & Lead, External Relations | pesemuede@credicorp.ng |
-| Elizabeth Faboyo | Technical Adviser to the MD/CEO & Lead, Fundraising | efaboyo@credicorp.ng |
-| Adanu Ayegba | Professional - Protocol | aayegba@credicorp.ng |
-| Dorcas Okolo | Management Trainee | dokolo@credicorp.ng |
+| Michael Ojo | Professional - Strategic Communications | mojo@credicorp.ng |
+
+Plus Ladi Amusu, whose home department is the Office of the Managing Director.
+
+## Strategy — 2 · 19 observations
+
+| Name | Job title | Email |
+| --- | --- | --- |
+| Alexander Ehanire | Head, Strategy & Innovation | aehanire@credicorp.ng |
+| Anthony Aneke | Professional - Innovation | aaneke@credicorp.ng |
 
 ---
 
-## Headcount summary
+## Not in AuditLens
 
-| Department | Members |
+| Name | Role | Why |
+| --- | --- | --- |
+| Uzoma Nwagba | Managing Director | Receives the Board assurance brief as a tokenised link — no account by design |
+| Aisha Abdullahi | Executive Director – Credit & Portfolio Management | As above |
+| Olanike Kolawole | Executive Director – Operations | As above |
+
+Four accounts were removed on 2026-08-06 (Eniola Anishe, Diekololaoluwa Adewale, Boluwatife
+Inaolaji, Oluwatoyosi Ibinaiye).
+
+## Departments with no workspace record
+
+**Administration Department** and **IT** have no entry under Settings → Departments & action owners, so
+nothing resolves to them: their members see an empty portal until Internal Audit raises an
+observation against a department of that name.
+
+## Renamed departments
+
+`normalizeDept()` in [lib/dept-scope.ts](lib/dept-scope.ts) aliases the previous names onto the
+current ones, so observations raised under the old spelling remain reachable:
+
+| Was | Now |
 | --- | --- |
-| People & Culture Department | 6 |
-| Office of the Managing Director | 6 |
-| Strategy Department | 5 |
-| Credit Operations | 4 |
-| Finance Department | 4 |
-| Legal Department | 3 |
-| Risk Management | 3 |
-| Procurement Department | 3 |
-| Operations Department | 3 |
-| Audit Department | 2 |
-| Administration Department | 2 |
-| **Total** | **41** |
+| Audit Department | Internal Audit |
+| Strategic Comms · Strategic Communications | Corporate Communications |
+| Finance Department · Finance & Accounts | Finance |
+| Legal Department | Legal |
+| Operations Department | Impact & Sustainability |
+| Procurement Department | Procurement |
+| Strategy Department | Strategy |

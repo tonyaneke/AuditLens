@@ -17,9 +17,10 @@ import { useUser } from "@/components/chrome/UserContext";
 import { useModal } from "@/components/modals/ModalProvider";
 import RichText from "@/components/ui/RichText";
 import {
+  canActOnObs,
   canVerifyItem,
+  isDeptViewer,
   isHead,
-  isOwnerViewer as isOwnerViewerOf,
   isPrimaryOwner,
   isSecondaryOwner,
   isWithdrawn,
@@ -28,6 +29,7 @@ import {
 } from "@/lib/workspace/observations";
 import { fmtDate, fmtDateTime, isoToDate } from "@/lib/workspace/selectors";
 import type { Audit, EvidenceFile, Observation, Report } from "@/lib/workspace/types";
+import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 import {
   ClosureRejectDialog,
   DeclineReviewDialog,
@@ -216,11 +218,17 @@ export default function ObsRemediation({
 }) {
   const user = useUser();
   const modal = useModal();
+  const { db } = useWorkspace();
   const { requested, requestOwnerUpdate, requestProgressReport } = useOwnerRequests(a.id, r.id, o);
 
   const primary = isPrimaryOwner(user, o);
   const secondary = isSecondaryOwner(user, o);
-  const ownerViewer = isOwnerViewerOf(user, o);
+  /* "Owner viewer" is now the whole department the observation was raised against — the named
+     owners plus their colleagues, who can all respond and close it out. `deptOnly` is what
+     separates the two for the guidance copy: a colleague needs to be told they may act, not told
+     they are the accountable owner. */
+  const ownerViewer = canActOnObs(user, o, db);
+  const deptOnly = isDeptViewer(user, o, db);
   const head = isHead(user);
   const canVerify = canVerifyItem(user, o, a as Audit);
   const closed = o.status === "Closed";
@@ -325,26 +333,28 @@ export default function ObsRemediation({
       : secondary && !o.ownerRectifiedAt
         ? // DEPARTS FROM LEGACY: co-owners can now respond, so the copy no longer tells them to wait.
           "You are a co-owner of this observation — you can respond and mark it Ready for Closure just as the primary owner can."
-        : secondary && !o.reportVerifiedAt
-          ? "You have oversight of this observation — follow progress and add comments."
-          : headAwaitingAuditor && o.ownerRectifiedAt && !o.reportVerifiedAt
-            ? "You returned this to Internal Audit — the auditor will address your note and resend it for your closure sign-off."
-            : canVerify && o.ownerRectifiedAt && !o.reportVerifiedAt
-              ? rej && rej.target === "auditor"
-                ? head
-                  ? // Same person on both sides: say so, rather than telling them to wait for themselves.
-                    "You returned this to Internal Audit, and you are also the auditor on this observation — so it is back with you. Address the note above, then resend it for closure sign-off."
-                  : "The Head of Audit returned this to Internal Audit — address the note above, then resend for closure verification."
-                : "The action owner has marked this Ready for Closure — open View remediation to review their response and evidence, then either verify it to prepare closure or reject it back to the owner."
-              : head && o.reportVerifiedAt && !o.headVerifiedAt
-                ? "Verified by the auditor and sent to you — review the closure and evidence, then close, reject to the auditor, or escalate to the owner."
-                : ownerViewer
-                  ? "Your department has marked this Ready for Closure. Internal Audit will verify."
-                  : !o.ownerRectifiedAt
-                    ? "Awaiting the action owner's response."
-                    : !o.reportVerifiedAt
-                      ? "Awaiting auditor verification."
-                      : "Awaiting Head of Audit closure.";
+        : deptOnly && !o.ownerRectifiedAt
+          ? `This was raised against your department${o.owner ? ` and assigned to ${o.owner}` : ""}. Anyone in the department can answer it — if you did the work, describe it and mark it Ready for Closure.`
+          : secondary && !o.reportVerifiedAt
+            ? "You have oversight of this observation — follow progress and add comments."
+            : headAwaitingAuditor && o.ownerRectifiedAt && !o.reportVerifiedAt
+              ? "You returned this to Internal Audit — the auditor will address your note and resend it for your closure sign-off."
+              : canVerify && o.ownerRectifiedAt && !o.reportVerifiedAt
+                ? rej && rej.target === "auditor"
+                  ? head
+                    ? // Same person on both sides: say so, rather than telling them to wait for themselves.
+                      "You returned this to Internal Audit, and you are also the auditor on this observation — so it is back with you. Address the note above, then resend it for closure sign-off."
+                    : "The Head of Audit returned this to Internal Audit — address the note above, then resend for closure verification."
+                  : "The action owner has marked this Ready for Closure — open View remediation to review their response and evidence, then either verify it to prepare closure or reject it back to the owner."
+                : head && o.reportVerifiedAt && !o.headVerifiedAt
+                  ? "Verified by the auditor and sent to you — review the closure and evidence, then close, reject to the auditor, or escalate to the owner."
+                  : ownerViewer
+                    ? "Your department has marked this Ready for Closure. Internal Audit will verify."
+                    : !o.ownerRectifiedAt
+                      ? "Awaiting the action owner's response."
+                      : !o.reportVerifiedAt
+                        ? "Awaiting auditor verification."
+                        : "Awaiting Head of Audit closure.";
 
   /* ---- closure package ----
      The action owner's closure response is deliberately NOT repeated here: obsThread() already

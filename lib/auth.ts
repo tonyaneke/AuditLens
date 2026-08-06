@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { prisma } from "./prisma";
 import {
   effectiveRole,
+  normalizeExtraDepartments,
   normalizeSidebarAccess,
   type SessionUser,
 } from "./permissions";
@@ -35,6 +36,7 @@ export async function signSessionToken(user: SessionUser): Promise<string> {
     name: user.name,
     email: user.email,
     department: user.department,
+    extraDepartments: user.extraDepartments || [],
     role: user.role,
     sidebarAccess: user.sidebarAccess,
     activeRole: user.activeRole || "",
@@ -83,6 +85,7 @@ export async function getSession(): Promise<SessionUser | null> {
       name: String(payload.name || ""),
       email: String(payload.email || ""),
       department: String(payload.department || ""),
+      extraDepartments: normalizeExtraDepartments(payload.extraDepartments),
       role: String(payload.role || "audit_staff"),
       sidebarAccess: normalizeSidebarAccess(payload.sidebarAccess),
       activeRole: String(payload.activeRole || "") || undefined,
@@ -132,6 +135,7 @@ export function userToSession(user: {
   name: string;
   email: string;
   department: string;
+  extraDepartments?: unknown;
   role: string;
   sidebarAccess: unknown;
   photo?: string | null;
@@ -142,6 +146,7 @@ export function userToSession(user: {
     name: user.name,
     email: user.email,
     department: user.department,
+    extraDepartments: normalizeExtraDepartments(user.extraDepartments),
     role: user.role,
     sidebarAccess: normalizeSidebarAccess(user.sidebarAccess),
     /* QA-19 — a cacheable URL, not the stored base64 data URL. /api/auth/me is fetched on

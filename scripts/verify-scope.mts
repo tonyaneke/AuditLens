@@ -17,9 +17,15 @@ import fs from "node:fs";
 import { getPrisma, loadEnv, readWorkspace, heading, table, type Workspace } from "./_migration.mjs";
 import { authorizeWorkspaceWrite } from "../lib/workspace-authz";
 import { slimForClient } from "../lib/workspace-payload";
-import { type Viewer } from "../lib/workspace-scope";
+import { viewerFor } from "../lib/workspace-scope";
 
-type Subject = { id: string; name: string; role: string };
+type Subject = {
+  id: string;
+  name: string;
+  role: string;
+  department?: string;
+  extraDepartments?: unknown;
+};
 type Node = Record<string, unknown>;
 
 /** The stored document is untyped JSON; walk it structurally rather than pretending otherwise. */
@@ -73,7 +79,19 @@ function ownersInDocument(db: Workspace): Subject[] {
     note(f.ownerUserId, f.owner);
     for (const act of arr(f.actions)) note(act.ownerUserId, act.owner);
   }
-  return [...byId].map(([id, name]) => ({ id, name, role: "action_owner" }));
+  /* Offline mode has no user table, so the department — which now decides the scope — comes from
+     the department record this person heads. That is the same fallback lib/dept-scope.ts uses, so
+     a --file run still measures a realistic scope rather than one with no department at all. */
+  const deptOf = (id: string) =>
+    arr(db.departments).find((d) => d.headUserId === id)?.name as string | undefined;
+  return [...byId].map(([id, name]) => ({
+    id,
+    name,
+    role: "action_owner",
+    department: deptOf(id),
+    // A snapshot carries no user table, so a second department cannot be recovered offline.
+    extraDepartments: [],
+  }));
 }
 
 async function main() {
@@ -94,7 +112,11 @@ async function main() {
     users = await prisma.user.findMany({
       where: { active: true },
       orderBy: [{ role: "asc" }, { name: "asc" }],
-      select: { id: true, name: true, role: true },
+      /* Department drives the scope now — see viewerFor() in lib/workspace-scope.ts. BOTH fields
+         are needed: omitting extraDepartments silently under-reports the two people who cover a
+         second department, and this script would have reported the Chief of Staff seeing nothing
+         when he can in fact see all six Strategic Communications observations. */
+      select: { id: true, name: true, role: true, department: true, extraDepartments: true },
     });
     console.log(`\nSource: live database`);
   }
@@ -121,7 +143,12 @@ async function main() {
        which view an admin is currently in — it reports the WIDEST scope they can hold, which is
        the one worth checking. Both roles are shown so an admin is never mistaken for a head. */
     const role = u.role === "admin" ? "head_of_audit" : u.role;
-    const viewer: Viewer = { id: u.id, role };
+    /* Built the same way the route builds it, department and all — a viewer assembled by hand
+       here would test a scope no request ever has. */
+    const viewer = viewerFor(
+      { id: u.id, role, department: u.department, extraDepartments: u.extraDepartments },
+      db,
+    );
     // The exact payload GET /api/data builds — scope + SOP/notification/brief-token trims.
     const served = slimForClient(db as never, viewer) as Workspace;
 
@@ -132,6 +159,8 @@ async function main() {
       db as never,
       JSON.parse(JSON.stringify(served)) as never,
       undefined,
+      u.department,
+      Array.isArray(u.extraDepartments) ? (u.extraDepartments as string[]) : [],
     );
     const afterIds = allIds(roundTrip.data as Workspace);
     const lost = [...storedIds].filter((id) => !afterIds.has(id));
@@ -141,6 +170,7 @@ async function main() {
     rows.push({
       user: u.name,
       "db role": u.role,
+      department: [u.department || "—", ...(Array.isArray(u.extraDepartments) ? u.extraDepartments : [])].join(" + "),
       "scoped as": u.role === "admin" ? `${role} (widest)` : role,
       payload: kb(served),
       obs: String(countObs(served)),
@@ -151,7 +181,7 @@ async function main() {
     });
   }
 
-  table(rows, { user: 26 });
+  table(rows, { user: 24, department: 30 });
 
   console.log("");
   if (failures) {

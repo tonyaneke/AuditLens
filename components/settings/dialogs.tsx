@@ -17,6 +17,7 @@ import {
   ASSESSMENT_NAV,
   DEPARTMENTS,
   STAFF_DIRECTORY,
+  STAFF_EXTRA_DEPARTMENTS,
   roleLabel,
   staffEmail,
   staffPick,
@@ -284,7 +285,8 @@ export function UserDialog({
   const isEdit = !!u;
 
   const [name, setName] = useState(u?.name || "");
-  const [dept, setDept] = useState(u ? u.department || "" : "Audit Department");
+  const [dept, setDept] = useState(u ? u.department || "" : "Internal Audit");
+  const [extraDepts, setExtraDepts] = useState<string[]>(u?.extraDepartments || []);
   const [email, setEmail] = useState(u?.email || "");
   const [role, setRole] = useState(u?.role || "audit_staff");
   const [access, setAccess] = useState<string[]>(u?.sidebarAccess || []);
@@ -303,10 +305,15 @@ export function UserDialog({
     if (!hit) return;
     setEmail(staffEmail(hit[0]));
     if (hit[2]) setDept(hit[2]);
+    setExtraDepts(STAFF_EXTRA_DEPARTMENTS[hit[0]] || []);
   }
 
   function toggleAccess(view: string, checked: boolean) {
     setAccess((cur) => (checked ? [...new Set([...cur, view])] : cur.filter((v) => v !== view)));
+  }
+
+  function toggleExtraDept(d: string, checked: boolean) {
+    setExtraDepts((cur) => (checked ? [...new Set([...cur, d])] : cur.filter((x) => x !== d)));
   }
 
   async function save() {
@@ -315,6 +322,7 @@ export function UserDialog({
       name: name.trim(),
       email: email.trim(),
       department: dept,
+      extraDepartments: extraDepts.filter((d) => d !== dept),
       role,
       sidebarAccess: access,
     };
@@ -410,7 +418,7 @@ export function UserDialog({
         <div>
           <label>Department</label>
           <select value={dept} onChange={(e) => setDept(e.target.value)}>
-            <DeptOptions sel={u ? u.department || "" : "Audit Department"} />
+            <DeptOptions sel={u ? u.department || "" : "Internal Audit"} />
           </select>
         </div>
       </div>
@@ -428,6 +436,33 @@ export function UserDialog({
               </option>
             ))}
           </select>
+        </div>
+      </div>
+      {/* Department is an access control for an action owner — it decides which observations they
+          see — so the few people who cover two departments need both, or half their work is
+          invisible to them. Offered for every role; it is inert for Internal Audit, who see
+          everything regardless. */}
+      <div style={{ marginTop: 10 }}>
+        <div className="seclabel" style={{ marginBottom: 6 }}>
+          Also belongs to <span className="hint" style={{ fontWeight: 400 }}>(optional)</span>
+        </div>
+        <div className="hint" style={{ marginBottom: 6 }}>
+          {role === "action_owner"
+            ? "They will also see, and be able to respond to, observations raised against these departments."
+            : "Only affects Action Owners — Internal Audit sees every department already."}
+        </div>
+        <div>
+          {DEPARTMENTS.filter((d) => d !== dept).map((d) => (
+            <label key={d} className="filter-check" style={{ display: "block", margin: "4px 0" }}>
+              <input
+                type="checkbox"
+                style={{ width: "auto" }}
+                checked={extraDepts.includes(d)}
+                onChange={(e) => toggleExtraDept(d, e.target.checked)}
+              />{" "}
+              {d}
+            </label>
+          ))}
         </div>
       </div>
       {isEdit ? null : (

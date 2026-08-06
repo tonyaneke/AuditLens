@@ -4,6 +4,7 @@
 // effects during render — the legacy migrateFraudActions() write happens lazily inside
 // mutate() via ensureFraudActions()/resolveFraudAction() instead.
 
+import { deptScopeFor, inDeptScope, type DeptScope } from "@/lib/dept-scope";
 import {
   allObs,
   extList,
@@ -15,7 +16,7 @@ import {
   withdrawnObsAll,
   type ObsWithContext,
 } from "./selectors";
-import type { ExtFinding, FraudAction, FraudRisk, WorkspaceDb } from "./types";
+import type { ExtFinding, FraudAction, FraudRisk, Observation, WorkspaceDb } from "./types";
 
 /* ---------------- constants (verbatim from audit-bot.js) ---------------- */
 
@@ -66,6 +67,53 @@ export function myWithdrawnObs(db: WorkspaceDb, userId: string | undefined): Obs
   );
 }
 
+/* ---------------- department matching ----------------
+   The portal shows the DEPARTMENT's observations, not just the ones with this person's name on
+   them (requested 2026-08-05). These mirror canSeeObs() in lib/workspace-scope.ts exactly — the
+   server has already trimmed the payload the same way, so a mismatch here would only ever hide
+   something the client was legitimately given. Kept separate from myObsList so the card can still
+   say which ones are assigned to the person reading it. */
+
+export type PortalUser = { id: string; department?: string; extraDepartments?: string[] };
+
+function scopeOf(db: WorkspaceDb, user: PortalUser | undefined): DeptScope {
+  return deptScopeFor(db, user);
+}
+
+/** Assigned to this person, or raised against their department. The rule the portal, the
+ *  dashboard and the sidebar counts all share. */
+export function isMineOrMyDept(
+  o: Observation,
+  userId: string | undefined,
+  scope: DeptScope,
+): boolean {
+  if (userId && ((o.ownerUserId && o.ownerUserId === userId) || (o.secondaryOwnerUserId && o.secondaryOwnerUserId === userId)))
+    return true;
+  return inDeptScope(o, scope);
+}
+
+/** Every approved internal observation this user's portal shows: theirs plus their department's. */
+export function portalObsList(db: WorkspaceDb, user: PortalUser | undefined): ObsWithContext[] {
+  const scope = scopeOf(db, user);
+  return allObs(db).filter((o) => isMineOrMyDept(o, user?.id, scope) && obsIsApproved(o));
+}
+
+/** Withdrawn observations for the same population. */
+export function portalWithdrawnObs(db: WorkspaceDb, user: PortalUser | undefined): ObsWithContext[] {
+  const scope = scopeOf(db, user);
+  return withdrawnObsAll(db).filter((o) => isMineOrMyDept(o, user?.id, scope));
+}
+
+/** True when this record is assigned to the person directly — used to label a card
+ *  "Assigned to you" among their department's other items. Structural rather than typed to
+ *  Observation so the portal cards, which also carry external findings, can use one rule. */
+export function isAssignedTo(
+  o: { ownerUserId?: string; secondaryOwnerUserId?: string },
+  userId: string | undefined,
+): boolean {
+  return !!userId && (o.ownerUserId === userId || o.secondaryOwnerUserId === userId);
+}
+
 /** External / regulatory findings assigned to this owner (primary or secondary). */
 export function myExtList(db: WorkspaceDb, userId: string | undefined): ExtFinding[] {
   return extList(db).filter(
@@ -80,9 +128,12 @@ export function myExtList(db: WorkspaceDb, userId: string | undefined): ExtFindi
    only counts while the owner still owes something — once they have marked it Ready for
    Closure the ball is with Internal Audit, so the dot clears even though it is still open. */
 
-/** Observations awaiting this owner's response. */
-export function myObsPendingCount(db: WorkspaceDb, userId: string | undefined): number {
-  return myObsList(db, userId).filter(
+/** Observations awaiting a response from this user's DEPARTMENT.
+ *  Department-wide rather than personal because any member can now answer any of them: a count of
+ *  "yours alone" would read as zero to everyone but the named owner while the department still
+ *  owed Internal Audit a dozen responses. */
+export function myObsPendingCount(db: WorkspaceDb, user: PortalUser | undefined): number {
+  return portalObsList(db, user).filter(
     (o) => (o.status || "Open") !== "Closed" && !o.withdrawn && !o.ownerRectifiedAt,
   ).length;
 }

@@ -9,6 +9,12 @@ export type DirectoryUser = {
   id: string;
   name: string;
   email?: string;
+  /** The department they belong to. GET /api/directory has always returned it; it was untyped
+   *  here until department-scoped observations needed it to fan a notification out to a
+   *  department (notifyDeptOfObs in lib/workspace/observations.ts). */
+  department?: string;
+  /** Any further departments they belong to — the fan-out has to reach them for both. */
+  extraDepartments?: string[];
   role?: string;
   active?: boolean;
   photo?: string;

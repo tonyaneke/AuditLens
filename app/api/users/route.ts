@@ -4,7 +4,12 @@ import { writeAuditLog } from "@/lib/audit-log";
 import { loginUrlFromRequest, sendWelcomeEmail } from "@/lib/email";
 import { photoUrlFor } from "@/lib/photo-url";
 import { prisma } from "@/lib/prisma";
-import { ASSESSMENT_VIEWS, normalizeRole, normalizeSidebarAccess } from "@/lib/permissions";
+import {
+  ASSESSMENT_VIEWS,
+  normalizeExtraDepartments,
+  normalizeRole,
+  normalizeSidebarAccess,
+} from "@/lib/permissions";
 
 export async function GET() {
   try {
@@ -20,6 +25,7 @@ export async function GET() {
       name: true,
       email: true,
       department: true,
+      extraDepartments: true,
       role: true,
       sidebarAccess: true,
       photo: true,
@@ -51,6 +57,7 @@ export async function POST(request: Request) {
     name?: string;
     email?: string;
     department?: string;
+    extraDepartments?: string[];
     role?: string;
     sidebarAccess?: string[];
     active?: boolean;
@@ -64,6 +71,9 @@ export async function POST(request: Request) {
   const name = body.name?.trim();
   const email = body.email?.trim().toLowerCase();
   const department = body.department?.trim() || "";
+  const extraDepartments = normalizeExtraDepartments(body.extraDepartments).filter(
+    (d) => d !== department,
+  );
   const role = normalizeRole(body.role);
   const sidebarAccess = normalizeSidebarAccess(body.sidebarAccess);
   // Provisioning ahead of go-live: create the account but leave sign-in blocked. No welcome
@@ -93,6 +103,7 @@ export async function POST(request: Request) {
       name,
       email,
       department,
+      extraDepartments,
       role,
       active,
       sidebarAccess:

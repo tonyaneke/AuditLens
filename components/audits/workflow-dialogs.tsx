@@ -26,13 +26,14 @@ import { runAiText } from "@/lib/client/ai";
 import { extractEvidenceText, runClosureCheck, type ClosureVerdict } from "@/lib/client/obs-ai";
 import type { SessionUser } from "@/lib/permissions";
 import {
+  canActOnObs,
   canVerifyItem,
   cancelPendingStatusChange,
   findObsIn,
   isHead,
-  isOwnerViewer,
   notify,
   notifyBoth,
+  notifyDeptOfObs,
   notifyHeadsApproval,
   pendingStatusChange,
   stampClosed,
@@ -219,11 +220,16 @@ export function ReadyForClosureDialog({ auditId, reportId, obsId }: Ids) {
   }, [text]);
 
   if (!o) return null;
-  // DEPARTS FROM LEGACY: legacy refused anyone but the primary owner here. Co-owners now qualify.
-  if (!isOwnerViewer(user, o) && !isHead(user)) {
+  /* DEPARTS FROM LEGACY: legacy refused anyone but the primary owner here. Co-owners qualified
+     from 2026-07-29, and the rest of the department from 2026-08-05 — the observation is raised
+     against the department, so anyone in it can carry it to closure. */
+  if (!canActOnObs(user, o, db) && !isHead(user)) {
     return (
       <ModalFrame title="Mark Ready for Closure">
-        <div className="hint">Only an action owner for this observation can mark it Ready for Closure.</div>
+        <div className="hint">
+          Only someone in the department this observation was raised against can mark it Ready for
+          Closure.
+        </div>
       </ModalFrame>
     );
   }
@@ -661,6 +667,9 @@ export function HeadCloseDialog({ auditId, reportId, obsId }: Ids) {
       notify(d, cur.ownerUserId, "closed", cur.title + " has been closed", "myobs", cur.id);
       notify(d, cur.secondaryOwnerUserId, "closed", cur.title + " has been closed", "myobs", cur.id);
       notify(d, cur.raisedBy, "closed", cur.title + " has been closed", "observation", cur.id);
+      // Closure is department news: whoever in the department did the work — named owner or not —
+      // sees that Internal Audit has signed it off.
+      notifyDeptOfObs(d, cur, "closed", cur.title + " has been closed");
     });
     logAudit("obs.closed", "Head verified & closed: " + o!.title, { observationId: obsId });
     modal.close();

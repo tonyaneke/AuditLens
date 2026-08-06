@@ -8,7 +8,6 @@ import { CritPill, Empty, Kpi, RowOpen, StatusPill } from "@/components/ui";
 import { displayRoleLabel } from "@/lib/permissions";
 import { hrefForView, isLegacyPath } from "@/lib/routes";
 import {
-  allObs,
   daysBetween,
   daysToClose,
   effectiveClose,
@@ -18,11 +17,10 @@ import {
   hx2rgba,
   isOverdueObs,
   looseDate,
-  obsIsApproved,
   today0,
   type ObsWithContext,
 } from "@/lib/workspace/selectors";
-import { myFraudActionsFor, myFraudRisks } from "@/lib/workspace/portal";
+import { myFraudActionsFor, myFraudRisks, portalObsList } from "@/lib/workspace/portal";
 import type { ExtFinding, FraudAction, FraudRisk } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 
@@ -45,12 +43,11 @@ export default function OwnerDashboard() {
   const user = useUser();
   const router = useRouter();
 
-  const intMine = allObs(db).filter(
-    (o) =>
-      ((o.ownerUserId && o.ownerUserId === user.id) ||
-        (o.secondaryOwnerUserId && o.secondaryOwnerUserId === user.id)) &&
-      obsIsApproved(o),
-  );
+  /* Internal observations are the DEPARTMENT's (2026-08-05) — anyone in it can answer any of them,
+     so a dashboard counting only the ones bearing this person's name understated what the
+     department owed. External findings and fraud actions are unchanged: those stay assigned to an
+     individual. */
+  const intMine = portalObsList(db, user);
   const extMine = extList(db).filter(
     (f) =>
       (f.ownerUserId && f.ownerUserId === user.id) ||
@@ -119,28 +116,28 @@ export default function OwnerDashboard() {
       <div className="dash-kpis" style={{ gridTemplateColumns: "repeat(4,1fr)" }}>
         <Kpi
           tone="accent"
-          label="Assigned to me"
+          label="My department"
           value={totalMine}
           sub={`${intMine.length} Internal · ${extMine.length} External`}
         />
-        <Kpi tone="warn" label="Open" value={totalOpen} sub="awaiting your action" />
+        <Kpi tone="warn" label="Open" value={totalOpen} sub="awaiting a response" />
         <Kpi tone="warn" label="Overdue" value={totalOverdue} sub="past expected close" />
         <Kpi tone="good" label="Closed" value={totalClosed} sub="resolved" icon="check" />
       </div>
 
       <div className="card">
-        <div className="seclabel">Needs your attention</div>
+        <div className="seclabel">Needs attention</div>
         {!attention.length ? (
           <Empty big={totalMine + fraudMine.length > 0 ? "✅" : "📭"}>
             {totalMine + fraudMine.length > 0 ? (
-              "Nothing overdue or due within 2 weeks — you're on track."
+              "Nothing overdue or due within 2 weeks — your department is on track."
             ) : (
               <>
-                Nothing has been assigned to you yet.
+                Nothing is outstanding for your department yet.
                 <br />
                 <br />
-                Observations and external findings appear here once Internal Audit assigns them to
-                your department.
+                Observations and external findings appear here once Internal Audit raises them
+                against your department.
               </>
             )}
           </Empty>

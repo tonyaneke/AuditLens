@@ -9,6 +9,7 @@ import { loginUrlFromRequest, sendWelcomeEmail } from "@/lib/email";
 import { prisma } from "@/lib/prisma";
 import {
   ASSESSMENT_VIEWS,
+  normalizeExtraDepartments,
   normalizeRole,
   normalizeSidebarAccess,
 } from "@/lib/permissions";
@@ -33,6 +34,7 @@ export async function PUT(request: Request, { params }: Params) {
     name?: string;
     email?: string;
     department?: string;
+    extraDepartments?: string[];
     role?: string;
     sidebarAccess?: string[];
   };
@@ -69,10 +71,17 @@ export async function PUT(request: Request, { params }: Params) {
         )
       : [];
 
+  const department = body.department?.trim() ?? existing.department;
   const data = {
     name: body.name?.trim() || existing.name,
     email: email || existing.email,
-    department: body.department?.trim() ?? existing.department,
+    department,
+    /* Omitted means unchanged, not cleared: PATCH-shaped callers (and the onboarding script) send
+       only what they are editing, and silently emptying someone's second department would revoke
+       access nobody asked to revoke. */
+    extraDepartments: normalizeExtraDepartments(
+      body.extraDepartments ?? existing.extraDepartments,
+    ).filter((d) => d !== department),
     role,
     sidebarAccess,
   };

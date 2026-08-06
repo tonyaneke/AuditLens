@@ -7,7 +7,8 @@
 // Run with: npm test   (or: npx tsx scripts/workspace-authz.test.mts)
 import { authorizeWorkspaceWrite } from "../lib/workspace-authz";
 import { graftServerHeld, slimForClient } from "../lib/workspace-payload";
-import { scopeWorkspace } from "../lib/workspace-scope";
+import { scopeWorkspace, viewerFor } from "../lib/workspace-scope";
+import { normalizeDept } from "../lib/dept-scope";
 
 let pass = 0, fail = 0;
 function ok(cond: boolean, msg: string) { if (cond) { pass++; console.log("  ok " + msg); } else { fail++; console.error("  x FAIL: " + msg); } }
@@ -402,6 +403,149 @@ console.log("\n== Admin acts as their switched role ==");
   // Viewing as an action owner → scoped and reconciled like one.
   const asOwner = authorizeWorkspaceWrite("admin", "own1", cur, clone(inc), "action_owner");
   ok(findObs(asOwner.data, "o1").title === "Weak SoD", "admin viewing as an owner is reconciled like one");
+}
+
+/* ================= department-scoped visibility (2026-08-05) =================
+   An observation is raised against a department, so everyone in that department sees it and any
+   of them can answer it. "colleague" below is a Credit staff member with NO record assigned to
+   them — under the old rule they saw an empty portal.
+
+   The fixture's one department record ("Credit", headed by own1) is what ties them together, and
+   o1/e1 hang off own1. o2/o3 belong to own2, who heads nothing — so they stay invisible, which is
+   the control for every assertion here. */
+console.log("\n== SEC-01: department-scoped observations ==");
+{
+  const cur = baseWorkspace();
+  const colleague = { role: "action_owner", id: "col1", department: "Credit" };
+  const outsider = { role: "action_owner", id: "out1", department: "Legal" };
+
+  const mine = scopeWorkspace(cur, viewerFor(colleague, cur)) as any;
+  ok(!!findObs(mine, "o1"), "a colleague sees their department's observation");
+  ok(!findObs(mine, "o2"), "another department's observation in the same report is withheld");
+  ok(!findObs(mine, "o3"), "an audit with nothing of theirs in it is withheld");
+  ok(mine.audits.length === 1 && mine.audits[0].reports.length === 1, "only the audit/report skeleton they need");
+
+  // Department name matching is normalised, not raw: "credit department" is the same department.
+  const looseName = scopeWorkspace(cur, viewerFor({ ...colleague, department: "credit department" }, cur)) as any;
+  ok(!!findObs(looseName, "o1"), "department names match case- and suffix-insensitively");
+
+  const theirs = scopeWorkspace(cur, viewerFor(outsider, cur)) as any;
+  ok(!findObs(theirs, "o1"), "a different department sees nothing of Credit's");
+
+  // Departments do NOT widen the other registers — those are still assigned to an individual.
+  ok(!findExt(mine, "e1"), "external findings are not department-scoped");
+  ok(!(mine.fraudRisks || []).length, "the fraud register is not department-scoped");
+
+  // A pending observation is not yet a finding: the department must not see it before approval.
+  const pending = baseWorkspace();
+  pending.audits[0].reports[0].observations[0].obsApproval = "pending";
+  const beforeApproval = scopeWorkspace(pending, viewerFor(colleague, pending)) as any;
+  ok(!findObs(beforeApproval, "o1"), "an unapproved observation is withheld from the department");
+
+  /* The stale-departmentId case, which is why matching also goes through the owner: 13 live
+     observations point at a department record that no longer exists. */
+  const stale = baseWorkspace();
+  stale.audits[0].reports[0].observations[0].departmentId = "deptGONE";
+  const viaOwner = scopeWorkspace(stale, viewerFor(colleague, stale)) as any;
+  ok(!!findObs(viaOwner, "o1"), "a stale departmentId still resolves through the owner");
+
+  /* And the two-records-one-department case: a second action owner for Credit creates a second
+     department record, and its observations must reach the same people. */
+  const twoRecords = baseWorkspace();
+  twoRecords.departments.push({ id: "d2", name: "Credit Department", headUserId: "own3" });
+  twoRecords.audits[0].reports[0].observations.push({
+    id: "o4", title: "Second Credit owner", criticality: "Low", status: "Open",
+    obsApproval: "approved", ownerUserId: "own3", owner: "Ada", raisedBy: "staff1", updates: [],
+  });
+  const merged = scopeWorkspace(twoRecords, viewerFor(colleague, twoRecords)) as any;
+  ok(!!findObs(merged, "o1") && !!findObs(merged, "o4"), "both department records feed one department's list");
+}
+
+console.log("\n== A colleague may remediate, but no more than an owner can ==");
+{
+  const cur = baseWorkspace();
+  const colleague = { id: "col1", role: "action_owner", department: "Credit" };
+  const served = clone(slimForClient(cur, viewerFor(colleague, cur)));
+
+  // The legitimate write: describe what the department did and mark it Ready for Closure.
+  const at = "2026-08-05T09:00:00.000Z";
+  findObs(served, "o1").ownerResponse = "Segregation matrix reissued.";
+  findObs(served, "o1").ownerRectifiedAt = at;
+  findObs(served, "o1").ownerRectifiedBy = "col1";
+  const r = authorizeWorkspaceWrite(colleague.role, colleague.id, cur, served, undefined, colleague.department);
+  ok(findObs(r.data, "o1").ownerRectifiedAt === at, "a department colleague can mark Ready for Closure");
+  ok(findObs(r.data, "o1").status === "In Progress", "the status transition is still derived server-side");
+  ok(r.violations.length === 0, "an untouched department payload round-trips cleanly");
+
+  // Everything else is as locked for them as it is for the named owner.
+  const served2 = clone(slimForClient(cur, viewerFor(colleague, cur)));
+  findObs(served2, "o1").title = "Colleague edited";
+  findObs(served2, "o1").status = "Closed";
+  const r2 = authorizeWorkspaceWrite(colleague.role, colleague.id, cur, served2, undefined, colleague.department);
+  ok(findObs(r2.data, "o1").title === "Weak SoD", "a colleague cannot edit the finding");
+  ok(findObs(r2.data, "o1").status === "Open", "a colleague cannot close an observation");
+
+  // And a colleague of one department cannot reach into another's, even by echoing it back.
+  const served3 = clone(slimForClient(cur, viewerFor(colleague, cur)));
+  served3.audits[0].reports[0].observations.push({ ...findObs(cur, "o2"), ownerResponse: "not mine" });
+  const r3 = authorizeWorkspaceWrite(colleague.role, colleague.id, cur, served3, undefined, colleague.department);
+  ok(findObs(r3.data, "o2").ownerResponse === undefined, "another department's observation stays untouched");
+  ok(r3.violations.includes("out_of_scope_write:obs:o2"), "the out-of-scope write is recorded");
+}
+
+/* ================= two departments at once (2026-08-06) =================
+   Two people straddle two departments — the Head of Admin, People & Culture, and the Chief of
+   Staff who covers Strategic Comms alongside the MD's office. `extraDepartments` is what stops
+   them having to choose which half of their job they can see. */
+console.log("\n== A person in two departments sees both ==");
+{
+  const cur = baseWorkspace();
+  // own2 heads Legal (they own o2 and o3); own3 heads Treasury, which the viewer is NOT in.
+  cur.departments.push({ id: "d2", name: "Legal", headUserId: "own2" });
+  cur.departments.push({ id: "d3", name: "Treasury", headUserId: "own3" });
+  cur.audits[0].reports[0].observations.push({
+    id: "o5", title: "Treasury only", criticality: "Low", status: "Open", obsApproval: "approved",
+    ownerUserId: "own3", owner: "Ngozi", raisedBy: "staff1", updates: [],
+  });
+
+  const oneDept = scopeWorkspace(cur, viewerFor({ id: "x1", role: "action_owner", department: "Credit" }, cur)) as any;
+  ok(!!findObs(oneDept, "o1") && !findObs(oneDept, "o2"), "one department sees only its own");
+
+  const bothDepts = scopeWorkspace(
+    cur,
+    viewerFor({ id: "x1", role: "action_owner", department: "Credit", extraDepartments: ["Legal"] }, cur),
+  ) as any;
+  ok(!!findObs(bothDepts, "o1"), "the home department still resolves");
+  ok(!!findObs(bothDepts, "o2"), "the second department resolves too");
+  ok(!findObs(bothDepts, "o5"), "a department they are in neither of is still withheld");
+
+  // And the write path must agree, or their ordinary save is logged as an out-of-scope write.
+  const served = clone(slimForClient(cur, viewerFor({ id: "x1", role: "action_owner", department: "Credit", extraDepartments: ["Legal"] }, cur)));
+  const r = authorizeWorkspaceWrite("action_owner", "x1", cur, served, undefined, "Credit", ["Legal"]);
+  ok(r.violations.length === 0, "a two-department payload round-trips cleanly");
+}
+
+/* The alias table folds names no rule could infer. Each of these is a live case: the roster calls
+   a department something the workspace record does not. */
+console.log("\n== Department aliases resolve to one department ==");
+{
+  const pairs: [string, string, string][] = [
+    ["Finance", "Finance & Accounts", "the CFO's department and his team's are one"],
+    ["Admin", "Administration Department", "Admin is Administration"],
+    ["P&C", "People & Culture Department", "P&C is People & Culture"],
+    ["OMD", "Office of the Managing Director", "OMD is the MD's office"],
+    ["Strategic Comms", "Corporate Communications", "the roster name and the record name are one unit"],
+    ["Operations Department", "Impact & Sustainability", "Operations is retired into Impact & Sustainability"],
+  ];
+  for (const [a, b, why] of pairs) ok(normalizeDept(a) === normalizeDept(b), why);
+
+  // …and nothing else collapses. These are genuinely different departments.
+  const distinct: [string, string][] = [
+    ["Operations", "Credit Operations"],
+    ["Strategy", "Strategic Comms"],
+    ["IT", "Internal Audit"],
+  ];
+  for (const [a, b] of distinct) ok(normalizeDept(a) !== normalizeDept(b), `${a} is not ${b}`);
 }
 
 console.log("\n----------------------------------------");

@@ -4,7 +4,8 @@
 // normalizer. All pure over the db + explicit user/directory args — no globals.
 
 import { emailAdminConsolidated, emailNotify } from "@/lib/client/notify";
-import { headUsers, ownerEmailFor, ownerNameFor, dirUser } from "@/lib/client/directory";
+import { headUsers, ownerEmailFor, ownerNameFor, dirUser, directory } from "@/lib/client/directory";
+import { deptMembers, deptNameOf, deptScopeFor, inDeptScope } from "@/lib/dept-scope";
 import type { SessionUser } from "@/lib/permissions";
 import { effectiveRole, isAdmin } from "@/lib/permissions";
 import type {
@@ -185,15 +186,37 @@ export function isPrimaryOwner(user: SessionUser, o: Observation | undefined): b
 export function isSecondaryOwner(user: SessionUser, o: Observation | undefined): boolean {
   return !!(o && o.secondaryOwnerUserId && o.secondaryOwnerUserId === user.id);
 }
-/** Either owner. Gates the owner-side view: private notes, the composer, oversight copy. */
+/** Either named owner. */
 export function isOwnerViewer(user: SessionUser, o: Observation | undefined): boolean {
   return isPrimaryOwner(user, o) || isSecondaryOwner(user, o);
 }
-/* DEPARTS FROM LEGACY (deliberate, requested 2026-07-29): legacy gated "Ready for Closure" on
-   isPrimaryOwner alone — a secondary owner could comment but not respond, and the legacy modal
-   hard-refused them. Co-owners now carry the same responsibility as the primary owner. The
-   server already permitted this: workspace-authz reconciles observations by ROLE, never by
-   which user owns the record, so no authz change was needed to enable it. */
+/** A member of the department the observation was raised against, who is not a named owner of it. */
+export function isDeptViewer(
+  user: SessionUser,
+  o: Observation | undefined,
+  db: WorkspaceDb,
+): boolean {
+  if (!o || isOwnerViewer(user, o)) return false;
+  return inDeptScope(o, deptScopeFor(db, user.department));
+}
+/* Gates the owner-side view: private notes, the composer, the Ready-for-Closure button, the
+   oversight copy.
+
+   DEPARTS FROM LEGACY twice over. Legacy gated "Ready for Closure" on isPrimaryOwner alone — a
+   secondary owner could comment but not respond (relaxed 2026-07-29). It is now the whole
+   DEPARTMENT (requested 2026-08-05): the observation is raised against the department, so anyone
+   in it can answer and close it out, which is what stops a finding stalling because one named
+   person is on leave. The server permits this because workspace-authz reconciles observations by
+   ROLE and by what the viewer can SEE — and canSeeObs() in lib/workspace-scope.ts now admits the
+   department — so the two sides agree without a special case. */
+export function canActOnObs(
+  user: SessionUser,
+  o: Observation | undefined,
+  db: WorkspaceDb,
+): boolean {
+  return isOwnerViewer(user, o) || isDeptViewer(user, o, db);
+}
+/** @deprecated Use canActOnObs — it also admits the rest of the department. */
 export function canRespondToObs(user: SessionUser, o: Observation | undefined): boolean {
   return isOwnerViewer(user, o);
 }
@@ -376,6 +399,35 @@ export function notifyOwnerAssigned(db: WorkspaceDb, o: Observation): void {
         ownerNotifications: admin.ownerNotifs,
       });
     }
+  }
+}
+
+/* ---------------- department fan-out ----------------
+   An observation is raised against a department, and since 2026-08-05 the whole department can see
+   and answer it — so the whole department is told, not just the two people named on it.
+
+   IN-APP ONLY, DELIBERATELY. The named owners keep their email (notifyOwnerAssigned above); the
+   rest of the department gets the bell and nothing else. Two reasons: the department population is
+   being onboarded ahead of any announcement and must not be emailed yet, and a department of six
+   would otherwise receive six emails for one finding on top of every status change. The bell is
+   what makes it visible; email stays the accountable owner's channel.
+
+   Resolution and exclusions mirror lib/dept-scope.ts, so anyone notified can actually open the
+   item — a notification linking to something the payload withholds is worse than silence. */
+export function notifyDeptOfObs(
+  db: WorkspaceDb,
+  o: Observation | undefined | null,
+  kind: string,
+  text: string,
+  link = "myobs",
+): void {
+  if (!o) return;
+  const dept = deptNameOf(db, o);
+  if (!dept) return;
+  const exclude = new Set([o.ownerUserId, o.secondaryOwnerUserId].filter(Boolean) as string[]);
+  for (const u of deptMembers(directory(), dept)) {
+    if (exclude.has(u.id)) continue;
+    notify(db, u.id, kind, text, link, o.id);
   }
 }
 

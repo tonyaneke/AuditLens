@@ -19,6 +19,7 @@ import { urlForView } from "@/lib/routes";
 import {
   departments,
   isHead,
+  notifyDeptOfObs,
   notifyHeadsApproval,
   notifyOwnerAssigned,
   priorObsForRepeat,
@@ -228,6 +229,8 @@ export default function RaiseFlow({
       r.observations.push(finalObs);
       if (head) {
         notifyOwnerAssigned(d, finalObs);
+        // The rest of the department can see and answer it too — tell them (bell only).
+        notifyDeptOfObs(d, finalObs, "assigned", "Raised against your department: " + finalObs.title);
       } else {
         approvals(d).push({
           id: uid(),

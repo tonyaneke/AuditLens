@@ -19,6 +19,9 @@ export async function GET() {
       name: true,
       email: true,
       department: true,
+      // Department membership decides who an observation's notification fans out to
+      // (notifyDeptOfObs), and a few people belong to two — see lib/dept-scope.ts.
+      extraDepartments: true,
       role: true,
       photo: true,
       active: true,

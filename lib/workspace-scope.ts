@@ -1,3 +1,10 @@
+import {
+  deptScopeFor,
+  inDeptScope,
+  EMPTY_DEPT_SCOPE,
+  type DeptScope,
+  type DeptSource,
+} from "./dept-scope";
 import type { WorkspaceDb } from "./db-data";
 import { effectiveRole, type SessionUser } from "./permissions";
 
@@ -21,13 +28,24 @@ import { effectiveRole, type SessionUser } from "./permissions";
  * bogus `obs_delete_blocked` violations against `security.workspace_write_filtered`, and the
  * security trail becomes noise. That coupling is the reason this lives in one file.
  *
- * Scope is by ROLE, not department: `User.department` is display-only free text, `Audit` carries
- * no department at all, and Internal Audit staff are expected to audit across the whole
- * organisation. Head of Audit and audit staff therefore keep the full document; action owners
- * get their own records and nothing else.
+ * Scope is by ROLE first: `Audit` carries no department at all and Internal Audit staff are
+ * expected to audit across the whole organisation, so Head of Audit and audit staff keep the full
+ * document.
+ *
+ * Below that it is by DEPARTMENT (changed 2026-08-05 — it used to be by individual assignment).
+ * An observation is raised against a department, so every member of that department sees it and
+ * any of them can answer it; see lib/dept-scope.ts for how a record's department is resolved and
+ * why. `User.department` is still free text, which is exactly why the match is normalised rather
+ * than compared raw. External findings and the fraud register are unchanged — they remain scoped
+ * to the individual the item is assigned to.
  */
 
-export type Viewer = { id: string; role: string };
+export type Viewer = {
+  id: string;
+  role: string;
+  /** The viewer's department, resolved against the workspace's department records. */
+  dept: DeptScope;
+};
 
 type Obj = Record<string, unknown>;
 
@@ -38,13 +56,28 @@ const STAFF_ROLE = "audit_staff";
 const FULL_SCOPE_ROLES = new Set([HEAD_ROLE, STAFF_ROLE]);
 
 /** The viewer a session represents. Uses effectiveRole so an admin viewing as an action owner is
- *  scoped like an action owner — the same rule the UI applies. */
-export function viewerFor(session: {
-  id: string;
-  role: string;
-  activeRole?: string;
-}): Viewer {
-  return { id: session.id, role: effectiveRole(session as SessionUser) };
+ *  scoped like an action owner — the same rule the UI applies.
+ *
+ *  `db` is needed because a department's identity lives in the workspace document, not on the
+ *  user row: the session carries the department NAME and the document maps that name to record
+ *  ids and department heads. Full-scope roles never consult it, so it is optional — omit it and
+ *  the viewer simply has no department scope, which is the safe direction to fail. */
+export function viewerFor(
+  session: {
+    id: string;
+    role: string;
+    activeRole?: string;
+    department?: string;
+    extraDepartments?: unknown;
+  },
+  db?: DeptSource,
+): Viewer {
+  const role = effectiveRole(session as SessionUser);
+  return {
+    id: session.id,
+    role,
+    dept: db ? deptScopeFor(db, session) : EMPTY_DEPT_SCOPE,
+  };
 }
 
 export function isFullScope(viewer: Viewer): boolean {
@@ -83,12 +116,14 @@ function obsApproved(o: Obj): boolean {
   return o.obsApproval !== "pending" && o.obsApproval !== "rejected";
 }
 
-/** An observation an action owner may see: assigned to them, and either approved (myObsList) or
- *  withdrawn (myWithdrawnObs). One still awaiting Head approval is not yet a finding and is not
- *  theirs to read. */
+/** An observation an action owner may see: assigned to them OR raised against their department,
+ *  and either approved (myObsList) or withdrawn (myWithdrawnObs). One still awaiting Head approval
+ *  is not yet a finding and is not theirs to read — that gate applies to the department exactly as
+ *  it applied to the individual, so a draft finding never leaks to the department it names. */
 export function canSeeObs(o: Obj, viewer: Viewer): boolean {
   if (isFullScope(viewer)) return true;
-  return ownedBy(o, viewer.id) && (obsApproved(o) || obsWithdrawn(o));
+  if (!ownedBy(o, viewer.id) && !inDeptScope(o, viewer.dept)) return false;
+  return obsApproved(o) || obsWithdrawn(o);
 }
 
 /** Mirrors myExtList(). */
@@ -159,9 +194,10 @@ const OWNER_KEPT_SCALARS = ["org", "signOffName", "signOffTitle", "planYear", "s
  * The workspace document as this viewer is allowed to see it.
  *
  * Full-scope roles get the document unchanged. An action owner gets: the audits/reports skeleton
- * for the observations assigned to them (the shell needs `_a`/`_r` context and the
- * audit/report ids to build observation URLs), their own external findings, the fraud risks they
- * implement actions on, approvals that concern them, and department names.
+ * for the observations assigned to them OR raised against their department (the shell needs
+ * `_a`/`_r` context and the audit/report ids to build observation URLs), their own external
+ * findings, the fraud risks they implement actions on, approvals that concern them, and
+ * department names.
  */
 export function scopeWorkspace(db: WorkspaceDb, viewer: Viewer): WorkspaceDb {
   if (isFullScope(viewer)) return db;
@@ -210,9 +246,17 @@ export function scopeWorkspace(db: WorkspaceDb, viewer: Viewer): WorkspaceDb {
       (!!ap.obsId && obsIds.has(String(ap.obsId))),
   );
 
-  // Departments resolve observation.departmentId to a label. The head's name and email are
-  // directory data an owner has no need for in this payload.
-  out.departments = asArray(src.departments).map((d) => ({ id: d.id, name: d.name }));
+  /* Departments resolve observation.departmentId to a label, and — since department-scoped
+     visibility — the client rebuilds the same DeptScope this function used, which needs
+     `headUserId` to recognise an observation whose departmentId has gone stale. That id is not a
+     disclosure: /api/directory already gives every signed-in user the id, name, email and
+     department of everyone. The head's NAME and EMAIL stay out; they are directory data this
+     payload has no reason to carry. */
+  out.departments = asArray(src.departments).map((d) => ({
+    id: d.id,
+    name: d.name,
+    headUserId: d.headUserId,
+  }));
 
   return out as WorkspaceDb;
 }

@@ -6,10 +6,11 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useSyncExternalStore, type ReactNode } from "react";
+import { useUser } from "@/components/chrome/UserContext";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import { CritPill, StatusPill, TintPill } from "@/components/ui";
 import { hrefForView, isLegacyPath } from "@/lib/routes";
-import { EXT_SEV_HEX } from "@/lib/workspace/portal";
+import { EXT_SEV_HEX, isAssignedTo } from "@/lib/workspace/portal";
 import { effectiveClose, fmtDate, type ObsWithContext } from "@/lib/workspace/selectors";
 import type { ExtFinding } from "@/lib/workspace/types";
 
@@ -21,8 +22,12 @@ export type PortalItem =
 
 export function MyObsCard({ item }: { item: PortalItem }) {
   const router = useRouter();
+  const user = useUser();
   const ext = item.type === "External";
   const o = item.o;
+  /* The portal lists the whole department's observations, so each card has to say whether this is
+     yours to answer or a colleague's — without it the list reads as "all of this is on me". */
+  const mine = isAssignedTo(o, user.id);
 
   function open() {
     const href = ext
@@ -71,7 +76,15 @@ export function MyObsCard({ item }: { item: PortalItem }) {
         ) : null}
       </div>
       <div className="myobs-card-title">{o.title}</div>
-      <div className="myobs-card-meta">{ctx}</div>
+      <div className="myobs-card-meta">
+        {ctx}
+        {!ext ? (
+          <>
+            {" · "}
+            {mine ? "Assigned to you" : `Owner: ${o.owner || "unassigned"}`}
+          </>
+        ) : null}
+      </div>
       {ecStr ? (
         <div className="myobs-card-foot">
           <span className="hint">Expected close</span>
@@ -169,8 +182,9 @@ export function OwnerAnnounce({ userId }: { userId: string }) {
     <div className="owner-announce">
       <span className="owner-announce-ico" aria-hidden="true">📌</span>
       <div>
-        <b>New here?</b> When your department has addressed an observation, open it and use the{" "}
-        <b>Ready for Closure</b> button to send it back to Internal Audit.{" "}
+        <b>New here?</b> This list is your whole department&apos;s — anyone in it can answer any
+        item. When the work is done, open it and use the <b>Ready for Closure</b> button to send it
+        back to Internal Audit.{" "}
         <button
           type="button"
           className="owner-announce-cta"
@@ -199,17 +213,19 @@ const SIM_STEPS: { title: string; body: ReactNode }[] = [
     body: (
       <>
         When Internal Audit raises an observation against your department, it appears in{" "}
-        <b>My Observations</b>. Open it to read the finding, the risk and the recommendation.
+        <b>My Observations</b> — for everyone in the department, not only the person it names.
+        Open it to read the finding, the risk and the recommendation.
       </>
     ),
   },
   {
-    title: "2 · Add your response",
+    title: "2 · Anyone in the department can respond",
     body: (
       <>
-        Once your department has done the remediation work, open the observation and click{" "}
+        Once the remediation work is done, open the observation and click{" "}
         <b>Ready for Closure</b>. You describe exactly what was done — an AI checker makes sure
-        it&apos;s concrete — and you can attach evidence.
+        it&apos;s concrete — and you can attach evidence. Your name is recorded on the response,
+        so the department can share the work without losing track of who did what.
       </>
     ),
   },
@@ -217,8 +233,8 @@ const SIM_STEPS: { title: string; body: ReactNode }[] = [
     title: "3 · Internal Audit verifies & closes",
     body: (
       <>
-        Your response goes back to the auditor to verify, then the Head of Audit signs off and
-        closes it. You&apos;re notified (in-app and by email) at each step.
+        The response goes back to the auditor to verify, then the Head of Audit signs off and
+        closes it. The department is notified at each step.
       </>
     ),
   },

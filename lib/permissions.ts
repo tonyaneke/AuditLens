@@ -118,6 +118,9 @@ export type SessionUser = {
   name: string;
   email: string;
   department: string;
+  /** Departments this person belongs to BESIDES `department`. Confers identical access — see
+   *  lib/dept-scope.ts. Empty for almost everyone. */
+  extraDepartments?: string[];
   role: string;
   sidebarAccess: string[];
   // Microsoft profile photo (data URL). Present on DB-sourced sessions (/api/auth/me, directory),
@@ -126,6 +129,19 @@ export type SessionUser = {
   // For admin users: the role they are currently viewing as (head_of_audit, audit_staff, action_owner)
   activeRole?: string;
 };
+
+/** Additional departments, cleaned for storage and for the JWT. Deduplicated and trimmed; the
+ *  home department is not filtered out here because callers pass it separately and a duplicate is
+ *  harmless to the scope (it is a Set by the time it matters). */
+export function normalizeExtraDepartments(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const v of raw) {
+    const s = String(v ?? "").trim();
+    if (s && !out.includes(s)) out.push(s);
+  }
+  return out;
+}
 
 export function normalizeSidebarAccess(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];

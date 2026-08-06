@@ -312,8 +312,9 @@ ${rows}
 
   <h3><span class="n"></span>Who this manual is for</h3>
   <p class="p">You have an <b>Action Owner</b> account. Internal Audit raises observations against
-  your department, assigns them to you, and you respond to them here — describing what was done,
-  attaching the evidence, and sending each item back for verification.</p>
+  your department and names an action owner for each one; everyone in the department sees them, and
+  any of you can respond here — describing what was done, attaching the evidence, and sending the
+  item back for verification.</p>
   <p class="p">Internal Audit staff and the Head of Internal Audit use the full
   <b>AuditLens User Manual</b>, which also covers raising observations, the assessment modules and
   administration. Ask Internal Audit for it if you need it.</p>

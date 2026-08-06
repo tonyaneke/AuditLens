@@ -2,22 +2,37 @@
 
 // Action-Owner portal — Internal Observations. React port of viewMyObs() in audit-bot.js.
 //
-// DEPARTS FROM LEGACY: legacy filtered on criticality only, so a head of department with a large
-// register got one long list and had to read every card to find the ones still on their plate.
-// The status filter adds the buckets they actually work in — including "Ready for Closure", which
-// is derived rather than stored (see ownerStatusOf) and is the line between "mine" and "with
-// Internal Audit" — plus withdrawn, which is its own list entirely.
+// DEPARTS FROM LEGACY twice.
+//  1. Legacy filtered on criticality only, so a head of department with a large register got one
+//     long list and had to read every card to find the ones still on their plate. The status
+//     filter adds the buckets they actually work in — including "Ready for Closure", which is
+//     derived rather than stored (see ownerStatusOf) and is the line between "mine" and "with
+//     Internal Audit" — plus withdrawn, which is its own list entirely.
+//  2. The list is the DEPARTMENT's, not one person's (2026-08-05). Anyone in the department can
+//     answer any of them, so the "Assigned to you" filter is what narrows it back down to the
+//     items with your own name on them.
 
 import { useState } from "react";
 import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useUser } from "@/components/chrome/UserContext";
 import { Empty } from "@/components/ui";
-import { OWNER_STATUSES, myObsList, myWithdrawnObs, ownerStatusOf } from "@/lib/workspace/portal";
+import {
+  OWNER_STATUSES,
+  isAssignedTo,
+  ownerStatusOf,
+  portalObsList,
+  portalWithdrawnObs,
+} from "@/lib/workspace/portal";
 import { CRITS } from "@/lib/workspace/selectors";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 import { MyObsCard, MyObsSections, OwnerAnnounce, PortalSection, type PortalItem } from "./cards";
 
 const WITHDRAWN = "Withdrawn";
+
+/* The department/mine switch. Default is the whole department — that is the point of the change,
+   and someone who only wants their own name flips it, rather than the other way round. */
+const SCOPE_ALL = "My department";
+const SCOPE_MINE = "Assigned to me";
 
 export default function MyObsPage() {
   usePageChrome({ title: "Internal Observations" });
@@ -25,9 +40,10 @@ export default function MyObsPage() {
   const user = useUser();
   const [crit, setCrit] = useState("All");
   const [status, setStatus] = useState("All");
+  const [scope, setScope] = useState(SCOPE_ALL);
 
-  const items0: PortalItem[] = myObsList(db, user.id).map((o) => ({ o, type: "Internal" }));
-  const withdrawn0: PortalItem[] = myWithdrawnObs(db, user.id).map((o) => ({
+  const items0: PortalItem[] = portalObsList(db, user).map((o) => ({ o, type: "Internal" }));
+  const withdrawn0: PortalItem[] = portalWithdrawnObs(db, user).map((o) => ({
     o,
     type: "Internal",
   }));
@@ -38,11 +54,11 @@ export default function MyObsPage() {
         <OwnerAnnounce userId={user.id} />
         <div className="card">
           <Empty big="✦">
-            No internal observations assigned to you yet.
+            No internal observations for your department yet.
             <br />
             <br />
             When Internal Audit raises an observation against your department, it appears here for
-            you to respond, add updates and evidence.
+            anyone in the department to respond, add updates and evidence.
           </Empty>
         </div>
       </>
@@ -50,22 +66,37 @@ export default function MyObsPage() {
   }
 
   const byCrit = (x: PortalItem) => crit === "All" || x.o.criticality === crit;
+  const byScope = (x: PortalItem) => scope === SCOPE_ALL || isAssignedTo(x.o, user.id);
   // Withdrawn observations are not in `items0` at all, so they are filtered on their own — and
   // they carry no live status, which is why "Withdrawn" is a bucket rather than a status value.
   const items = items0
     .filter(byCrit)
+    .filter(byScope)
     .filter((x) => status === "All" || ownerStatusOf(x.o) === status);
-  const withdrawn = withdrawn0.filter(byCrit);
+  const withdrawn = withdrawn0.filter(byCrit).filter(byScope);
   const showWithdrawn = status === "All" || status === WITHDRAWN;
   const shown = (status === WITHDRAWN ? 0 : items.length) + (showWithdrawn ? withdrawn.length : 0);
   const total = items0.length + withdrawn0.length;
-  const filtersActive = crit !== "All" || status !== "All";
+  const filtersActive = crit !== "All" || status !== "All" || scope !== SCOPE_ALL;
 
   return (
     <>
       <OwnerAnnounce userId={user.id} />
       <div className="card" style={{ padding: "12px 16px", marginBottom: 4 }}>
         <div className="row" style={{ gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <div className="filter-group">
+            <span className="filter-label" id="mo-scope">Show</span>
+            <select
+              className="field-select field-select-sm"
+              aria-labelledby="mo-scope"
+              value={scope}
+              onChange={(e) => setScope(e.target.value)}
+            >
+              {[SCOPE_ALL, SCOPE_MINE].map((t) => (
+                <option key={t}>{t}</option>
+              ))}
+            </select>
+          </div>
           <div className="filter-group">
             <span className="filter-label" id="mo-status">Status</span>
             <select
@@ -99,6 +130,7 @@ export default function MyObsPage() {
               onClick={() => {
                 setCrit("All");
                 setStatus("All");
+                setScope(SCOPE_ALL);
               }}
             >
               Clear
