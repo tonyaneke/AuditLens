@@ -3268,16 +3268,27 @@ td.timeline-cell {
   letter-spacing: -0.02em;
 }
 
+/* The hairlines between meta cells used to be the CONTAINER's background showing through the 1px
+   gaps. That also painted every UNUSED cell of the final row — five items in a four-column grid
+   left three-quarters of a row filled in as a solid slab under "Created", which read as a layout
+   bug rather than a divider. The cells draw their own hairlines instead (into the same 1px gaps,
+   so the grid looks identical), and an unused cell now paints nothing at all. */
 .obs-detail-meta {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 1px;
-  background: var(--line);
+  background: transparent;
   border-bottom: 1px solid var(--line);
 }
 
 .obs-meta-item {
   background: #f8fafb;
+  /* left/right fill the vertical gaps; top draws the rule between rows. The bottom edge is the
+     container's border-bottom, so it stays full width however few cells the last row holds. */
+  box-shadow:
+    -1px 0 0 var(--line),
+    1px 0 0 var(--line),
+    0 -1px 0 var(--line);
   padding: 14px 18px;
   display: flex;
   flex-direction: column;
