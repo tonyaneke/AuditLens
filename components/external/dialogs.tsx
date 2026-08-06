@@ -23,6 +23,7 @@ import {
 import {
   departments,
   notifyBoth,
+  notifyDeptOfObs,
   notifyOwnerAssigned,
 } from "@/lib/workspace/observations";
 import { isoNow, uid } from "@/lib/workspace/selectors";
@@ -407,6 +408,14 @@ export function ExtRaiseDialog() {
       finding.secondaryOwner = dept2 ? dept2.headName : "";
       ensureExtList(d).push(finding);
       notifyOwnerAssigned(d, finding as unknown as Observation);
+      // The rest of the department can see and answer it too — tell them (bell only).
+      notifyDeptOfObs(
+        d,
+        finding as unknown as Observation,
+        "assigned",
+        "Raised against your department: " + finding.title,
+        "myext",
+      );
       modal.closeAll();
       modal.success(
         finding.ownerUserId

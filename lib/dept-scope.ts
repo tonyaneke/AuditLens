@@ -187,6 +187,16 @@ export function inDeptScope(
   return !!secondary && scope.ownerIds.has(String(secondary));
 }
 
+/** A department name as it should be shown in a tag or pill: the trailing "Department" dropped,
+ *  because in a badge beside "Finance" or "Legal" the word is noise — it is already obvious that
+ *  a department is what is being named. The stored value is untouched; this is display only. */
+export function deptLabel(name: unknown): string {
+  return String(name ?? "")
+    .trim()
+    .replace(/\s+department$/i, "")
+    .trim();
+}
+
 /** Name of the department a record belongs to, for display ("Raised against Finance Department").
  *  Resolves through departmentId first, then the owner, mirroring inDeptScope(). */
 export function deptNameOf(db: DeptSource | null | undefined, rec: DeptScoped | null | undefined): string {

@@ -104,6 +104,18 @@ export function portalWithdrawnObs(db: WorkspaceDb, user: PortalUser | undefined
   return withdrawnObsAll(db).filter((o) => isMineOrMyDept(o, user?.id, scope));
 }
 
+/** Every external finding this user's portal shows: theirs plus their department's.
+ *  Mirrors canSeeExt() in lib/workspace-scope.ts — no approval gate, because a regulator's
+ *  finding has no draft state. */
+export function portalExtList(db: WorkspaceDb, user: PortalUser | undefined): ExtFinding[] {
+  const scope = scopeOf(db, user);
+  return extList(db).filter(
+    (f) =>
+      (user?.id && ((f.ownerUserId && f.ownerUserId === user.id) || (f.secondaryOwnerUserId && f.secondaryOwnerUserId === user.id))) ||
+      inDeptScope(f, scope),
+  );
+}
+
 /** True when this record is assigned to the person directly — used to label a card
  *  "Assigned to you" among their department's other items. Structural rather than typed to
  *  Observation so the portal cards, which also carry external findings, can use one rule. */
@@ -138,9 +150,10 @@ export function myObsPendingCount(db: WorkspaceDb, user: PortalUser | undefined)
   ).length;
 }
 
-/** External findings awaiting this owner's response. */
-export function myExtPendingCount(db: WorkspaceDb, userId: string | undefined): number {
-  return myExtList(db, userId).filter(
+/** External findings awaiting a response from this user's department — department-wide for the
+ *  same reason as observations: any member can now answer any of them. */
+export function myExtPendingCount(db: WorkspaceDb, user: PortalUser | undefined): number {
+  return portalExtList(db, user).filter(
     (f) => (f.status || "Open") !== "Closed" && !f.ownerRectifiedAt,
   ).length;
 }

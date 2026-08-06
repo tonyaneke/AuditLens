@@ -250,7 +250,7 @@ function ApprovalsBadge() {
 /* Action-owner portal: a red count on a portal item shows how many items are still open and
    awaiting a response, so they can see what is outstanding without opening each page.
    Items already sent back to Internal Audit are excluded — the ball is not with them.
-   Observations count the whole DEPARTMENT (anyone in it can answer them); external findings and
+   Observations and external findings count the whole DEPARTMENT (anyone in it can answer them);
    fraud actions stay personal, because those are still assigned to an individual. */
 function PendingDot({ view, user }: { view: ViewKey; user: SessionUser }) {
   const { db } = useWorkspace();
@@ -258,15 +258,15 @@ function PendingDot({ view, user }: { view: ViewKey; user: SessionUser }) {
     view === "myobs"
       ? myObsPendingCount(db, user)
       : view === "myext"
-        ? myExtPendingCount(db, user.id)
+        ? myExtPendingCount(db, user)
         : view === "myfraud"
           ? myFraudPendingCount(db, user.id)
           : 0;
   if (!n) return null;
   const label =
-    view === "myobs"
-      ? `${n} open item${n === 1 ? "" : "s"} awaiting a response from your department`
-      : `${n} open item${n === 1 ? "" : "s"} awaiting your response`;
+    view === "myfraud"
+      ? `${n} open item${n === 1 ? "" : "s"} awaiting your response`
+      : `${n} open item${n === 1 ? "" : "s"} awaiting a response from your department`;
   return (
     <span className="nav-badge" title={label} aria-label={label}>
       {n}

@@ -432,8 +432,11 @@ console.log("\n== SEC-01: department-scoped observations ==");
   const theirs = scopeWorkspace(cur, viewerFor(outsider, cur)) as any;
   ok(!findObs(theirs, "o1"), "a different department sees nothing of Credit's");
 
-  // Departments do NOT widen the other registers — those are still assigned to an individual.
-  ok(!findExt(mine, "e1"), "external findings are not department-scoped");
+  /* External findings ARE department-scoped too (2026-08-06). e1 is own1's — the head of Credit —
+     so a Credit colleague sees it; e2 belongs to own2 and must stay hidden. */
+  ok(!!findExt(mine, "e1"), "a colleague sees their department's external finding");
+  ok(!findExt(mine, "e2"), "another department's external finding is withheld");
+  // The fraud register is NOT — those actions are still assigned to an individual.
   ok(!(mine.fraudRisks || []).length, "the fraud register is not department-scoped");
 
   // A pending observation is not yet a finding: the department must not see it before approval.
@@ -488,9 +491,20 @@ console.log("\n== A colleague may remediate, but no more than an owner can ==");
   // And a colleague of one department cannot reach into another's, even by echoing it back.
   const served3 = clone(slimForClient(cur, viewerFor(colleague, cur)));
   served3.audits[0].reports[0].observations.push({ ...findObs(cur, "o2"), ownerResponse: "not mine" });
+  served3.extFindings.push({ ...findExt(cur, "e2"), ownerResponse: "not mine either" });
   const r3 = authorizeWorkspaceWrite(colleague.role, colleague.id, cur, served3, undefined, colleague.department);
   ok(findObs(r3.data, "o2").ownerResponse === undefined, "another department's observation stays untouched");
+  ok(findExt(r3.data, "e2").ownerResponse === undefined, "another department's external finding stays untouched");
   ok(r3.violations.includes("out_of_scope_write:obs:o2"), "the out-of-scope write is recorded");
+  ok(r3.violations.includes("out_of_scope_write:ext:e2"), "the out-of-scope external write is recorded");
+
+  // The legitimate case: a colleague remediating their department's external finding.
+  const served4 = clone(slimForClient(cur, viewerFor(colleague, cur)));
+  findExt(served4, "e1").ownerResponse = "Access matrix reissued.";
+  findExt(served4, "e1").ownerRectifiedAt = "2026-08-06T09:00:00.000Z";
+  const r4 = authorizeWorkspaceWrite(colleague.role, colleague.id, cur, served4, undefined, colleague.department);
+  ok(findExt(r4.data, "e1").ownerResponse === "Access matrix reissued.", "a colleague can remediate their department's external finding");
+  ok(findExt(r4.data, "e1").status === "In Progress", "its status transition is derived server-side too");
 }
 
 /* ================= two departments at once (2026-08-06) =================

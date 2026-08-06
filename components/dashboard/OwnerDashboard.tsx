@@ -20,7 +20,12 @@ import {
   today0,
   type ObsWithContext,
 } from "@/lib/workspace/selectors";
-import { myFraudActionsFor, myFraudRisks, portalObsList } from "@/lib/workspace/portal";
+import {
+  myFraudActionsFor,
+  myFraudRisks,
+  portalExtList,
+  portalObsList,
+} from "@/lib/workspace/portal";
 import type { ExtFinding, FraudAction, FraudRisk } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 
@@ -43,16 +48,12 @@ export default function OwnerDashboard() {
   const user = useUser();
   const router = useRouter();
 
-  /* Internal observations are the DEPARTMENT's (2026-08-05) — anyone in it can answer any of them,
-     so a dashboard counting only the ones bearing this person's name understated what the
-     department owed. External findings and fraud actions are unchanged: those stay assigned to an
-     individual. */
+  /* Both registers are the DEPARTMENT's (observations 2026-08-05, external findings 2026-08-06) —
+     anyone in it can answer any of them, so a dashboard counting only the ones bearing this
+     person's name understated what the department owed. Fraud actions are unchanged: those are
+     still assigned to an individual. */
   const intMine = portalObsList(db, user);
-  const extMine = extList(db).filter(
-    (f) =>
-      (f.ownerUserId && f.ownerUserId === user.id) ||
-      (f.secondaryOwnerUserId && f.secondaryOwnerUserId === user.id),
-  );
+  const extMine = portalExtList(db, user);
   const intOpen = intMine.filter((o) => o.status !== "Closed");
   const extOpen = extMine.filter((f) => f.status !== "Closed");
   const intOverdue = intOpen.filter((o) => isOverdueObs(o, o._r));

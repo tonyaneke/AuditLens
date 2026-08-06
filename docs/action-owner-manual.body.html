@@ -91,7 +91,7 @@
   <p class="p">The dashboard is the first view after sign-in, and is reached at any time by clicking
   <b>Dashboard</b> at the top of the side navigation bar.</p>
   <p class="p">You see a single <b>Needs attention</b> list, drawing together every internal observation
-  raised against your department, plus the external findings and fraud prevention actions assigned to you
+  and external finding raised against your department, plus the fraud prevention actions assigned to you
   personally — with its type, the audit it came from, its priority, its expected close date and its current
   status. Click any row to open the item and respond. If the list is empty, nothing is outstanding.</p>
   <p class="p">The counters above it read the same way: <b>My department</b> is everything your department
@@ -107,8 +107,8 @@
       <tbody>
         <tr><th>Internal Observations</th><td>Findings raised against your department by Internal Audit —
           all of them, whoever they are assigned to.</td></tr>
-        <tr><th>External Observations</th><td>Findings raised by regulators and external auditors, assigned
-          to you personally.</td></tr>
+        <tr><th>External Observations</th><td>Findings raised against your department by regulators and
+          external auditors — all of them, whoever they are assigned to.</td></tr>
         <tr><th>Fraud Risk Control Tracker</th><td>Fraud prevention actions assigned to you, each with its
           control type, target date and status.</td></tr>
       </tbody>
@@ -116,7 +116,8 @@
   </div>
   <p class="p">A red count on a Portal item shows how much is still open and awaiting a response. On
   <b>Internal Observations</b> that count is your whole department's, because any of you can answer any of
-  them; on the other two it is yours alone. Items already sent back to Internal Audit are <b>not</b>
+  them, and the same on <b>External Observations</b>; on the fraud tracker it is yours alone. Items already
+  sent back to Internal Audit are <b>not</b>
   counted — so the number falling to zero means nothing is with the department, not that everything is
   closed.</p>
   <p class="p">The rest of AuditLens — the audit files, the reports, the assessment modules and
@@ -198,13 +199,15 @@
   <div class="note">
     <b>Note.</b> Comments marked private are visible to your department only — they are not shared with
     Internal Audit. Everything else in the conversation is. Anyone in the department can comment on any of
-    its observations and anyone can mark one Ready for Closure, whether or not they are the named owner.
+    its observations or external findings, and anyone can mark one Ready for Closure, whether or not they
+    are the named owner.
   </div>
 
   <h3 id="s2-4"><span class="n">2.4</span>External Observations</h3>
   <ol class="steps">
     <li>Click <b>External Observations</b> in the Portal group.</li>
-    <li>Review the findings raised against your department by regulators and external auditors.</li>
+    <li>Review the findings raised against your department by regulators and external auditors — all of them,
+    whoever they are assigned to. Use the <b>Show</b> filter to narrow it to your own.</li>
     <li>Open a finding, respond, attach evidence and mark it ready for closure — the workflow is the same
     one described in <a href="#s3">Section 3</a>.</li>
   </ol>
@@ -407,6 +410,9 @@
         <tr><th>My department is wrong in AuditLens.</th>
           <td>Tell the Head of Internal Audit. Your department is what decides which observations you see,
           so an out-of-date one shows you the wrong list.</td></tr>
+        <tr><th>Does this apply to external findings too?</th>
+          <td>Yes. Regulatory and external-auditor findings work exactly like internal observations —
+          everyone in the department sees them and any of you can respond and send one for closure.</td></tr>
         <tr><th>I cover two departments.</th>
           <td>Both can be set on your account, and both show you the same full access — you will see the
           observations of each. Ask the Head of Internal Audit to add the second one.</td></tr>

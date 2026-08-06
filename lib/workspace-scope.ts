@@ -126,10 +126,16 @@ export function canSeeObs(o: Obj, viewer: Viewer): boolean {
   return obsApproved(o) || obsWithdrawn(o);
 }
 
-/** Mirrors myExtList(). */
+/** Mirrors portalExtList(): assigned to them, or raised against their department.
+ *
+ *  Department-scoped since 2026-08-06, for the same reason observations are — and the case that
+ *  forced it: all seven of the NDPC data-protection findings against the Office of the Managing
+ *  Director sat with one person, so the other four in that office could not see, answer or even
+ *  know about them. Unlike an observation there is no approval gate: a regulator's finding is real
+ *  the moment it is recorded, so there is no draft state to withhold. */
 export function canSeeExt(f: Obj, viewer: Viewer): boolean {
   if (isFullScope(viewer)) return true;
-  return ownedBy(f, viewer.id);
+  return ownedBy(f, viewer.id) || inDeptScope(f, viewer.dept);
 }
 
 /** Mirrors myFraudRisks(): the risk is theirs, or any of its prevention actions is individually

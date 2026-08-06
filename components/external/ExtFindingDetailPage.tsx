@@ -10,6 +10,7 @@ import { useModal } from "@/components/modals/ModalProvider";
 import { BackButton, StatusPill } from "@/components/ui";
 import { DetailHero, Meta, Section } from "@/components/audits/detail-parts";
 import ObsRemediation from "@/components/audits/ObsRemediation";
+import { deptLabel, deptNameOf } from "@/lib/dept-scope";
 import { ensureExtList } from "@/lib/workspace/external";
 import { isActionOwner, isHead } from "@/lib/workspace/observations";
 import { ck, fmtDate, isoToDate } from "@/lib/workspace/selectors";
@@ -119,6 +120,9 @@ export default function ExtFindingDetailPage({ fid }: { fid: string }) {
               <span className="pill repeat-pill" title={f.repeatOf || "Repeat finding"}>↻ REPEAT</span>
             ) : null}
             <span className="tag">External</span>
+            {deptLabel(deptNameOf(db, f)) ? (
+              <span className="tag">{deptLabel(deptNameOf(db, f))}</span>
+            ) : null}
             {f.theme ? <span className="tag">Theme: {f.theme}</span> : null}
             {f.source ? <span className="tag">{f.source}</span> : null}
             {f.sourceRef ? <span className="tag">Ref: {f.sourceRef}</span> : null}

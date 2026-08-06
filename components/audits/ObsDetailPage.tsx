@@ -16,6 +16,7 @@ import { toast } from "@/components/feedback/ToastHost";
 import { useModal } from "@/components/modals/ModalProvider";
 import { BackButton, CritPill, StatusPill } from "@/components/ui";
 import { logAudit } from "@/lib/client/audit-log";
+import { deptLabel, deptNameOf } from "@/lib/dept-scope";
 import {
   canVerifyItem,
   cancelPendingDelete,
@@ -196,6 +197,9 @@ export default function ObsDetailPage({
           <ApprovalBadge approval={o.obsApproval} />
           {o.isRepeat ? (
             <span className="pill repeat-pill" title={o.repeatOf || "Repeat finding"}>↻ REPEAT</span>
+          ) : null}
+          {deptLabel(deptNameOf(db, o)) ? (
+            <span className="tag">{deptLabel(deptNameOf(db, o))}</span>
           ) : null}
           {o.category ? <span className="tag">{String(o.category)}</span> : null}
           {obsWithdrawStage(o) ? <span className={`pill ${ck(o.criticality)}`}>under review</span> : null}

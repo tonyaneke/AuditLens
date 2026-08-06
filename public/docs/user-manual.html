@@ -651,8 +651,8 @@ html{scroll-behavior:smooth}
           <td>Staff in the departments observations are raised against</td>
           <td>Sees their own dashboard and the three Portal sections. Sees every internal observation raised against
           their department — not only the ones assigned to them by name — and any of them can respond, attach
-          evidence and mark an item Ready for Closure. External findings and fraud actions remain scoped to the
-          individual they are assigned to.</td>
+          evidence and mark an item Ready for Closure. The same applies to external / regulatory findings. Fraud
+          prevention actions remain scoped to the individual they are assigned to.</td>
         </tr>
         <tr>
           <th>Admin</th>
@@ -746,7 +746,8 @@ html{scroll-behavior:smooth}
   </div>
   <p class="p">A red count on <b>Approvals</b> shows how many requests are waiting on you. A red count on a Portal item
   shows how much is still open and awaiting a response — on <b>Internal Observations</b> that is the whole
-  department's, because any of its members can answer any of them; on the other two it is the individual's. Items
+  department's, and the same on <b>External Observations</b>, because any of its members can answer any of
+  them; on <b>Fraud Risk Control Tracker</b> it is the individual's. Items
   already sent back to Internal Audit are not counted.</p>
   <p class="p">Below the navigation groups are your name, role and, for the Head of Audit, a menu button
   (<b>⋮</b>) giving access to <b>Settings</b> and the <b>Audit log</b>.</p>
@@ -1481,8 +1482,9 @@ html{scroll-behavior:smooth}
     <div class="sec-num">Section 8</div>
     <h2>Action Owner Portal</h2>
     <p class="sec-lede">This section is for staff holding an <b>Action Owner</b> account. The Portal group in your
-    side navigation bar holds your department's internal observations and the external findings and fraud actions
-    assigned to you. A red count on an item shows how much is still open and awaiting a response.</p>
+    side navigation bar holds your department's internal observations and external findings, plus the fraud
+    prevention actions assigned to you. A red count on an item shows how much is still open and awaiting a
+    response.</p>
   </div>
 
   <h3 id="s8-1"><span class="n">8.1</span>Internal Observations</h3>
@@ -1506,7 +1508,9 @@ html{scroll-behavior:smooth}
   <h3 id="s8-2"><span class="n">8.2</span>External Observations</h3>
   <ol class="steps">
     <li>Click <b>External Observations</b> in the Portal group.</li>
-    <li>Review the findings raised against your department by regulators and external auditors.</li>
+    <li>Review the findings raised against your department by regulators and external auditors — all of them,
+    whoever they are assigned to. The <b>Show</b> filter switches between <b>My department</b> and <b>Assigned to
+    me</b>, as it does on the internal register.</li>
     <li>Open a finding, respond, attach evidence, and mark it ready for closure. The workflow matches
     <a href="#s4">Section 4</a>.</li>
   </ol>
@@ -1816,7 +1820,8 @@ html{scroll-behavior:smooth}
       <tbody>
         <tr><th>View the dashboard</th><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Own department only</td></tr>
         <tr><th>See an internal observation</th><td class="yes">All</td><td class="yes">All</td><td class="yes">Every one raised against their department, once approved</td></tr>
-        <tr><th>See an external finding or fraud action</th><td class="yes">All</td><td class="yes">All</td><td class="yes">Only those assigned to them</td></tr>
+        <tr><th>See an external finding</th><td class="yes">All</td><td class="yes">All</td><td class="yes">Every one raised against their department</td></tr>
+        <tr><th>See a fraud prevention action</th><td class="yes">All</td><td class="yes">All</td><td class="yes">Only those assigned to them</td></tr>
         <tr><th>Create an audit engagement</th><td class="yes">Yes</td><td class="no">No</td><td class="no">No</td></tr>
         <tr><th>Add reports and build the audit plan</th><td class="yes">Yes</td><td class="yes">Yes</td><td class="no">No</td></tr>
         <tr><th>Raise an observation</th><td class="yes">Raised immediately</td><td class="yes">Submitted for approval</td><td class="no">No</td></tr>

@@ -9,10 +9,12 @@ import { useState, useSyncExternalStore, type ReactNode } from "react";
 import { useUser } from "@/components/chrome/UserContext";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import { CritPill, Empty, StatusPill, TintPill } from "@/components/ui";
+import { deptLabel, deptNameOf } from "@/lib/dept-scope";
 import { hrefForView, isLegacyPath } from "@/lib/routes";
 import { EXT_SEV_HEX, isAssignedTo } from "@/lib/workspace/portal";
 import { effectiveClose, fmtDate, type ObsWithContext } from "@/lib/workspace/selectors";
 import type { ExtFinding } from "@/lib/workspace/types";
+import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 
 /* ---------------- card list item ---------------- */
 
@@ -23,11 +25,16 @@ export type PortalItem =
 export function MyObsCard({ item }: { item: PortalItem }) {
   const router = useRouter();
   const user = useUser();
+  const { db } = useWorkspace();
   const ext = item.type === "External";
   const o = item.o;
-  /* The portal lists the whole department's observations, so each card has to say whether this is
-     yours to answer or a colleague's — without it the list reads as "all of this is on me". */
+  /* The portal lists the whole department's items, so each card has to say whether this is yours
+     to answer or a colleague's — without it the list reads as "all of this is on me". */
   const mine = isAssignedTo(o, user.id);
+  /* And which department it belongs to, which matters most to the people who cover two: the Chief
+     of Staff's list mixes the MD's office with Corporate Communications, and without the tag there
+     is nothing on the card to tell them apart. */
+  const dept = deptLabel(deptNameOf(db, o));
 
   function open() {
     const href = ext
@@ -65,6 +72,7 @@ export function MyObsCard({ item }: { item: PortalItem }) {
           <CritPill crit={(o as ObsWithContext).criticality} />
         )}
         <span className="tag">{item.type}</span>
+        {dept ? <span className="tag">{dept}</span> : null}
         <StatusPill status={o.status} />
         {rfc ? (
           <span
@@ -78,12 +86,8 @@ export function MyObsCard({ item }: { item: PortalItem }) {
       <div className="myobs-card-title">{o.title}</div>
       <div className="myobs-card-meta">
         {ctx}
-        {!ext ? (
-          <>
-            {" · "}
-            {mine ? "Assigned to you" : `Owner: ${o.owner || "unassigned"}`}
-          </>
-        ) : null}
+        {" · "}
+        {mine ? "Assigned to you" : `Owner: ${o.owner || "unassigned"}`}
       </div>
       {ecStr ? (
         <div className="myobs-card-foot">
