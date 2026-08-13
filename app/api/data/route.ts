@@ -149,7 +149,7 @@ export async function PUT(request: Request) {
     }
   }
 
-  const { data: authorized, violations } = authorizeWorkspaceWrite(
+  const { data: authorized, violations, notices } = authorizeWorkspaceWrite(
     session.role,
     session.id,
     current,
@@ -199,6 +199,25 @@ export async function PUT(request: Request) {
       category: "security",
       summary: `Reconciled ${violations.length} disallowed change(s) from a ${session.role} workspace write`,
       metadata: { violations: violations.slice(0, 50), count: violations.length },
+    }).catch(() => {});
+  }
+
+  /* Changes that were ALLOWED but must stay attributable — see AuthzResult.notices. The workspace
+     document's own trail is written by the client (logAudit), so it proves nothing about a caller
+     who simply skips it; this entry is server-asserted. The `security.` prefix is load-bearing:
+     SERVER_ONLY_ACTION_AREAS in lib/audit-log.ts refuses that area from the client-reported
+     endpoint, so nothing can forge or drown out these rows. */
+  if (notices.length) {
+    const reassignments = notices.filter((n) => n.startsWith("audit_lead_reassigned:")).length;
+    await writeAuditLog({
+      user: session,
+      action: "security.audit_governance_changed",
+      category: "security",
+      summary:
+        `A ${session.role} changed audit governance metadata (${notices.length} field(s)` +
+        (reassignments ? `, including ${reassignments} lead-auditor reassignment(s)` : "") +
+        ")",
+      metadata: { notices: notices.slice(0, 50), count: notices.length, reassignments },
     }).catch(() => {});
   }
 

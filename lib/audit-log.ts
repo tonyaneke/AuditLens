@@ -122,6 +122,7 @@ export function actionLabel(action: string) {
     "exco.sent": "EXCO brief sent",
     "exco.brief_deleted": "EXCO brief deleted",
     "security.workspace_write_filtered": "Disallowed workspace changes reverted",
+    "security.audit_governance_changed": "Audit governance metadata changed",
     "security.unversioned_write_rejected": "Save refused — no version token",
     "security.unversioned_write_allowed": "Save accepted without a version token",
     "auth.login_blocked": "Sign-in blocked",

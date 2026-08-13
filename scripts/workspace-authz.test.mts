@@ -287,6 +287,40 @@ console.log("\n== Staff fieldwork on the audit plan persists (was silently disca
   ok(rOwner.data.audits[0].plan.tests[0].result === "Not Tested", "an action owner cannot write the test programme");
 }
 
+console.log("\n== Allowed governance changes are attributable server-side (notices) ==");
+{
+  /* Staff may reassign the lead auditor, which is a GRANT — half of canVerifyItem(). The client's
+     own logAudit call cannot evidence it (a crafted client skips it), so the server records it. */
+  const cur = baseWorkspace();
+  // From the served payload, not raw storage — otherwise the withheld SOP PDF and brief token
+  // ride back and register as locked-section violations, masking the assertion below.
+  const inc = clone(slimForClient(cur, { id: STAFF.id, role: "audit_staff" } as any));
+  inc.audits[0].leadAuditorId = STAFF2.id;
+  inc.audits[0].name = "Credit & Collections Audit";
+  const r = authorizeWorkspaceWrite(STAFF.role, STAFF.id, cur, inc);
+  ok(r.notices.includes("audit_lead_reassigned:a1:staff1->staff2"), "lead-auditor reassignment is recorded with both ids");
+  ok(r.notices.includes("audit_meta:a1:name:Credit Audit->Credit & Collections Audit"), "a rename is recorded with both values");
+  ok(r.violations.length === 0, "none of it is a violation — the change is allowed, just attributed");
+
+  // Routine fieldwork must not drown those rows out.
+  const incWork = clone(cur);
+  incWork.audits[0].plan.tests[0].result = "Exception";
+  incWork.audits[0].tor = { background: "revised" };
+  const rWork = authorizeWorkspaceWrite(STAFF.role, STAFF.id, cur, incWork);
+  ok(rWork.notices.length === 0, "editing the plan or TOR raises no notice");
+
+  // The Head is trusted wholesale and is already identified by the session on every write.
+  const incHead = clone(cur); incHead.audits[0].leadAuditorId = STAFF2.id;
+  const rHead = authorizeWorkspaceWrite(HEAD.role, HEAD.id, cur, incHead);
+  ok(rHead.notices.length === 0, "the head's own reassignment raises no notice");
+
+  // An owner cannot change it at all, so it stays a violation rather than a notice.
+  const incOwner = clone(cur); incOwner.audits[0].leadAuditorId = OWNER.id;
+  const rOwner = authorizeWorkspaceWrite(OWNER.role, OWNER.id, cur, incOwner);
+  ok((rOwner.data.audits as any[])[0].leadAuditorId === "staff1", "an owner's reassignment is reverted");
+  ok(rOwner.notices.length === 0, "and is not recorded as an allowed change");
+}
+
 console.log("\n== Only the item's auditor may sign off — not just any audit staff ==");
 {
   /* canVerifyItem() (lib/workspace/observations.ts) allows the lead auditor, the auditor who
@@ -348,7 +382,7 @@ console.log("\n== Only the item's auditor may sign off — not just any audit st
   incGrab.audits[0].leadAuditorId = STAFF2.id;
   incGrab.audits[0].reports[0].observations[0].reportVerifiedAt = "2026-08-11T09:00:00Z";
   const rGrab = authorizeWorkspaceWrite(STAFF2.role, STAFF2.id, cur, incGrab);
-  ok(rGrab.data.audits![0].leadAuditorId === STAFF2.id, "the reassignment itself is allowed");
+  ok((rGrab.data.audits as any[])[0].leadAuditorId === STAFF2.id, "the reassignment itself is allowed");
   ok(findObs(rGrab.data, "o1").reportVerifiedAt == null, "but it does not grant verification in the same save");
 }
 

@@ -115,8 +115,28 @@ const AUDITOR_ONLY_OBS_FIELDS = [
 const WITHDRAWAL_HEAD_FIELDS = ["headBy", "headByName", "headAt", "headReason"];
 const WITHDRAWAL_FINAL_STAGES = ["withdrawn", "rejected"];
 
+/* Audit governance metadata — the "✎ Edit Audit" dialog. Staff may write all of it (see
+   reconcileAudits), but unlike routine fieldwork these changes are worth a server-side record:
+
+     leadAuditorId  privilege-bearing. It is half of canVerifyItem(), so reassigning it grants the
+                    sign-off right on that engagement — across two saves, a staff member can move
+                    it to themselves and then verify. That has to be attributable.
+     name / status / …  a rename or a premature "Completed" silently rewrites what the Word
+                    exports and the EXCO brief say about an engagement already reported on.
+
+   `plan` and `tor` are deliberately absent: recording a test result is ordinary fieldwork and
+   would bury the entries above in noise. */
+const AUDIT_GOVERNANCE_FIELDS = [
+  "name", "type", "area", "period", "status", "leadAuditor", "leadAuditorId",
+];
+
 type Obj = Record<string, unknown>;
-export type AuthzResult = { data: WorkspaceDb; violations: string[] };
+
+/** `violations` are changes that were REVERTED. `notices` are changes that were ALLOWED but are
+ *  worth attributing — the workspace document's own audit trail is written by the client
+ *  (logAudit), so it is advisory: a crafted client simply omits it. Anything the server must be
+ *  able to prove after the fact belongs here. Both are recorded by app/api/data/route.ts. */
+export type AuthzResult = { data: WorkspaceDb; violations: string[]; notices: string[] };
 
 function jsonEq(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
@@ -149,11 +169,12 @@ export function authorizeWorkspaceWrite(
   const effective = viewer.role;
 
   // The Head of Audit is fully trusted with the workspace document.
-  if (effective === HEAD_ROLE) return { data: incoming, violations: [] };
+  if (effective === HEAD_ROLE) return { data: incoming, violations: [], notices: [] };
 
   const cur = (current || {}) as Obj;
   const inc = (incoming || {}) as Obj;
   const violations: string[] = [];
+  const notices: string[] = [];
 
   // Start from the stored document — this locks every head-only section by default...
   const next = structuredClone(cur) as Obj;
@@ -173,7 +194,15 @@ export function authorizeWorkspaceWrite(
     viewer,
     violations,
   );
-  next.audits = reconcileAudits(asArray(cur.audits), asArray(inc.audits), effective, userId, viewer, violations);
+  next.audits = reconcileAudits(
+    asArray(cur.audits),
+    asArray(inc.audits),
+    effective,
+    userId,
+    viewer,
+    violations,
+    notices,
+  );
   next.approvals = reconcileApprovals(
     asArray(cur.approvals),
     asArray(inc.approvals),
@@ -207,7 +236,7 @@ export function authorizeWorkspaceWrite(
     if (!jsonEq(inc[key], shown[key])) violations.push(`section:${key}`);
   }
 
-  return { data: next as WorkspaceDb, violations };
+  return { data: next as WorkspaceDb, violations, notices };
 }
 
 function reconcileAudits(
@@ -217,6 +246,7 @@ function reconcileAudits(
   userId: string,
   viewer: Viewer,
   violations: string[],
+  notices: string[],
 ): Obj[] {
   const incById = new Map(incAudits.map((a) => [a.id as string, a]));
   const curIds = new Set(curAudits.map((a) => a.id as string));
@@ -251,6 +281,7 @@ function reconcileAudits(
        `incA` wholesale cannot blank a field they never received. `id` is pinned because it keyed
        this match. A scoped viewer never reaches here as STAFF_ROLE, so their audit stays locked. */
     const outA: Obj = role === STAFF_ROLE ? { ...incA, id: curA.id } : { ...curA };
+    if (role === STAFF_ROLE) noteGovernanceChanges(curA, incA, notices);
     outA.reports = reconcileReports(
       asArray(curA.reports),
       asArray(incA.reports),
@@ -267,6 +298,22 @@ function reconcileAudits(
     if (!curIds.has(incA.id as string)) violations.push(`audit_create_blocked:${incA.id}`);
   }
   return out;
+}
+
+/** Record a non-head change to an audit's governance metadata. The change is ALLOWED — this only
+ *  makes it attributable server-side, where the client's own logAudit call cannot be relied on.
+ *  Reassigning the lead auditor is called out separately because it is a grant, not just an edit:
+ *  it is half of canVerifyItem(), so it hands the sign-off right on that engagement to someone. */
+function noteGovernanceChanges(curA: Obj, incA: Obj, notices: string[]): void {
+  const shown = (v: unknown) => (v === undefined || v === null || v === "" ? "—" : String(v));
+  for (const f of AUDIT_GOVERNANCE_FIELDS) {
+    if (jsonEq(incA[f], curA[f])) continue;
+    if (f === "leadAuditorId") {
+      notices.push(`audit_lead_reassigned:${curA.id}:${shown(curA[f])}->${shown(incA[f])}`);
+    } else {
+      notices.push(`audit_meta:${curA.id}:${f}:${shown(curA[f])}->${shown(incA[f])}`);
+    }
+  }
 }
 
 /** True when any observation inside this audit is visible to the viewer — i.e. the audit was part
