@@ -48,6 +48,15 @@ function baseWorkspace(): any {
     audits: [
       {
         id: "a1", name: "Credit Audit", leadAuditorId: "staff1", area: "Credit", status: "In progress",
+        // The engagement work product: staff record fieldwork results straight onto plan.tests.
+        plan: {
+          scope: "Credit origination", objectives: ["Confirm approval limits"], keyRisks: ["Override"],
+          tests: [{
+            id: "t1", ref: "T1", title: "Consent for Third-Party Data", objective: "Confirm valid consent",
+            result: "Not Tested", resultNotes: "", testedBy: "", testedDate: "", evidenceRef: "",
+          }],
+        },
+        tor: { background: "orig background" },
         reports: [{
           id: "r1", title: "Loan Controls", refNo: "IA/01", status: "Final", execSummary: "orig",
           observations: [
@@ -80,6 +89,8 @@ function baseWorkspace(): any {
 }
 const HEAD = { role: "head_of_audit", id: "head1" };
 const STAFF = { role: "audit_staff", id: "staff1" };
+// Audit staff who lead no engagement and raised nothing — the control for canVerifyItem.
+const STAFF2 = { role: "audit_staff", id: "staff2" };
 const OWNER = { role: "action_owner", id: "own1" };
 const findObs = (w: any, id: string) =>
   (w.audits || []).flatMap((a: any) => (a.reports || []).flatMap((r: any) => r.observations || []))
@@ -203,19 +214,142 @@ console.log("\n== Action owner: remediation passes, verification blocked, cannot
   ok(r.violations.includes("obs_create_blocked:oX"), "owner obs-create block recorded");
 }
 
-console.log("\n== Staff may edit report metadata, but not delete a report or edit the audit ==");
+console.log("\n== Staff may edit report and audit metadata, but not delete a report ==");
 {
   const cur = baseWorkspace(); const inc = clone(cur);
   inc.audits[0].reports[0].execSummary = "staff updated summary"; // report edit — allowed
-  inc.audits[0].name = "Renamed audit";                            // audit edit — head only
+  inc.audits[0].name = "Renamed audit";                            // audit edit — allowed since 2026-08-12
+  inc.audits[0].status = "Completed";
+  inc.audits[0].period = "Q3 2026";
   const r = authorizeWorkspaceWrite(STAFF.role, STAFF.id, cur, inc);
   ok(r.data.audits[0].reports[0].execSummary === "staff updated summary", "staff can edit report metadata");
-  ok(r.data.audits[0].name === "Credit Audit", "audit metadata is locked for staff");
+  ok(r.data.audits[0].name === "Renamed audit", "staff can rename an audit");
+  ok(r.data.audits[0].status === "Completed", "staff can move an engagement to Completed");
+  ok(r.data.audits[0].period === "Q3 2026", "staff can correct the period");
+  ok(r.data.audits[0].id === "a1", "the audit id is pinned to the stored one");
+  // ...but never create or delete one
+  const incNew = clone(cur);
+  incNew.audits.push({ id: "a9", name: "Invented", reports: [] });
+  const rNew = authorizeWorkspaceWrite(STAFF.role, STAFF.id, cur, incNew);
+  ok((rNew.data.audits || []).length === 2, "staff cannot create an audit");
+  ok(rNew.violations.includes("audit_create_blocked:a9"), "audit create block recorded");
+  const incDel = clone(cur); incDel.audits = [incDel.audits[1]];
+  const rDel = authorizeWorkspaceWrite(STAFF.role, STAFF.id, cur, incDel);
+  ok((rDel.data.audits || []).length === 2, "staff cannot delete an audit");
+  ok(rDel.violations.includes("audit_delete_blocked:a1"), "audit delete block recorded");
   // deleting the report (would nuke its observations) is blocked
   const inc2 = clone(cur); inc2.audits[0].reports = [];
   const r2 = authorizeWorkspaceWrite(STAFF.role, STAFF.id, cur, inc2);
   ok(r2.data.audits[0].reports.length === 1 && findObs(r2.data, "o1"), "report deletion is blocked (observations preserved)");
   ok(r2.violations.includes("report_delete_blocked:r1"), "report-delete block recorded");
+}
+
+console.log("\n== Staff fieldwork on the audit plan persists (was silently discarded) ==");
+{
+  // The reported symptom: a staff member fills in a test's Result / Tested by / Test date / what
+  // was found, the save returns 200 and toasts "Audit test saved", and the edit is gone on reload
+  // because the whole audit — plan included — was being taken from storage.
+  const cur = baseWorkspace();
+  // Start from what GET actually served, as a real client does — a document built from raw storage
+  // carries the SOP PDF and brief token the server withheld, which are locked-section violations.
+  const serve = () => clone(slimForClient(cur, { id: STAFF.id, role: "audit_staff" } as any));
+  const inc = serve();
+  const t = inc.audits[0].plan.tests[0];
+  t.result = "Exception";
+  t.testedBy = "Halima";
+  t.testedDate = "2026-08-12";
+  t.resultNotes = "Consent forms were not signed by a representative of the corporation.";
+  t.evidenceRef = "WP-3.2";
+  inc.audits[0].plan.tests.push({ id: "t2", ref: "T2", title: "Retention schedule", result: "Not Tested" });
+  inc.audits[0].plan.scope = "Credit origination and consent management";
+  inc.audits[0].tor = { background: "revised background" };
+
+  const r = authorizeWorkspaceWrite(STAFF.role, STAFF.id, cur, inc);
+  const saved = r.data.audits[0].plan.tests[0];
+  ok(saved.result === "Exception", "fieldwork result persists");
+  ok(saved.testedBy === "Halima" && saved.testedDate === "2026-08-12", "tester and test date persist");
+  ok(saved.resultNotes.startsWith("Consent forms"), "what-was-found note persists");
+  ok(saved.evidenceRef === "WP-3.2", "working-paper reference persists");
+  ok(r.data.audits[0].plan.tests.length === 2, "staff may add a test to the programme");
+  ok(r.data.audits[0].plan.scope === "Credit origination and consent management", "plan scope is editable");
+  ok(r.data.audits[0].tor.background === "revised background", "terms of reference are editable");
+  ok(r.violations.length === 0, `no violations for staff fieldwork (got ${JSON.stringify(r.violations)})`);
+
+  // Deleting a test is the same surface — the detail page offers staff a 🗑 on every row.
+  const inc2 = serve(); inc2.audits[0].plan.tests = [];
+  const r2 = authorizeWorkspaceWrite(STAFF.role, STAFF.id, cur, inc2);
+  ok(r2.data.audits[0].plan.tests.length === 0, "staff may delete a test");
+
+  // An action owner gets nowhere near any of it.
+  const incOwner = clone(cur);
+  incOwner.audits[0].plan.tests[0].result = "Passed";
+  const rOwner = authorizeWorkspaceWrite(OWNER.role, OWNER.id, cur, incOwner);
+  ok(rOwner.data.audits[0].plan.tests[0].result === "Not Tested", "an action owner cannot write the test programme");
+}
+
+console.log("\n== Only the item's auditor may sign off — not just any audit staff ==");
+{
+  /* canVerifyItem() (lib/workspace/observations.ts) allows the lead auditor, the auditor who
+     raised the item, or the Head. The server used to check `role === STAFF_ROLE` alone, so any
+     audit staff could verify any observation in the organisation through the API. */
+  const cur = baseWorkspace();
+  cur.audits[0].reports[0].observations[0].ownerRectifiedAt = "2026-08-10T09:00:00Z"; // owner responded
+  const serveTo = (id: string) => clone(slimForClient(cur, { id, role: "audit_staff" } as any));
+
+  // staff2 leads nothing on a1 (leadAuditorId is staff1) and raised nothing (raisedBy is staff1).
+  const incOther = serveTo(STAFF2.id);
+  const oOther = incOther.audits[0].reports[0].observations[0];
+  oOther.reportVerifiedAt = "2026-08-11T09:00:00Z";
+  oOther.reportVerifiedByName = "Not the auditor";
+  oOther.closureNote = "looks fine to me";
+  const rOther = authorizeWorkspaceWrite(STAFF2.role, STAFF2.id, cur, incOther);
+  ok(findObs(rOther.data, "o1").reportVerifiedAt == null, "a non-auditor staff member cannot verify");
+  ok(findObs(rOther.data, "o1").closureNote == null, "their closure note is dropped with it");
+  ok(rOther.violations.some((v) => v.startsWith("obs_verify_blocked:o1:")), "verify block recorded");
+
+  // The send-back half of the same dialog is blocked as one unit, so the owner is never left
+  // unwound with no explanation.
+  const incBack = serveTo(STAFF2.id);
+  incBack.audits[0].reports[0].observations[0].ownerRectifiedAt = "";
+  const rBack = authorizeWorkspaceWrite(STAFF2.role, STAFF2.id, cur, incBack);
+  ok(findObs(rBack.data, "o1").ownerRectifiedAt === "2026-08-10T09:00:00Z", "a non-auditor cannot send back");
+
+  // Ordinary IA chasing work is still open to any staff member.
+  const incChase = serveTo(STAFF2.id);
+  incChase.audits[0].reports[0].observations[0].updateRequestedAt = "2026-08-11T10:00:00Z";
+  incChase.audits[0].reports[0].observations[0].attachments = [{ id: "wp1", name: "WP-3.2.pdf" }];
+  const rChase = authorizeWorkspaceWrite(STAFF2.role, STAFF2.id, cur, incChase);
+  ok(findObs(rChase.data, "o1").updateRequestedAt === "2026-08-11T10:00:00Z", "any staff may request an update");
+  ok(findObs(rChase.data, "o1").attachments.length === 1, "any staff may attach a working paper");
+
+  // The lead auditor still can, and the derived closure date rides along.
+  const incLead = serveTo(STAFF.id);
+  const oLead = incLead.audits[0].reports[0].observations[0];
+  oLead.reportVerifiedAt = "2026-08-11T09:00:00Z";
+  oLead.closedDateISO = "2026-08-11";
+  const rLead = authorizeWorkspaceWrite(STAFF.role, STAFF.id, cur, incLead);
+  ok(findObs(rLead.data, "o1").reportVerifiedAt === "2026-08-11T09:00:00Z", "the lead auditor may verify");
+  ok(findObs(rLead.data, "o1").closedDateISO === "2026-08-11", "the proposed closure date rides along");
+  ok(rLead.violations.length === 0, `no violations for the lead auditor (got ${JSON.stringify(rLead.violations)})`);
+
+  // So may the auditor who raised it, on an audit somebody else leads.
+  const cur2 = baseWorkspace();
+  cur2.audits[0].leadAuditorId = "staff9";
+  cur2.audits[0].reports[0].observations[0].raisedBy = STAFF2.id;
+  cur2.audits[0].reports[0].observations[0].ownerRectifiedAt = "2026-08-10T09:00:00Z";
+  const incRaiser = clone(slimForClient(cur2, { id: STAFF2.id, role: "audit_staff" } as any));
+  incRaiser.audits[0].reports[0].observations[0].reportVerifiedAt = "2026-08-11T09:00:00Z";
+  const rRaiser = authorizeWorkspaceWrite(STAFF2.role, STAFF2.id, cur2, incRaiser);
+  ok(findObs(rRaiser.data, "o1").reportVerifiedAt === "2026-08-11T09:00:00Z", "the auditor who raised it may verify");
+
+  // A staff member cannot appoint themselves lead auditor and verify in the SAME save — the check
+  // reads the lead auditor from stored state. (Across two saves it is allowed by design.)
+  const incGrab = serveTo(STAFF2.id);
+  incGrab.audits[0].leadAuditorId = STAFF2.id;
+  incGrab.audits[0].reports[0].observations[0].reportVerifiedAt = "2026-08-11T09:00:00Z";
+  const rGrab = authorizeWorkspaceWrite(STAFF2.role, STAFF2.id, cur, incGrab);
+  ok(rGrab.data.audits![0].leadAuditorId === STAFF2.id, "the reassignment itself is allowed");
+  ok(findObs(rGrab.data, "o1").reportVerifiedAt == null, "but it does not grant verification in the same save");
 }
 
 console.log("\n== External-finding remediation stays writable for non-head ==");
