@@ -3402,6 +3402,45 @@ td.timeline-cell {
   line-height: 1.5;
 }
 
+/* Connection-lost dialog — same centred shape as the success modal, warning tone. */
+.conn-modal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+  padding: 14px 6px 4px;
+}
+
+.conn-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: var(--med-bg);
+  color: var(--med);
+}
+
+.conn-msg {
+  font-size: 15px;
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+.conn-detail {
+  margin-top: 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.conn-hint {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
 /* Onboarding */
 .onboard-hero {
   display: inline-flex;

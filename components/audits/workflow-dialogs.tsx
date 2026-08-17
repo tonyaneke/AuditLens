@@ -23,6 +23,8 @@ import { logAudit } from "@/lib/client/audit-log";
 import { dirUser, headUsers, ownerEmailFor } from "@/lib/client/directory";
 import { emailNotify } from "@/lib/client/notify";
 import { runAiText } from "@/lib/client/ai";
+import { ConnectionLostDialog } from "@/components/modals/ConnectionLostDialog";
+import { isAiUnreachable, type AiUnreachableError } from "@/lib/client/ai";
 import { extractEvidenceText, runClosureCheck, type ClosureVerdict } from "@/lib/client/obs-ai";
 import type { SessionUser } from "@/lib/permissions";
 import {
@@ -263,15 +265,29 @@ export function ReadyForClosureDialog({ auditId, reportId, obsId }: Ids) {
     if (strict || !rfcWarned.has(round)) {
       setBusyLabel("Checking…");
       let v: ClosureVerdict | null = null;
+      /* The KIND of failure only picks the wording. Any failure to reach a verdict is shown as
+         the modal: the owner has just watched a 20-second spinner on a Submit button, and a line
+         of red text under the box is too easy to miss for something that stopped their
+         submission dead. The old inline "reviewer is unavailable" message is gone — it named an
+         internal component the owner cannot do anything about, when the action they need is the
+         same either way: try again. */
+      let failure: AiUnreachableError | null = null;
       try {
         const evText = await extractEvidenceText(file);
         v = await runClosureCheck(o!, text.trim(), evText);
-      } catch {
+      } catch (e) {
         v = null;
+        if (isAiUnreachable(e)) failure = e;
       }
       if (!v) {
         setBusy(false);
-        setErr("The reviewer is unavailable right now. Please try again in a moment.");
+        modal.open(
+          <ConnectionLostDialog
+            kind={failure?.kind || "connection"}
+            detail="Your response has not been submitted — nothing was sent to Internal Audit."
+            onRetry={() => void submit()}
+          />,
+        );
         return;
       }
       if (!v.concrete) {
