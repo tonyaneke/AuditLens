@@ -20,7 +20,7 @@ import {
   portalExtList,
 } from "@/lib/workspace/portal";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
-import { MyObsSections, PortalSection, type PortalItem } from "./cards";
+import { MyObsSections, PortalSection, PortalViewToggle, type PortalItem } from "./cards";
 
 const SCOPE_ALL = "My department";
 const SCOPE_MINE = "Assigned to me";
@@ -115,6 +115,7 @@ export default function MyExtPage() {
           <span className="hint">
             {filtersActive ? `Showing ${items.length} of ${items0.length}` : `${items0.length} total`}
           </span>
+          <PortalViewToggle />
         </div>
       </div>
 

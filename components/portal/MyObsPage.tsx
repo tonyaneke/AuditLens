@@ -25,7 +25,13 @@ import {
 } from "@/lib/workspace/portal";
 import { CRITS } from "@/lib/workspace/selectors";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
-import { MyObsCard, MyObsSections, OwnerAnnounce, PortalSection, type PortalItem } from "./cards";
+import {
+  MyObsSections,
+  OwnerAnnounce,
+  PortalSection,
+  PortalViewToggle,
+  type PortalItem,
+} from "./cards";
 
 const WITHDRAWN = "Withdrawn";
 
@@ -140,6 +146,7 @@ export default function MyObsPage() {
           <span className="hint">
             {filtersActive ? `Showing ${shown} of ${total}` : `${total} total`}
           </span>
+          <PortalViewToggle />
         </div>
       </div>
 
@@ -153,26 +160,15 @@ export default function MyObsPage() {
           neither, and pulling it into either one would overstate what the department still owes.
           It is shown unfiltered by status only when nothing narrower was asked for. */}
       {showWithdrawn && (withdrawn.length || status === WITHDRAWN) ? (
-        <>
-          <div className="seclabel" style={{ margin: "20px 0 12px" }}>
-            Withdrawn observations{" "}
-            <span className="hint" style={{ fontWeight: 400 }}>({withdrawn.length})</span>
-          </div>
-          {withdrawn.length ? (
-            <>
-              <p className="hint" style={{ margin: "-6px 0 10px" }}>
-                These were reviewed and withdrawn — no further action is needed.
-              </p>
-              <div className="myobs-grid">
-                {withdrawn.map((x) => (
-                  <MyObsCard key={x.o.id} item={x} />
-                ))}
-              </div>
-            </>
-          ) : (
-            <div className="hint" style={{ marginBottom: 8 }}>Nothing here.</div>
-          )}
-        </>
+        <PortalSection
+          title="Withdrawn observations"
+          items={withdrawn}
+          note={
+            <p className="portal-note">
+              These were reviewed and withdrawn — no further action is needed.
+            </p>
+          }
+        />
       ) : null}
     </>
   );
