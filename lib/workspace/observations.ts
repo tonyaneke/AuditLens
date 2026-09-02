@@ -4,7 +4,14 @@
 // normalizer. All pure over the db + explicit user/directory args — no globals.
 
 import { emailAdminConsolidated, emailNotify } from "@/lib/client/notify";
-import { headUsers, ownerEmailFor, ownerNameFor, dirUser, directory } from "@/lib/client/directory";
+import {
+  auditStaffUsers,
+  dirUser,
+  directory,
+  headUsers,
+  ownerEmailFor,
+  ownerNameFor,
+} from "@/lib/client/directory";
 import { deptMembers, deptNameOf, deptScopeFor, inDeptScope } from "@/lib/dept-scope";
 import type { SessionUser } from "@/lib/permissions";
 import { effectiveRole, isAdmin } from "@/lib/permissions";
@@ -348,6 +355,16 @@ export function notifyBoth(
   notify(db, userId, kind, text, link, obsId);
   const e = ownerEmailFor(db, userId);
   if (e) emailNotify([e], subject || "AuditLens notification", body || text);
+}
+
+/** Internal Audit accounts pinged in-app when an action owner responds (dashboard digest + bell). */
+export function internalAuditWatcherIds(raisedBy?: string, leadAuditorId?: string): string[] {
+  const ids = new Set<string>();
+  if (raisedBy) ids.add(raisedBy);
+  if (leadAuditorId) ids.add(leadAuditorId);
+  for (const u of headUsers()) ids.add(u.id);
+  for (const u of auditStaffUsers()) ids.add(u.id);
+  return [...ids];
 }
 
 export function notifyHeadsApproval(db: WorkspaceDb, title: string): void {

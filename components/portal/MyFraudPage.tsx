@@ -13,6 +13,7 @@ import { Empty, Kpi, TintPill } from "@/components/ui";
 import { logAudit } from "@/lib/client/audit-log";
 import { headUsers, loadDirectory } from "@/lib/client/directory";
 import { emailNotify } from "@/lib/client/notify";
+import { internalAuditWatcherIds } from "@/lib/workspace/observations";
 import {
   ACTION_STATUS,
   fraudActionsView,
@@ -37,6 +38,11 @@ import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 async function fetchHeadUsers() {
   await loadDirectory();
   return headUsers();
+}
+
+async function fetchInternalAuditWatchers() {
+  await loadDirectory();
+  return internalAuditWatcherIds();
 }
 
 export default function MyFraudPage() {
@@ -90,11 +96,11 @@ export default function MyFraudPage() {
       fraudRiskId: fid,
       actionId: aid,
     });
-    const heads = await fetchHeadUsers();
-    if (heads.length) {
+    const watchers = await fetchInternalAuditWatchers();
+    if (watchers.length) {
       mutate((d) => {
-        heads.forEach((h) =>
-          pushNotification(d, h.id, "fraud_update", `Fraud control ${v.toLowerCase()}: ${scheme}`, "fraud"),
+        watchers.forEach((id) =>
+          pushNotification(d, id, "fraud_update", `Fraud control ${v.toLowerCase()}: ${scheme}`, "fraud"),
         );
       });
     }
@@ -231,6 +237,7 @@ function MyFraudUpdateDialog({ fraudId, actionId }: { fraudId: string; actionId:
     }
     setErr("");
     const heads = await fetchHeadUsers();
+    const watchers = await fetchInternalAuditWatchers();
     let scheme = "";
     let actionText = "";
     let finalStatus = "";
@@ -253,8 +260,8 @@ function MyFraudUpdateDialog({ fraudId, actionId }: { fraudId: string; actionId:
       scheme = rf.scheme;
       actionText = ra.text;
       finalStatus = String(ra.status || "");
-      heads.forEach((h) =>
-        pushNotification(d, h.id, "fraud_update", `Fraud control update: ${rf.scheme}`, "fraud"),
+      watchers.forEach((id) =>
+        pushNotification(d, id, "fraud_update", `Fraud control update: ${rf.scheme}`, "fraud"),
       );
       applied = true;
     });

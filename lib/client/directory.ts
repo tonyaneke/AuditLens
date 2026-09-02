@@ -55,6 +55,10 @@ export function headUsers(): DirectoryUser[] {
   return cache.filter((u) => u.role === "head_of_audit" || u.role === "admin");
 }
 
+export function auditStaffUsers(): DirectoryUser[] {
+  return cache.filter((u) => u.role === "audit_staff" && u.active !== false);
+}
+
 /** Email for a user id — directory first, then department-head fallback (legacy ownerEmailFor). */
 export function ownerEmailFor(db: WorkspaceDb, userId: string | undefined): string {
   if (!userId) return "";

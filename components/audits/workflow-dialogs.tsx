@@ -32,6 +32,7 @@ import {
   canVerifyItem,
   cancelPendingStatusChange,
   findObsIn,
+  internalAuditWatcherIds,
   isHead,
   notify,
   notifyBoth,
@@ -335,10 +336,7 @@ export function ReadyForClosureDialog({ auditId, reportId, obsId }: Ids) {
       // in app and by email (legacy finalizeReadyForClosure fan-out).
       const a = (d.audits || []).find((x) => x.id === auditId);
       const heads = headUsers();
-      const ids = [cur.raisedBy, a?.leadAuditorId, ...heads.map((h) => h.id)].filter(
-        (x): x is string => !!x,
-      );
-      for (const id of new Set(ids))
+      for (const id of internalAuditWatcherIds(cur.raisedBy, a?.leadAuditorId))
         notify(d, id, "rectified", cur.title + " is Ready for Closure — please verify", "observation", cur.id);
       const emails = [
         dirUser(cur.raisedBy || "")?.email,

@@ -20,7 +20,7 @@ import { dirUser, headUsers, ownerEmailFor } from "@/lib/client/directory";
 import { emailNotify } from "@/lib/client/notify";
 import { runCommentCheck } from "@/lib/client/obs-ai";
 import { effectiveRole } from "@/lib/permissions";
-import { findObsIn, notify } from "@/lib/workspace/observations";
+import { findObsIn, internalAuditWatcherIds, notify } from "@/lib/workspace/observations";
 import { uid } from "@/lib/workspace/selectors";
 import type { EvidenceFile, Observation, ObsUpdate } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
@@ -177,10 +177,7 @@ export default function ObsComposer({
         // the Head(s) are told, in app and by email (legacy addObsUpdate fan-out).
         const a = (d.audits || []).find((x) => x.id === auditId);
         const heads = headUsers();
-        const ids = [a?.leadAuditorId, cur.raisedBy, ...heads.map((h) => h.id)].filter(
-          (x): x is string => !!x,
-        );
-        for (const id of new Set(ids))
+        for (const id of internalAuditWatcherIds(cur.raisedBy, a?.leadAuditorId))
           notify(d, id, "update", "Response from the action owner on: " + cur.title, "observation", cur.id);
         const emails = [
           dirUser(a?.leadAuditorId || "")?.email,
