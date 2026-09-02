@@ -2368,12 +2368,105 @@ td.timeline-cell {
   color: inherit;
 }
 .newresp-row:hover { border-color: var(--accent); background: color-mix(in oklch, var(--accent) 5%, #fff); }
+.newresp-row-featured {
+  padding: 14px 14px;
+  border-color: color-mix(in oklch, var(--accent) 35%, var(--line));
+  background: color-mix(in oklch, var(--accent) 4%, #fff);
+}
 .newresp-row .newresp-text { flex: 1; font-weight: 600; line-height: 1.45; }
 .newresp-row .newresp-when { white-space: nowrap; margin-top: 0; }
 @media (max-width: 560px) {
   .newresp-row { flex-wrap: wrap; }
   .newresp-row .newresp-text { flex-basis: 100%; }
 }
+
+.newresp-slides { min-height: 80px; }
+.newresp-slide-head {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--brand-700);
+  margin-bottom: 4px;
+}
+.newresp-mf {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+.newresp-mf-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.modal .mf:has(.newresp-mf) {
+  flex-direction: column;
+  align-items: stretch;
+}
+.newresp-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: 100%;
+}
+.newresp-dots {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.newresp-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  background: var(--line);
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+.newresp-dot:hover { background: color-mix(in oklch, var(--accent) 50%, var(--line)); }
+.newresp-dot.active {
+  background: var(--accent);
+  transform: scale(1.15);
+}
+.newresp-dot:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.newresp-circle-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--brand-700);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.newresp-circle-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 8%, #fff);
+}
+.newresp-circle-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.newresp-circle-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.newresp-slide-count { margin: 0; white-space: nowrap; }
 
 .due-date {
   font-size: 12.5px;
