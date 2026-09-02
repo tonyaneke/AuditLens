@@ -7,21 +7,24 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { usePageChrome } from "@/components/chrome/PageChrome";
+import { useUser } from "@/components/chrome/UserContext";
 import BusyButton from "@/components/feedback/BusyButton";
 import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import { Empty } from "@/components/ui";
 import { logAudit } from "@/lib/client/audit-log";
+import { isAuditStaff } from "@/lib/workspace/observations";
 import {
   CONF_HEX,
   currentIaSa,
   ensureIaSaList,
-  iaSaList,
+  iaSaVisibleList,
   iasaNextDue,
   iasaPeriodForDate,
   iasaSummary,
   needsIaSaMigration,
   newIaSa,
+  setCurrentIaSa,
 } from "@/lib/workspace/iasa";
 import { fmtDate } from "@/lib/workspace/selectors";
 import type { IaSaRecord } from "@/lib/workspace/types";
@@ -95,15 +98,17 @@ function GenerateContextDialog({ rec }: { rec: IaSaRecord }) {
 // and the assessment stays fully editable until it is marked complete.
 function NewAssessmentDialog() {
   const { db, mutate } = useWorkspace();
+  const user = useUser();
   const modal = useModal();
   const router = useRouter();
   const [ctx, setCtx] = useState("");
   const [err, setErr] = useState("");
+  const personal = isAuditStaff(user);
 
   function createRecord(context: string): string {
     let id = "";
     mutate((d) => {
-      id = newIaSa(d, iasaPeriodForDate(new Date()));
+      id = newIaSa(d, iasaPeriodForDate(new Date()), user);
       const r = ensureIaSaList(d).find((x) => x.id === id);
       if (r) r.aiContext = context;
     });
@@ -112,7 +117,7 @@ function NewAssessmentDialog() {
 
   return (
     <ModalFrame
-      title="New self-assessment"
+      title={personal ? "New personal self-assessment" : "New self-assessment"}
       footer={
         <>
           <button className="btn sec" type="button" onClick={modal.close}>
@@ -168,21 +173,23 @@ function NewAssessmentDialog() {
 
 export default function SelfAssessmentPage() {
   const { db, mutate, version, ready } = useWorkspace();
+  const user = useUser();
   const modal = useModal();
   const router = useRouter();
   const search = useSearchParams();
+  const personal = isAuditStaff(user);
   const raw = search.get("tab");
   const tab: Tab =
     raw === "assessment" ? "assessment" : raw === "tracker" ? "tracker" : raw === "insights" ? "insights" : "overview";
 
-  const all = iaSaList(db)
+  const all = iaSaVisibleList(db, user)
     .slice()
     .sort((a, b) =>
       String(b.startedAt || b.completedAt || "").localeCompare(
         String(a.startedAt || a.completedAt || ""),
       ),
     );
-  const cur = currentIaSa(db);
+  const cur = currentIaSa(db, user);
 
   /* Fold a pre-list single assessment into the list once (legacy iaSAAll()).
      QA-7 — see FraudPage: keyed on `version` and calls mutate(), which bumps `version`. The ref
@@ -211,7 +218,7 @@ export default function SelfAssessmentPage() {
   }
   function openRecord(s: IaSaRecord) {
     mutate((d) => {
-      d.iaSACurrentId = s.id;
+      setCurrentIaSa(d, user, s.id);
     });
     goTab("assessment");
   }
@@ -245,7 +252,9 @@ export default function SelfAssessmentPage() {
       onConfirm: () => {
         mutate((d) => {
           d.iaSAList = ensureIaSaList(d).filter((x) => x.id !== s.id);
-          if (d.iaSACurrentId === s.id) d.iaSACurrentId = "";
+          if (isAuditStaff(user)) {
+            if (d.iaSAUserCurrent?.[user.id] === s.id) delete d.iaSAUserCurrent[user.id];
+          } else if (d.iaSACurrentId === s.id) d.iaSACurrentId = "";
         });
         logAudit(
           "iasa.deleted",
@@ -258,7 +267,7 @@ export default function SelfAssessmentPage() {
 
   usePageChrome(
     {
-      title: "IA Self-Assessment",
+      title: personal ? "My IA Self-Assessment" : "IA Self-Assessment",
       actions:
         tab === "overview" ? (
           <button className="btn sm" type="button" onClick={startNew}>
@@ -304,13 +313,13 @@ export default function SelfAssessmentPage() {
 
   /* ---- overview ---- */
   if (tab === "overview") {
-    const nd = iasaNextDue(db);
+    const nd = iasaNextDue(db, user);
     const done = all.filter((s) => s.status === "completed");
     const inprog = all.filter((s) => s.status !== "completed");
     return (
       <>
         <div className="dash-kpis anim-fade-in" style={{ gridTemplateColumns: "repeat(3,1fr)" }}>
-          <IasaKpi tone="accent" label="Completed" value={done.length} sub="self-assessments on record" />
+          <IasaKpi tone="accent" label="Completed" value={done.length} sub={personal ? "assessments on your record" : "self-assessments on record"} />
           <IasaKpi tone="base" label="In progress" value={inprog.length} sub="awaiting completion" />
           <IasaKpi
             tone={nd.overdue ? "bad" : "good"}
@@ -321,15 +330,21 @@ export default function SelfAssessmentPage() {
         </div>
 
         <div className="seclabel" style={{ margin: "16px 0 8px" }}>
-          Assessments
+          {personal ? "My assessments" : "Assessments"}
         </div>
 
         {!all.length ? (
           <div className="card">
             <Empty big="⚖">
-              No self-assessments yet.
+              {personal ? "No personal self-assessments yet." : "No self-assessments yet."}
               <br />
               Run one every 6 months to track conformance with the Global Internal Audit Standards.
+              {personal ? (
+                <>
+                  <br />
+                  Your assessments are private to you — other team members cannot see them.
+                </>
+              ) : null}
               <br />
               <br />
               <button className="btn dark" type="button" onClick={startNew}>

@@ -164,9 +164,24 @@ console.log("\n== Staff cannot touch head-only sections ==");
   const r = authorizeWorkspaceWrite(STAFF.role, STAFF.id, cur, inc);
   ok(r.data.fraudRisks[0].status === "Mitigated", "staff may maintain the fraud register");
   ok(r.data.auditUniverse.length === 1, "audit universe addition reverted");
-  ok(r.data.iaSAList[0].period === "H1 2026", "IA self-assessment change reverted");
+  ok(r.data.iaSAList[0].period === "H1 2026", "org IA self-assessment change reverted");
   ok(r.data.departments.length === 1, "departments change reverted");
-  ok(["section:auditUniverse", "section:iaSAList", "section:departments"].every((s) => r.violations.includes(s)), "locked-section violations recorded");
+  ok(["section:auditUniverse", "section:departments"].every((s) => r.violations.includes(s)), "locked-section violations recorded");
+  ok(r.violations.includes("iaSa_org_locked:ia1"), "org self-assessment locked for staff");
+}
+
+console.log("\n== Staff may maintain their own self-assessment ==");
+{
+  const cur = baseWorkspace();
+  cur.iaSAList.push({ id: "iaStaff", period: "H1 2026", userId: "staff1", std: {}, items: {} });
+  cur.iaSAUserCurrent = { staff1: "iaStaff" };
+  const inc = clone(slimForClient(cur, { id: STAFF.id, role: "audit_staff" }));
+  inc.iaSAList[0].period = "H2 2026";
+  inc.iaSAUserCurrent.staff1 = "iaStaff";
+  const r = authorizeWorkspaceWrite(STAFF.role, STAFF.id, cur, inc);
+  ok(r.data.iaSAList.some((s: any) => s.id === "iaStaff" && s.period === "H2 2026"), "staff self-assessment update passes");
+  ok(r.data.iaSAList[0].period === "H1 2026", "org self-assessment untouched in storage merge");
+  ok(!r.violations.some((v) => v.startsWith("iaSa_")), "no iaSa violations for legit staff save");
 }
 
 console.log("\n== Staff LEGITIMATE actions pass through ==");

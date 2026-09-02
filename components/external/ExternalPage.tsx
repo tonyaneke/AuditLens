@@ -4,9 +4,11 @@
 // extInsights from public/audit-bot.js with ?mode=register|insights as URL state.
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { usePageChrome } from "@/components/chrome/PageChrome";
+import { useUser } from "@/components/chrome/UserContext";
 import { useModal } from "@/components/modals/ModalProvider";
 import { Empty, Kpi, TintPill } from "@/components/ui";
 import {
@@ -22,6 +24,7 @@ import {
   EXT_THEMES,
   type ExtFilter,
 } from "@/lib/workspace/external";
+import { isInternalAudit } from "@/lib/workspace/observations";
 import { fmtDate, hx2rgba, isoNow, isoToDate } from "@/lib/workspace/selectors";
 import type { ExtFinding, WorkspaceDb } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
@@ -33,14 +36,18 @@ import {
 } from "./lazy";
 import { exportAllExtFindingsCsv } from "./exports";
 
+const ExtRemindersDialog = dynamic(() => import("./ExtRemindersDialog"), { loading: () => null });
+
 const STATUSES = ["Open", "In Progress", "Closed"];
 
 export default function ExternalPage() {
   const { db, mutate, version } = useWorkspace();
+  const user = useUser();
   const modal = useModal();
   const router = useRouter();
   const search = useSearchParams();
   const mode = search.get("mode") === "insights" ? "insights" : "register";
+  const canRemind = isInternalAudit(user);
 
   const [q, setQ] = useState("");
   const [sourceFilter, setSourceFilter] = useState("All");
@@ -56,6 +63,15 @@ export default function ExternalPage() {
       title: "External Findings Register",
       actions: (
         <div style={{ display: "flex", gap: 8 }}>
+          {canRemind ? (
+            <button
+              className="btn sec sm"
+              type="button"
+              onClick={() => modal.open(<ExtRemindersDialog />)}
+            >
+              🔔 Remind owners
+            </button>
+          ) : null}
           <button className="btn pri sm" onClick={() => modal.open(<ExtRaiseDialog />)}>
             + Log Finding
           </button>
@@ -71,7 +87,7 @@ export default function ExternalPage() {
         </div>
       ),
     },
-    [version],
+    [version, canRemind],
   );
 
   const setMode = (m: string) =>

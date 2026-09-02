@@ -370,6 +370,8 @@ export type IaSaPrinciple = {
 
 export type IaSaRecord = {
   id: string;
+  /** When set, this assessment belongs to one audit staff member; unset = org-wide (Head). */
+  userId?: string;
   period?: string;
   assessor?: string;
   scope?: string;
@@ -485,6 +487,8 @@ export type WorkspaceDb = {
   extCommentary?: string;
   iaSAList?: IaSaRecord[];
   iaSACurrentId?: string;
+  /** Per audit-staff pointer to their current self-assessment (Head uses iaSACurrentId). */
+  iaSAUserCurrent?: Record<string, string>;
   /** Plan years opened from "New audit plan" (planYear is the one currently in view). */
   planYears?: (string | number)[];
   departments?: Department[];

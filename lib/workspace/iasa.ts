@@ -3,7 +3,9 @@
 // iasaStats/eqaDue/…). The legacy code reached the "current" assessment through a global
 // (iaSA()/withIASA); here every helper takes the record explicitly.
 
+import type { SessionUser } from "@/lib/permissions";
 import { fmtDate, looseDate, today0, uid } from "./selectors";
+import { isAuditStaff, isHead } from "./observations";
 import type { IaSaPrinciple, IaSaRecord, IaSaStandard, WorkspaceDb } from "./types";
 
 /* ---------------- the standards framework ---------------- */
@@ -113,6 +115,15 @@ export function iaSaList(db: WorkspaceDb): IaSaRecord[] {
   return db.iaSAList || [];
 }
 
+/** Org-wide (Head) or personal (audit staff) assessments visible to this user. */
+export function iaSaVisibleList(db: WorkspaceDb, user: SessionUser): IaSaRecord[] {
+  ensureIaSaList(db);
+  const list = db.iaSAList || [];
+  if (isHead(user)) return list.filter((s) => !s.userId);
+  if (isAuditStaff(user)) return list.filter((s) => s.userId === user.id);
+  return [];
+}
+
 // Pre-list workspaces kept a single assessment on DB.iaSA; it becomes the first list entry.
 export function needsIaSaMigration(db: WorkspaceDb): boolean {
   const legacy = db.iaSA as Record<string, unknown> | undefined;
@@ -133,10 +144,24 @@ export function ensureIaSaList(db: WorkspaceDb): IaSaRecord[] {
   return db.iaSAList;
 }
 
-/** The assessment currently being viewed (legacy iaSACurrentId, falling back to the newest). */
-export function currentIaSa(db: WorkspaceDb): IaSaRecord | null {
-  const all = iaSaList(db);
-  return all.find((s) => s.id === db.iaSACurrentId) || all[0] || null;
+/** The assessment currently being viewed for this user (falls back to the newest visible). */
+export function currentIaSa(db: WorkspaceDb, user?: SessionUser): IaSaRecord | null {
+  const all = user ? iaSaVisibleList(db, user) : iaSaList(db);
+  if (!all.length) return null;
+  const curId =
+    user && isAuditStaff(user)
+      ? db.iaSAUserCurrent?.[user.id]
+      : db.iaSACurrentId;
+  return all.find((s) => s.id === curId) || all[0] || null;
+}
+
+export function setCurrentIaSa(db: WorkspaceDb, user: SessionUser, id: string): void {
+  if (isAuditStaff(user)) {
+    db.iaSAUserCurrent = db.iaSAUserCurrent || {};
+    db.iaSAUserCurrent[user.id] = id;
+  } else {
+    db.iaSACurrentId = id;
+  }
 }
 
 export function iasaPeriodForDate(d: Date): string {
@@ -144,7 +169,7 @@ export function iasaPeriodForDate(d: Date): string {
 }
 
 /** Mutating: append a fresh blank assessment and make it current. Returns its id. */
-export function newIaSa(db: WorkspaceDb, period?: string): string {
+export function newIaSa(db: WorkspaceDb, period?: string, user?: SessionUser): string {
   const all = ensureIaSaList(db);
   const now = new Date();
   const rec = normOneIASA({
@@ -153,8 +178,13 @@ export function newIaSa(db: WorkspaceDb, period?: string): string {
     startedAt: now.toISOString(),
     status: "in_progress",
   });
+  if (user && isAuditStaff(user)) {
+    rec.userId = user.id;
+    rec.assessor = user.name || "";
+  }
   all.unshift(rec);
-  db.iaSACurrentId = rec.id;
+  if (user) setCurrentIaSa(db, user, rec.id);
+  else db.iaSACurrentId = rec.id;
   return rec.id;
 }
 
@@ -324,21 +354,22 @@ export function applyStdStatus(it: IaSaStandard, status: string, done?: string):
 
 /* ---------------- cadence & external quality assessment ---------------- */
 
-export function iasaLastCompleted(db: WorkspaceDb): IaSaRecord | null {
+export function iasaLastCompleted(db: WorkspaceDb, user?: SessionUser): IaSaRecord | null {
+  const list = user ? iaSaVisibleList(db, user) : iaSaList(db);
   return (
-    iaSaList(db)
+    list
       .filter((s) => s.status === "completed" && s.completedAt)
       .sort((a, b) => String(b.completedAt).localeCompare(String(a.completedAt)))[0] || null
   );
 }
 
-export function iasaNextDue(db: WorkspaceDb): {
+export function iasaNextDue(db: WorkspaceDb, user?: SessionUser): {
   due: Date | null;
   overdue: boolean;
   txt: string;
   sub: string;
 } {
-  const last = iasaLastCompleted(db);
+  const last = iasaLastCompleted(db, user);
   if (!last)
     return { due: null, overdue: false, txt: "Due now", sub: "No self-assessment on record yet" };
   const d = new Date(last.completedAt as string);

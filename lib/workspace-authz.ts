@@ -47,6 +47,8 @@ const NON_HEAD_WRITABLE_SECTIONS = new Set([
   "approvals",
   "notifications",
   "fraudRisks",
+  "iaSAList",
+  "iaSAUserCurrent",
 ]);
 
 /* The verification act — an auditor confirming an owner's remediation and sending it to the Head
@@ -223,6 +225,18 @@ export function authorizeWorkspaceWrite(
   if (effective === STAFF_ROLE) {
     if (inc.fraudPlanNarrative !== undefined) next.fraudPlanNarrative = inc.fraudPlanNarrative;
     if (inc.fraudUpdate !== undefined) next.fraudUpdate = inc.fraudUpdate;
+    next.iaSAList = reconcileIaSaList(
+      asArray(cur.iaSAList),
+      asArray(inc.iaSAList),
+      userId,
+      violations,
+    );
+    next.iaSAUserCurrent = reconcileIaSaUserCurrent(
+      (cur.iaSAUserCurrent as Record<string, string>) || {},
+      (inc.iaSAUserCurrent as Record<string, string>) || {},
+      userId,
+      violations,
+    );
   }
 
   /* Note any attempt to change a locked section (informational — the change is already
@@ -815,6 +829,92 @@ function reconcileApprovals(
     // Absent because it was never served is not a deletion attempt; the row survives either way.
     if (sawApproval(cur)) violations.push(`approval_delete_blocked:${cur.id}`);
     out.push(cur);
+  }
+  return out;
+}
+
+function iaSaOwnerId(rec: Obj): string {
+  return String(rec.userId || "");
+}
+
+function isOrgIaSa(rec: Obj): boolean {
+  return !iaSaOwnerId(rec);
+}
+
+function isStaffOwnedIaSa(rec: Obj, userId: string): boolean {
+  return iaSaOwnerId(rec) === userId;
+}
+
+/** Audit staff may create and edit only their own self-assessments; org-wide records stay Head-only. */
+function reconcileIaSaList(
+  curList: Obj[],
+  incList: Obj[],
+  userId: string,
+  violations: string[],
+): Obj[] {
+  const incById = new Map(incList.map((s) => [s.id as string, s]));
+  const seen = new Set<string>();
+  const out: Obj[] = [];
+
+  for (const cur of curList) {
+    const id = cur.id as string;
+    seen.add(id);
+    const inc = incById.get(id);
+
+    if (isOrgIaSa(cur)) {
+      if (inc && !jsonEq(inc, cur)) violations.push(`iaSa_org_locked:${id}`);
+      out.push(cur);
+      continue;
+    }
+
+    if (!isStaffOwnedIaSa(cur, userId)) {
+      if (inc && !jsonEq(inc, cur)) violations.push(`iaSa_other_user:${id}`);
+      out.push(cur);
+      continue;
+    }
+
+    if (!inc) {
+      violations.push(`iaSa_delete_blocked:${id}`);
+      out.push(cur);
+      continue;
+    }
+
+    if (!isStaffOwnedIaSa(inc, userId)) {
+      violations.push(`iaSa_userId_change:${id}`);
+      out.push(cur);
+      continue;
+    }
+
+    out.push(inc);
+  }
+
+  for (const inc of incList) {
+    const id = inc.id as string;
+    if (seen.has(id)) continue;
+    if (isOrgIaSa(inc)) {
+      violations.push(`iaSa_create_org_blocked:${id}`);
+      continue;
+    }
+    if (!isStaffOwnedIaSa(inc, userId)) {
+      violations.push(`iaSa_create_other_blocked:${id}`);
+      continue;
+    }
+    out.push(inc);
+  }
+
+  return out;
+}
+
+function reconcileIaSaUserCurrent(
+  cur: Record<string, string>,
+  inc: Record<string, string>,
+  userId: string,
+  violations: string[],
+): Record<string, string> {
+  const out = { ...cur };
+  for (const [k, v] of Object.entries(inc)) {
+    if (k === userId) out[k] = v;
+    else if (v !== cur[k]) violations.push(`iaSa_userCurrent_other:${k}`);
   }
   return out;
 }
