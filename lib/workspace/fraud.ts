@@ -36,7 +36,9 @@ export const DEPARTMENTS = [
   "Office of the Managing Director",
 ] as const;
 
-/* ---------------- basic accessors ---------------- */
+/* ---------------- 
+This is a test section to see what i am doing...Because this is supper weird that I am here to do all this section for the action 
+basic accessors ---------------- */
 
 export function fraudActions(f: FraudRisk): FraudAction[] {
   return f.actions || [];

@@ -172,6 +172,14 @@ export function isHead(user: SessionUser): boolean {
 export function isActionOwner(user: SessionUser): boolean {
   return effectiveRole(user) === "action_owner";
 }
+export function isAuditStaff(user: SessionUser): boolean {
+  return effectiveRole(user) === "audit_staff";
+}
+
+/** Head and audit staff maintain the fraud risk register (server authz matches). */
+export function canManageFraudRegister(user: SessionUser): boolean {
+  return isHead(user) || isAuditStaff(user);
+}
 
 // Check if user is admin with specific active role
 export function isAdminWithRole(user: SessionUser, role: string): boolean {

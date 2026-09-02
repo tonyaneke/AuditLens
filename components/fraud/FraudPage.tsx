@@ -12,7 +12,7 @@ import { toast } from "@/components/feedback/ToastHost";
 import { useModal } from "@/components/modals/ModalProvider";
 import { Empty, Kpi, RowOpen } from "@/components/ui";
 import { logAudit } from "@/lib/client/audit-log";
-import { effectiveRole } from "@/lib/permissions";
+import { canManageFraudRegister } from "@/lib/workspace/observations";
 import { urlForView } from "@/lib/routes";
 import {
   actStatusClass,
@@ -128,14 +128,12 @@ export default function FraudPage() {
   const user = useUser();
   const modal = useModal();
   const router = useRouter();
-  const isStaff = effectiveRole(user) !== "head_of_audit";
+  const canManage = canManageFraudRegister(user);
   const [planExpanded, setPlanExpanded] = useState(false);
 
-  // Legacy requireHead(): the add/generate/edit/delete controls are visible but refuse to act
-  // for anyone but the Head of Audit.
-  function headOnly(open: () => void) {
-    if (isStaff) {
-      toast("Only the Head of Audit can perform this action.", "error");
+  function requireManage(open: () => void) {
+    if (!canManage) {
+      toast("Only Internal Audit can perform this action.", "error");
       return;
     }
     open();
@@ -176,7 +174,7 @@ export default function FraudPage() {
             </span>{" "}
             Download
           </button>
-          {isStaff ? null : (
+          {canManage ? (
             <>
               <button
                 className="btn sm dark ai-generate-btn"
@@ -189,15 +187,15 @@ export default function FraudPage() {
                 + Add fraud risk
               </button>
             </>
-          )}
+          ) : null}
         </>
       ),
     },
-    [isStaff],
+    [canManage],
   );
 
   function delFraud(id: string) {
-    headOnly(() => {
+    requireManage(() => {
       void modal.confirm({
         message: "Delete this fraud risk?",
         danger: true,
@@ -240,12 +238,12 @@ export default function FraudPage() {
           <button
             className="btn dark ai-generate-btn"
             type="button"
-            onClick={() => headOnly(() => modal.open(<GenerateFraudRisksDialog />))}
+            onClick={() => requireManage(() => modal.open(<GenerateFraudRisksDialog />))}
           >
             Generate fraud risks
           </button>
           &nbsp;{" "}
-          <button className="btn" type="button" onClick={() => headOnly(() => modal.open(<FraudDialog />))}>
+          <button className="btn" type="button" onClick={() => requireManage(() => modal.open(<FraudDialog />))}>
             + Add fraud risk manually
           </button>
         </Empty>
@@ -350,22 +348,26 @@ export default function FraudPage() {
                 <td>{f.owner || "—"}</td>
                 <td>{f.status || "Identified"}</td>
                 <td className="ra-actions-cell" onClick={(e) => e.stopPropagation()}>
-                  <button
-                    className="btn-icon-action"
-                    type="button"
-                    title="Edit"
-                    onClick={() => headOnly(() => modal.open(<FraudDialog fraudId={f.id} />))}
-                  >
-                    ✎
-                  </button>
-                  <button
-                    className="btn-icon-action danger"
-                    type="button"
-                    title="Delete"
-                    onClick={() => delFraud(f.id)}
-                  >
-                    {TRASH}
-                  </button>
+                  {canManage ? (
+                    <>
+                      <button
+                        className="btn-icon-action"
+                        type="button"
+                        title="Edit"
+                        onClick={() => requireManage(() => modal.open(<FraudDialog fraudId={f.id} />))}
+                      >
+                        ✎
+                      </button>
+                      <button
+                        className="btn-icon-action danger"
+                        type="button"
+                        title="Delete"
+                        onClick={() => delFraud(f.id)}
+                      >
+                        {TRASH}
+                      </button>
+                    </>
+                  ) : null}
                 </td>
               </tr>
             ))}

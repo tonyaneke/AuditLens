@@ -12,7 +12,7 @@ import { toast } from "@/components/feedback/ToastHost";
 import { useModal } from "@/components/modals/ModalProvider";
 import RichText from "@/components/ui/RichText";
 import { TintPill } from "@/components/ui";
-import { effectiveRole } from "@/lib/permissions";
+import { canManageFraudRegister } from "@/lib/workspace/observations";
 import { rollupFraud } from "@/lib/workspace/fraud";
 import { fraudActionsView } from "@/lib/workspace/portal";
 import {
@@ -42,7 +42,7 @@ export default function FraudRiskDetailPage({ riskId }: { riskId: string }) {
   const user = useUser();
   const modal = useModal();
   const router = useRouter();
-  const isHead = effectiveRole(user) === "head_of_audit";
+  const canManage = canManageFraudRegister(user);
 
   const f = fraudList(db).find((x) => x.id === riskId);
 
@@ -53,8 +53,8 @@ export default function FraudRiskDetailPage({ riskId }: { riskId: string }) {
   }, [ready, f, router]);
 
   function delRisk() {
-    if (!isHead) {
-      toast("Only the Head of Audit can perform this action.", "error");
+    if (!canManage) {
+      toast("Only Internal Audit can perform this action.", "error");
       return;
     }
     void modal.confirm({
@@ -101,14 +101,16 @@ export default function FraudRiskDetailPage({ riskId }: { riskId: string }) {
         </button>
       ),
       actions: f ? (
-        <>
-          <button className="btn sec sm" type="button" onClick={() => modal.open(<FraudDialog fraudId={f.id} />)}>
-            Edit
-          </button>
-          <button className="btn ghost sm danger" type="button" onClick={delRisk}>
-            Delete
-          </button>
-        </>
+        canManage ? (
+          <>
+            <button className="btn sec sm" type="button" onClick={() => modal.open(<FraudDialog fraudId={f.id} />)}>
+              Edit
+            </button>
+            <button className="btn ghost sm danger" type="button" onClick={delRisk}>
+              Delete
+            </button>
+          </>
+        ) : null
       ) : null,
     },
     [riskId, !!f],
