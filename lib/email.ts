@@ -131,7 +131,11 @@ export async function sendWelcomeEmail(params: WelcomeEmailParams) {
 // Rich, email-safe HTML for the Executive Assurance Brief — mirrors the public /brief page
 // (teal hero + condition-coloured KPI cards + numbered matters) with the confidential footer.
 type BriefSnapshot = {
-  org?: string; period?: string; remRate?: number; closed?: number; total?: number;
+  org?: string;
+  period?: string;
+  remRate?: number;
+  closed?: number;
+  total?: number;
   kpis?: { keyOpen?: number; keyOverdue?: number; overdue?: number; unmit?: number; extOpen?: number; extOverdueN?: number };
   matters?: string[];
 };

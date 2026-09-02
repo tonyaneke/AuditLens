@@ -3,6 +3,13 @@
 // Kept in sync with buildExcoSnapshot / excoData / excoMatters in public/audit-bot.js
 // so the cron can generate a fresh brief without a logged-in user.
 
+import {
+  mapBriefExtDetail,
+  mapBriefFraudDetail,
+  mapBriefIssueDetail,
+} from "./brief-detail-map";
+import type { Observation } from "@/lib/workspace/types";
+
 const CRITS = ["Critical", "High", "Moderate", "Low", "Process Improvement"];
 const CLOSE_DAYS: Record<string, number> = { Immediate: 30, "Short-term": 60, "Long-term": 120 };
 const BANDS = ["Low", "Medium", "High", "Extreme"];
@@ -114,10 +121,10 @@ export function computeExcoSnapshot(data: any, opts: { period?: string; headline
     remRate, closed, total,
     kpis: { keyOpen: keyOpen.length, keyOverdue: keyOverdue.length, overdue: overdue.length, unmit: unmit.length, extOpen: extOpen.length, extOverdueN, watch: watch.length },
     matters,
-    keyIssues: keySorted.slice(0, 15).map((x) => ({ criticality: x.o.criticality, title: x.o.title, area: (x.a.name || "") + (x.a.area ? " · " + x.a.area : ""), owner: x.o.owner || "—", targetClose: fmtDate(effectiveClose(x.o, x.r)), status: x.o.status || "Open", overdue: isOverdueObs(x.o, x.r), repeat: !!x.o.isRepeat })),
+    keyIssues: keySorted.slice(0, 15).map((x) => mapBriefIssueDetail(x.o as Observation, x.a, x.r, data)),
     themes: themes.slice(0, 8),
-    fraud: unmit.slice(0, 12).map((f) => ({ res: f.res, scheme: f.scheme, category: f.category || "—", owner: f.owner || "—", status: f.status || "Identified" })),
-    ext: extSorted.slice(0, 10).map((f) => ({ source: f.source || "—", title: f.title || f.ref || "—", owner: f.owner || "—", target: f.targetDate || "—", status: f.status || "Open", overdue: extOverdue(f) })),
-    repeats: repeats.slice(0, 8).map((x) => ({ title: x.o.title, audit: x.a.name || "", status: x.o.status || "Open" })),
+    fraud: unmit.slice(0, 12).map((f) => mapBriefFraudDetail(f)),
+    ext: extSorted.slice(0, 10).map((f) => mapBriefExtDetail(f, data)),
+    repeats: repeats.slice(0, 8).map((x) => mapBriefIssueDetail(x.o as Observation, x.a, x.r, data)),
   };
 }
