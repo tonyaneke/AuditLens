@@ -18,6 +18,7 @@ import {
   DEPARTMENTS,
   STAFF_DIRECTORY,
   STAFF_EXTRA_DEPARTMENTS,
+  formatAddedDate,
   roleLabel,
   staffEmail,
   staffPick,
@@ -130,8 +131,8 @@ export function DepartmentDialog({
     setHeadName(v);
     const hit = staffPick(v);
     if (!hit) return;
-    if (!emailLocked) setHeadEmail(staffEmail(hit[0]));
-    if (hit[2]) setDept(hit[2]);
+    if (!emailLocked) setHeadEmail(staffEmail(hit.name));
+    if (hit.department) setDept(hit.department);
   }
 
   async function save() {
@@ -262,6 +263,11 @@ export function DepartmentDialog({
           (temporary password) is sent.
         </p>
       )}
+      {existing?.createdAt ? (
+        <p className="hint" style={{ margin: "10px 0 0" }}>
+          Added <b>{formatAddedDate(existing.createdAt)}</b>.
+        </p>
+      ) : null}
       <ErrHint>{err}</ErrHint>
     </ModalFrame>
   );
@@ -303,9 +309,9 @@ export function UserDialog({
     setName(v);
     const hit = staffPick(v);
     if (!hit) return;
-    setEmail(staffEmail(hit[0]));
-    if (hit[2]) setDept(hit[2]);
-    setExtraDepts(STAFF_EXTRA_DEPARTMENTS[hit[0]] || []);
+    setEmail(staffEmail(hit.name));
+    if (hit.department) setDept(hit.department);
+    setExtraDepts(STAFF_EXTRA_DEPARTMENTS[hit.name] || []);
   }
 
   function toggleAccess(view: string, checked: boolean) {
@@ -503,6 +509,11 @@ export function UserDialog({
               : "Sidebar access: the Action Owner portal (their assigned observations) only."}
         </div>
       )}
+      {u?.createdAt ? (
+        <p className="hint" style={{ margin: "10px 0 0" }}>
+          Added <b>{formatAddedDate(u.createdAt)}</b>.
+        </p>
+      ) : null}
       <ErrHint>{err}</ErrHint>
     </ModalFrame>
   );

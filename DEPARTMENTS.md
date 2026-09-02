@@ -5,7 +5,7 @@ Generated from `DEPARTMENTS`, `STAFF_DIRECTORY` and `STAFF_EXTRA_DEPARTMENTS` in
 `scripts/apply-department-roster.mts` applies to the live accounts.
 Emails are derived by `staffEmail()` — first initial + surname `@credicorp.ng`.
 
-**36 staff across 13 departments**, as confirmed by the Head of Audit on 2026-08-06.
+**40 staff across 13 departments**, as confirmed by the Head of Audit on 2026-08-06 (four added 2026-09-02).
 
 Since 2026-08-05 a department is an **access control**, not a label: an Action Owner sees every
 internal observation raised against their department and any of them can respond to it and mark it
@@ -43,35 +43,39 @@ Wuraola Odubiyi also belongs to **People & Culture Department**.
 | Najma Goni | Management Trainee | ngoni@credicorp.ng |
 | Tochukwu Chukwuani | Management Trainee | tchukwuani@credicorp.ng |
 
-## Impact & Sustainability — 2 · 1 observation
+## Impact & Sustainability — 3 · 1 observation
 
 | Name | Job title | Email |
 | --- | --- | --- |
 | Emmanuel Nwaka | Lead, Impact & Sustainability | enwaka@credicorp.ng |
 | Elizabeth Adu | E.A to the E.D Operations | eadu@credicorp.ng |
+| Sunday Udor | Professional - Impact & Sustainability | sudor@credicorp.ng |
 
-## Internal Audit — 2 · all observations
+## Internal Audit — 3 · all observations
 
 | Name | Job title | Email |
 | --- | --- | --- |
 | Awa Michael | Head, Internal Audit | amichael@credicorp.ng |
 | Halima Ahmed | Intern | hahmed@credicorp.ng |
+| Mariam Oguche | Professional - Internal Audit | moguche@credicorp.ng |
 
 Internal Audit is scoped by role, not by department — both accounts see the whole register.
 
-## IT — 2 · 0 observations
+## IT — 3 · 0 observations
 
 | Name | Job title | Email |
 | --- | --- | --- |
+| Ivan Bullem | Head, IT | ibullem@credicorp.ng |
 | Solomon Aladegolu | Professional - IT | saladegolu@credicorp.ng |
 | Chiamaka Ogoh | Management Trainee | cogoh@credicorp.ng |
 
-## Legal — 2 · 2 observations
+## Legal — 3 · 2 observations
 
 | Name | Job title | Email |
 | --- | --- | --- |
 | Obiageli Vera Ohakim | Head, Legal & Company Secretary | oohakim@credicorp.ng |
 | Beulah Lekwauwa | Professional - Corporate Counsel | blekwauwa@credicorp.ng |
+| Leesi Tanadeba | Professional - Legal | ltanadeba@credicorp.ng |
 
 ## Office of the Managing Director — 5 · 0 observations
 

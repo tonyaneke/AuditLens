@@ -88,7 +88,39 @@ export const STAFF_DIRECTORY: [string, string, string][] = [
   // re-run scripts/apply-department-roster.mts --apply to withdraw the access again — the roster
   // is what the script removes against, so nothing else needs touching.
   ["Eniola Anishe", "Intern - Strategy & Innovation", "Strategy"],
+  ["Mariam Oguche", "Professional - Internal Audit", "Internal Audit"],
+  ["Ivan Bullem", "Head, IT", "IT"],
+  ["Leesi Tanadeba", "Professional - Legal", "Legal"],
+  ["Sunday Udor", "Professional - Impact & Sustainability", "Impact & Sustainability"],
 ];
+
+export type StaffPick = {
+  name: string;
+  title: string;
+  department: string;
+};
+
+/** Go-live date for the organisation-wide user / action-owner rollout (Head of Audit, 2026-08-06). */
+export const CANONICAL_ADDED_DATE = "2026-08-06";
+
+/** Accounts created before this date display CANONICAL_ADDED_DATE — earlier DB timestamps are migration noise. */
+const ADDED_DATE_CUTOFF = "2026-09-02T00:00:00.000Z";
+
+const MONTHS3 = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function formatIsoDay(iso: string): string {
+  const d = new Date(iso.length <= 10 ? `${iso}T00:00:00` : iso);
+  if (isNaN(d.getTime())) return iso;
+  return `${d.getDate()} ${MONTHS3[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+/** Format when a user or action owner was added. Pre–Sep 2026 accounts all show 6 Aug 2026. */
+export function formatAddedDate(iso: string): string {
+  const d = new Date(iso.length <= 10 ? `${iso}T00:00:00` : iso);
+  if (isNaN(d.getTime())) return iso;
+  if (d < new Date(ADDED_DATE_CUTOFF)) return formatIsoDay(CANONICAL_ADDED_DATE);
+  return formatIsoDay(iso);
+}
 
 /* The two people who genuinely straddle two departments. Both halves confer identical access —
    the split into a home department plus extras exists only so one field stays a single value for
@@ -106,9 +138,11 @@ export function staffEmail(name: string): string {
 }
 
 /** Exact-name staff match for the autocomplete auto-fill (applyStaffPick / applyStaffPickDept). */
-export function staffPick(name: string): [string, string, string] | undefined {
+export function staffPick(name: string): StaffPick | undefined {
   const n = String(name || "").trim().toLowerCase();
-  return STAFF_DIRECTORY.find(([x]) => x.toLowerCase() === n);
+  const hit = STAFF_DIRECTORY.find(([x]) => x.toLowerCase() === n);
+  if (!hit) return undefined;
+  return { name: hit[0], title: hit[1], department: hit[2] };
 }
 
 /** QA-14 — re-exported from lib/permissions so there is one role→label map, not six. */

@@ -22,7 +22,7 @@ import {
   ExcoRecipientDialog,
   UserDialog,
 } from "./lazy";
-import { fetchUsers, roleLabel, type ManagedUser } from "./staff";
+import { fetchUsers, formatAddedDate, roleLabel, type ManagedUser } from "./staff";
 
 const TRASH = (
   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true">
@@ -232,6 +232,7 @@ export default function SettingsPage() {
                   <th scope="col">Name</th>
                   <th scope="col">Email</th>
                   <th scope="col">Login</th>
+                  <th scope="col">Added</th>
                   <th scope="col"></th>
                 </tr>
               </thead>
@@ -250,6 +251,7 @@ export default function SettingsPage() {
                         <span className="pill sop-pending-pill">Not linked</span>
                       )}
                     </td>
+                    <td>{d.createdAt ? formatAddedDate(d.createdAt) : "—"}</td>
                     <td className="ra-actions-cell">
                       <button
                         className="btn-icon-action"
@@ -375,6 +377,7 @@ export default function SettingsPage() {
                   <th scope="col">Email</th>
                   <th scope="col">Role</th>
                   <th scope="col">Status</th>
+                  <th scope="col">Added</th>
                   <th scope="col"></th>
                 </tr>
               </thead>
@@ -419,6 +422,7 @@ export default function SettingsPage() {
                           <span className="pill c-Low">Active</span>
                         )}
                       </td>
+                      <td>{u.createdAt ? formatAddedDate(u.createdAt) : "—"}</td>
                       <td className="ra-actions-cell" onClick={(e) => e.stopPropagation()}>
                         <button className="btn-icon-action" type="button" title="Edit" onClick={openEdit}>
                           ✎
