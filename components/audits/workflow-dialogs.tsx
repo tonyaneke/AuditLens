@@ -502,7 +502,7 @@ Evidence attached: ${ev || "none listed"}`;
     return (
       <ModalFrame title="View remediation">
         <div className="hint">
-          Only the auditor who raised it, the lead auditor, or the Head of Audit can review this.
+          Only Internal Audit can review and verify remediation on this item.
         </div>
       </ModalFrame>
     );

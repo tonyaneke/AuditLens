@@ -11,14 +11,10 @@ import { useUser } from "@/components/chrome/UserContext";
 import { toast } from "@/components/feedback/ToastHost";
 import { useModal } from "@/components/modals/ModalProvider";
 import { CritPill, Empty, Kpi, RowOpen, StatusPill } from "@/components/ui";
-import { effectiveRole } from "@/lib/permissions";
-
-// Modal-only: bulk owner reminders load on first open.
-const RemindersDialog = dynamic(() => import("./RemindersDialog"), { loading: () => null });
 import { StatusEditDialog, requestOwnerUpdateAction } from "@/components/audits/workflow-dialogs";
 import { esc, excelDoc, stamp, wordDoc } from "@/lib/client/exports";
 import { hrefForView, isLegacyPath } from "@/lib/routes";
-import { pendingStatusChange } from "@/lib/workspace/observations";
+import { isInternalAudit, pendingStatusChange } from "@/lib/workspace/observations";
 import {
   allObs,
   allObsRaw,
@@ -43,6 +39,8 @@ import {
   type ObsWithContext,
 } from "@/lib/workspace/selectors";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
+
+const RemindersDialog = dynamic(() => import("./RemindersDialog"), { loading: () => null });
 
 const STATUSES = ["Open", "In Progress", "Closed"];
 const BCOL: Record<string, string> = {
@@ -75,7 +73,7 @@ export default function TrackerPage() {
   const { db, mutate } = useWorkspace();
   const user = useUser();
   const modal = useModal();
-  const isHead = effectiveRole(user) === "head_of_audit";
+  const canRemind = isInternalAudit(user);
   const router = useRouter();
   const search = useSearchParams();
   const mode = search.get("mode") === "insights" ? "insights" : search.get("mode") === "recent" ? "recent" : "actions";
@@ -224,7 +222,7 @@ export default function TrackerPage() {
       title: "Remediation Tracker",
       actions: (
         <>
-          {isHead ? (
+          {canRemind ? (
             <button
               className="btn sm"
               type="button"
@@ -242,7 +240,7 @@ export default function TrackerPage() {
         </>
       ),
     },
-    [mode, obs.length, isHead],
+    [mode, obs.length, canRemind],
   );
 
   /* ---- header tabs ---- */

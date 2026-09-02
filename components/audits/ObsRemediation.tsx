@@ -21,6 +21,7 @@ import {
   canVerifyItem,
   isDeptViewer,
   isHead,
+  isInternalAudit,
   isPrimaryOwner,
   isSecondaryOwner,
   isWithdrawn,
@@ -231,6 +232,7 @@ export default function ObsRemediation({
   const ownerViewer = canActOnObs(user, o, db);
   const deptOnly = isDeptViewer(user, o, db);
   const head = isHead(user);
+  const ia = isInternalAudit(user);
   const canVerify = canVerifyItem(user, o, a as Audit);
   const closed = o.status === "Closed";
 
@@ -264,7 +266,7 @@ export default function ObsRemediation({
           Request review
         </button>,
       );
-    if ((canVerify || head) && wStage === "owner_requested") {
+    if (canVerify && wStage === "owner_requested") {
       actions.push(
         <button className="btn sm" type="button" key="fwd"
           onClick={() => modal.open(<ForwardWithdrawalDialog auditId={a.id} reportId={r.id} obsId={o.id} />)}>
@@ -310,13 +312,13 @@ export default function ObsRemediation({
         </button>,
       );
     }
-    if ((canVerify || head) && o.ownerUserId && !o.ownerRectifiedAt)
+    if (canVerify && o.ownerUserId && !o.ownerRectifiedAt)
       actions.push(
         <button className="btn sec sm" type="button" key="req-upd" onClick={requestOwnerUpdate}>
           {requested.has("upd") ? "🔔 Update requested" : "Request feedback from owner"}
         </button>,
       );
-    if ((canVerify || head) && !o.ownerRectifiedAt)
+    if (canVerify && !o.ownerRectifiedAt)
       actions.push(
         <button className="btn sec sm" type="button" key="req-prog" onClick={requestProgressReport}>
           {requested.has("prog") ? "🔔 Progress report requested" : "Request progress report"}
@@ -438,14 +440,15 @@ export default function ObsRemediation({
           and the composer below is owner-only. That left the person who raised the observation
           unable to attach the supporting documents behind it. */}
       <div className="row" style={{ margin: "6px 0 2px", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        {thread.length ? (
+        {thread.length || ia ? (
           <Link className="btn sec sm" href={commentsHref}>
-            {ownerViewer ? "View your past comments" : "View comments"} ({thread.length})
+            {ownerViewer ? "View your past comments" : "View comments"}
+            {thread.length ? ` (${thread.length})` : ""}
           </Link>
         ) : (
           <span className="hint">No comments yet.</span>
         )}
-        {!ownerViewer ? (
+        {ia && !ownerViewer ? (
           <button
             className="btn sm"
             type="button"

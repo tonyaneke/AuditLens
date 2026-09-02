@@ -54,9 +54,6 @@ export default function RemindersDialog() {
 
   // Reminders can only be routed by `ownerUserId` — the free-text `owner` field holds job
   // titles ("CHIEF FINANCIAL OFFICER"), not people, so it cannot resolve to an address.
-  // Anything without that foreign key is unreachable, and that has to be said out loud rather
-  // than silently filtered away: an outstanding action nobody can be reminded about is exactly
-  // what this control exists to surface. scripts/backfill-owner-ids.mts assigns the legacy rows.
   const outstanding = openApproved.filter((o) => o.ownerUserId);
   const unassigned = openApproved.filter((o) => !o.ownerUserId);
 
@@ -97,8 +94,6 @@ export default function RemindersDialog() {
   async function send() {
     if (!selectedGroups.length) return;
 
-    // Resolve what each owner is being sent before any side effect, so the in-app notification
-    // and the email always describe the same set of items.
     const jobs = selectedGroups
       .map((g) => {
         const items = (onlyOverdue ? g.items.filter((x) => x.overdue) : g.items).slice();
@@ -108,7 +103,6 @@ export default function RemindersDialog() {
       .filter((j) => j.items.length);
     if (!jobs.length) return;
 
-    // In-app notification for every selected owner. This is a local write and cannot fail.
     mutate((d) => {
       for (const { g, items } of jobs) {
         notify(
@@ -121,9 +115,6 @@ export default function RemindersDialog() {
       }
     });
 
-    // Email only owners with an address, and record what the mail service actually did. The
-    // previous version counted every owner as "sent" regardless of whether an email was even
-    // attempted, so the toast and the audit-log entry both overstated the follow-up performed.
     const emailed: string[] = [];
     const failed: { name: string; reason: string }[] = [];
     const noEmail: string[] = [];

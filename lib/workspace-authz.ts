@@ -424,12 +424,14 @@ function reconcileObservations(
   return out;
 }
 
-/** Server-side canVerifyItem(): the audit's lead auditor as STORED, or the auditor who raised this
- *  observation. Reading the lead auditor from storage rather than from the incoming document is
- *  what stops one save appointing itself lead auditor and verifying in the same breath. The Head
- *  never reaches here — authorizeWorkspaceWrite() returns early as fully trusted. */
-function isItemAuditor(cur: Obj, userId: string, leadAuditorId: unknown): boolean {
+/** Server-side canVerifyItem(): any audit staff member, the audit's lead auditor as STORED,
+ *  or the auditor who raised this observation. Reading the lead auditor from storage rather
+ *  than from the incoming document is what stops one save appointing itself lead auditor and
+ *  verifying in the same breath. The Head never reaches here — authorizeWorkspaceWrite()
+ *  returns early as fully trusted. */
+function isItemAuditor(cur: Obj, userId: string, leadAuditorId: unknown, role: string): boolean {
   if (!userId) return false;
+  if (role === STAFF_ROLE) return true;
   if (leadAuditorId && String(leadAuditorId) === userId) return true;
   return !!cur.raisedBy && cur.raisedBy === userId;
 }
@@ -450,7 +452,7 @@ function reconcileOneObs(
   leadAuditorId: unknown,
 ): Obj {
   const next: Obj = { ...inc };
-  const auditor = isItemAuditor(cur, userId, leadAuditorId);
+  const auditor = isItemAuditor(cur, userId, leadAuditorId, role);
   /* Verification proposes the closure date, so a legitimate sign-off always arrives carrying
      `closedDateISO` — a controlled field. Flagging it logged a spurious obs_field violation into
      security.workspace_write_filtered on every genuine verification. The value is still forced

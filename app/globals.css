@@ -2160,6 +2160,13 @@ td.timeline-cell {
   border-bottom: 2px solid color-mix(in oklch, var(--accent) 28%, var(--line));
 }
 
+.audit-quarter-head .seclabel {
+  font-size: 16px;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--text);
+}
+
 /* Annual plan table — column breathing room */
 .ra-plan-table th,
 .ra-plan-table td {

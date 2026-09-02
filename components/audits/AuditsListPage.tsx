@@ -135,7 +135,7 @@ export default function AuditsListPage() {
   const [status, setStatus] = useState("All");
   const [period, setPeriod] = useState("All");
   const [year, setYear] = useState("All");
-  const [mine, setMine] = useState(isStaff);
+  const [mine, setMine] = useState(false);
 
   const audits = db.audits || [];
 

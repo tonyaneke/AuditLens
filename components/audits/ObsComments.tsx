@@ -19,6 +19,7 @@ import {
   OBS_COMMENT_TAGS,
   canActOnObs,
   findObsIn,
+  isInternalAudit,
   obsCommentTag,
   obsThread,
   roleLabel,
@@ -89,6 +90,7 @@ export default function ObsComments({
      department shares the thread, including the private department-only notes, because they
      share the work of answering it. */
   const ownerViewer = canActOnObs(user, o ?? undefined, db);
+  const ia = isInternalAudit(user);
 
   const [type, setType] = useState("All");
   const [by, setBy] = useState("All");
@@ -102,7 +104,7 @@ export default function ObsComments({
     {
       title: "Comments",
       back: <BackButton href={backHref} />,
-      actions: !ownerViewer && o ? (
+      actions: ia && o ? (
         <button
           className="btn sm"
           type="button"
@@ -112,7 +114,7 @@ export default function ObsComments({
         </button>
       ) : null,
     },
-    [ownerViewer, !!o, auditId, reportId, obsId],
+    [ia, !!o, auditId, reportId, obsId],
   );
 
   if (!o) {

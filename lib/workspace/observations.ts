@@ -176,9 +176,14 @@ export function isAuditStaff(user: SessionUser): boolean {
   return effectiveRole(user) === "audit_staff";
 }
 
+/** Head and audit staff — full Internal Audit workspace powers (UI gates should match). */
+export function isInternalAudit(user: SessionUser): boolean {
+  return isHead(user) || isAuditStaff(user);
+}
+
 /** Head and audit staff maintain the fraud risk register (server authz matches). */
 export function canManageFraudRegister(user: SessionUser): boolean {
-  return isHead(user) || isAuditStaff(user);
+  return isInternalAudit(user);
 }
 
 /** Head and audit staff maintain the external findings register; others only their own raises. */
@@ -186,7 +191,7 @@ export function canManageExtRegister(
   user: SessionUser,
   finding?: { raisedBy?: string | null },
 ): boolean {
-  if (canManageFraudRegister(user)) return true;
+  if (isInternalAudit(user)) return true;
   if (!finding) return false;
   return !finding.raisedBy || finding.raisedBy === user.id;
 }
@@ -249,12 +254,13 @@ export function canRespondToObs(user: SessionUser, o: Observation | undefined): 
 export function canVerifyReport(user: SessionUser, a: Audit | undefined): boolean {
   return isHead(user) || !!(a && a.leadAuditorId && a.leadAuditorId === user.id);
 }
-/** …plus the auditor who raised the item. */
+/** Any Internal Audit staff member may verify and close out remediation on any item. */
 export function canVerifyItem(
   user: SessionUser,
   o: Observation | undefined,
   a: Audit | undefined,
 ): boolean {
+  if (isInternalAudit(user)) return true;
   return canVerifyReport(user, a) || !!(o && o.raisedBy && o.raisedBy === user.id);
 }
 
