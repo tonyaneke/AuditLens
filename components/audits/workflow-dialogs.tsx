@@ -696,12 +696,24 @@ export function HeadCloseDialog({ auditId, reportId, obsId }: Ids) {
       cur.closureRejection = null;
     });
     notifyIn((d, cur) => {
-      notify(d, cur.ownerUserId, "closed", cur.title + " has been closed", "myobs", cur.id);
-      notify(d, cur.secondaryOwnerUserId, "closed", cur.title + " has been closed", "myobs", cur.id);
-      notify(d, cur.raisedBy, "closed", cur.title + " has been closed", "observation", cur.id);
+      const closedText = cur.title + " has been closed";
+      const emailSubject = "AuditLens — observation closed";
+      const emailBody = `The observation "${cur.title}" has been verified and closed by the Head of Audit. Sign in to AuditLens to view the final record.`;
+      notifyBoth(d, cur.ownerUserId, "closed", closedText, "myobs", emailSubject, emailBody, cur.id);
+      notifyBoth(
+        d,
+        cur.secondaryOwnerUserId,
+        "closed",
+        closedText,
+        "myobs",
+        emailSubject,
+        emailBody,
+        cur.id,
+      );
+      notify(d, cur.raisedBy, "closed", closedText, "observation", cur.id);
       // Closure is department news: whoever in the department did the work — named owner or not —
       // sees that Internal Audit has signed it off.
-      notifyDeptOfObs(d, cur, "closed", cur.title + " has been closed");
+      notifyDeptOfObs(d, cur, "closed", closedText);
     });
     logAudit("obs.closed", "Head verified & closed: " + o!.title, { observationId: obsId });
     modal.close();
