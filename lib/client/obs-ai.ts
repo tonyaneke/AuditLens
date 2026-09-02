@@ -204,10 +204,9 @@ Return ONLY a JSON object: {"concrete": true or false, "feedback": "one or two s
   };
 }
 
-/* Extracts text from an attached evidence file (PDF/DOCX) so the AI reviewer can use context
-   that lives in the document rather than the response text. Best-effort — "" on any failure. */
-export async function extractEvidenceText(f: File | undefined): Promise<string> {
-  if (!f) return "";
+/* Extracts text from attached evidence files (PDF/DOCX) so the AI reviewer can use context
+   that lives in the documents rather than the response text. Best-effort — "" on any failure. */
+async function extractOneEvidenceFile(f: File): Promise<string> {
   const n = (f.name || "").toLowerCase();
   if (!n.endsWith(".pdf") && !n.endsWith(".docx")) return "";
   try {
@@ -215,8 +214,18 @@ export async function extractEvidenceText(f: File | undefined): Promise<string> 
     fd.append("file", f);
     const res = await fetch("/api/documents/extract", { method: "POST", body: fd });
     const d = await res.json().catch(() => ({}) as { text?: string });
-    return res.ok && d.text ? String(d.text).slice(0, 6000) : "";
+    return res.ok && d.text ? String(d.text) : "";
   } catch {
     return "";
   }
+}
+
+export async function extractEvidenceText(files: File | File[] | undefined): Promise<string> {
+  const list = !files ? [] : Array.isArray(files) ? files : [files];
+  const parts: string[] = [];
+  for (const f of list) {
+    const t = await extractOneEvidenceFile(f);
+    if (t) parts.push(t);
+  }
+  return parts.join("\n\n").slice(0, 6000);
 }

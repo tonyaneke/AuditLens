@@ -69,7 +69,7 @@ const NON_HEAD_WRITABLE_SECTIONS = new Set([
    canVerifyItem either. */
 const AUDITOR_VERIFY_FIELDS = [
   "reportVerifiedAt", "reportVerifiedBy", "reportVerifiedByName",
-  "closureNote", "closureEvidence", "closureFile",
+  "closureNote", "closureEvidence", "closureFile", "closureFiles",
   "ownerRectifiedAt", "ownerRectifiedBy", "ownerRectifiedByName",
 ];
 
@@ -109,7 +109,7 @@ const CONTROLLED_OBS_FIELDS = [
 // an owner adds their own evidence through `updates` and their closure response, and must not be
 // able to rewrite or drop the papers the observation was raised on.
 const AUDITOR_ONLY_OBS_FIELDS = [
-  "reportVerifiedAt", "reportVerifiedByName", "closureNote", "closureEvidence", "closureFile",
+  "reportVerifiedAt", "reportVerifiedByName", "closureNote", "closureEvidence", "closureFile", "closureFiles",
   "updateRequestedAt", "updateRequestedBy", "progressReport", "attachments",
 ];
 const WITHDRAWAL_HEAD_FIELDS = ["headBy", "headByName", "headAt", "headReason"];

@@ -12,6 +12,7 @@ import type {
   Approval,
   Audit,
   AuditTest,
+  EvidenceFile,
   Observation,
   ObsUpdate,
   Report,
@@ -86,6 +87,12 @@ export function obsUpdates(o: Observation): ObsUpdate[] {
   return o.updates;
 }
 
+/** Closure evidence uploaded at auditor verification — reads legacy closureFile too. */
+export function closureFilesOf(o: { closureFiles?: EvidenceFile[]; closureFile?: EvidenceFile | null }): EvidenceFile[] {
+  if (o.closureFiles?.length) return o.closureFiles;
+  return o.closureFile ? [o.closureFile] : [];
+}
+
 export function isWithdrawn(o: Observation | undefined | null): boolean {
   return !!(o && (o.withdrawn || obsWithdrawStage(o) === "withdrawn"));
 }
@@ -121,7 +128,7 @@ export function obsThread(o: Observation, ownerViewer: boolean): ThreadEntry[] {
       role: "audit_staff",
       at: o.reportVerifiedAt || "",
       tag: "closure_update",
-      evidence: o.closureFile ? [o.closureFile] : [],
+      evidence: closureFilesOf(o),
     });
   }
   if (o.headComment && closed) {

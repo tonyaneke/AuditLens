@@ -43,7 +43,7 @@ import {
 import { STATUSES, approvals, fmtDate, fmtDateTime, isoToDate, isoNow, uid } from "@/lib/workspace/selectors";
 import type { EvidenceFile, Observation, WorkspaceDb } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
-import { FilePick, uploadEvidence } from "./attach";
+import { FilePickMulti, MAX_UPLOAD_BYTES, tooLarge, uploadAllEvidence } from "./attach";
 
 type Ids = { auditId: string; reportId: string; obsId: string };
 
@@ -201,7 +201,7 @@ export function ReadyForClosureDialog({ auditId, reportId, obsId }: Ids) {
   const modal = useModal();
   const user = useUser();
   const [text, setText] = useState(o?.ownerResponse || "");
-  const [file, setFile] = useState<File | undefined>();
+  const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [busyLabel, setBusyLabel] = useState("Checking…");
   const [err, setErr] = useState("");
@@ -273,7 +273,7 @@ export function ReadyForClosureDialog({ auditId, reportId, obsId }: Ids) {
          same either way: try again. */
       let failure: AiUnreachableError | null = null;
       try {
-        const evText = await extractEvidenceText(file);
+        const evText = await extractEvidenceText(files);
         v = await runClosureCheck(o!, text.trim(), evText);
       } catch (e) {
         v = null;
@@ -302,9 +302,17 @@ export function ReadyForClosureDialog({ auditId, reportId, obsId }: Ids) {
     setPassed(true);
     setBusyLabel("Submitting…");
 
-    let ev: EvidenceFile | null = null;
+    const big = tooLarge(files);
+    if (big) {
+      setBusy(false);
+      setPassed(false);
+      setErr(`"${big.name}" exceeds the ${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} MB limit.`);
+      return;
+    }
+
+    let evs: EvidenceFile[] = [];
     try {
-      ev = await uploadEvidence(obsId, file);
+      evs = await uploadAllEvidence(obsId, files);
     } catch (e) {
       setBusy(false);
       setPassed(false);
@@ -314,7 +322,7 @@ export function ReadyForClosureDialog({ auditId, reportId, obsId }: Ids) {
     const at = new Date().toISOString();
     editObs((cur) => {
       cur.ownerResponse = text.trim();
-      if (ev) cur.ownerResponseEvidence = [ev];
+      if (evs.length) cur.ownerResponseEvidence = evs;
       cur.ownerRectifiedBy = user.id || "";
       cur.ownerRectifiedByName = user.name || "";
       // The single field that drives the whole transition — workspace-authz derives the
@@ -373,7 +381,7 @@ export function ReadyForClosureDialog({ auditId, reportId, obsId }: Ids) {
         onChange={(e) => setText(e.target.value)}
         placeholder="Be specific: what was implemented or changed, when, and how it addresses the recommendation…"
       />
-      <FilePick onPick={setFile} />
+      <FilePickMulti files={files} onChange={setFiles} />
       {err ? <div className="ai-err" style={{ marginTop: 10 }}>{err}</div> : null}
       {passed ? (
         <div className="hint" style={{ marginTop: 10, color: "var(--low)" }}>
@@ -452,7 +460,7 @@ export function VerifyRemediationDialog({ auditId, reportId, obsId }: Ids) {
   const [note, setNote] = useState(o?.closureNote || "");
   const [date, setDate] = useState(String(o?.closedDateISO || isoNow()).slice(0, 10));
   const [by, setBy] = useState(user.name || "");
-  const [file, setFile] = useState<File | undefined>();
+  const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   /* Reviewing the owner's response has two honest outcomes, so both live here rather than as
@@ -518,9 +526,16 @@ Evidence attached: ${ev || "none listed"}`;
 
   async function submit() {
     setBusy(true);
-    let ev: EvidenceFile | null = null;
+    setErr("");
+    const big = tooLarge(files);
+    if (big) {
+      setBusy(false);
+      setErr(`"${big.name}" exceeds the ${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} MB limit.`);
+      return;
+    }
+    let evs: EvidenceFile[] = [];
     try {
-      ev = await uploadEvidence(obsId, file);
+      evs = await uploadAllEvidence(obsId, files);
     } catch (e) {
       setBusy(false);
       setErr(e instanceof Error ? e.message : "Upload failed.");
@@ -528,7 +543,10 @@ Evidence attached: ${ev || "none listed"}`;
     }
     const at = new Date().toISOString();
     editObs((cur) => {
-      if (ev) cur.closureFile = ev;
+      if (evs.length) {
+        cur.closureFiles = evs;
+        cur.closureFile = evs[0] ?? null;
+      }
       cur.reportVerifiedBy = user.id || "";
       cur.reportVerifiedByName = by || user.name || "";
       cur.closureNote = note;
@@ -626,9 +644,9 @@ Evidence attached: ${ev || "none listed"}`;
             </div>
           </div>
           <label style={{ marginTop: 10 }}>
-            Closure evidence file <span className="hint">(optional upload)</span>
+            Closure evidence files <span className="hint">(optional uploads)</span>
           </label>
-          <FilePick onPick={setFile} label="📎 Choose file" />
+          <FilePickMulti files={files} onChange={setFiles} label="📎 Choose files" />
           <label htmlFor="co-note" style={{ marginTop: 10 }}>
             Closure note{" "}
             <BusyButton

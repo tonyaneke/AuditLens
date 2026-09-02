@@ -12,19 +12,19 @@
    The evidence upload uses uploadWithProgress(), which was ported in the migration but left
    with no caller — the .upload-progress CSS has been dead since. */
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useUser } from "@/components/chrome/UserContext";
 import { toast } from "@/components/feedback/ToastHost";
 import { logAudit } from "@/lib/client/audit-log";
 import { dirUser, headUsers, ownerEmailFor } from "@/lib/client/directory";
 import { emailNotify } from "@/lib/client/notify";
 import { runCommentCheck } from "@/lib/client/obs-ai";
-import { uploadFile } from "@/lib/client/uploads";
 import { effectiveRole } from "@/lib/permissions";
 import { findObsIn, notify } from "@/lib/workspace/observations";
 import { uid } from "@/lib/workspace/selectors";
 import type { EvidenceFile, Observation, ObsUpdate } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
+import { FilePickMulti, MAX_UPLOAD_BYTES, tooLarge, uploadAllEvidence } from "./attach";
 
 // Legacy: obvious filler — skip the AI round-trip and refuse locally.
 const TRIVIAL = [
@@ -53,10 +53,8 @@ export default function ObsComposer({
 }) {
   const { mutate } = useWorkspace();
   const user = useUser();
-  const fileRef = useRef<HTMLInputElement>(null);
   const [text, setText] = useState("");
-  const [fileName, setFileName] = useState("");
-  const [pct, setPct] = useState<number | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [busyLabel, setBusyLabel] = useState("Posting…");
   const [gate, setGate] = useState<GateFeedback | null>(null);
@@ -74,8 +72,7 @@ export default function ObsComposer({
 
   async function post() {
     if (busy) return;
-    const f = fileRef.current?.files?.[0];
-    if (!text.trim() && !f) {
+    if (!text.trim() && !files.length) {
       toast("Add a comment or attach a file.", "error");
       return;
     }
@@ -86,7 +83,7 @@ export default function ObsComposer({
     /* Quality gate — legacy addObsUpdate. Only text posts to Internal Audit are gated. */
     if (text.trim() && !toCoOwner) {
       const t = text.trim().toLowerCase().replace(/[.!\s]+$/, "");
-      if (!f && (t.length < 6 || TRIVIAL.includes(t))) {
+      if (!files.length && (t.length < 6 || TRIVIAL.includes(t))) {
         setGateErr(
           progressMode
             ? "A progress report needs specifics — what has been done so far, the current status, and what remains."
@@ -121,17 +118,19 @@ export default function ObsComposer({
 
     setBusyLabel("Posting…");
     setBusy(true);
+
+    const big = tooLarge(files);
+    if (big) {
+      setBusy(false);
+      toast(`"${big.name}" exceeds the ${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} MB limit.`, "error");
+      return;
+    }
+
     let evidence: EvidenceFile[] = [];
-    if (f) {
+    if (files.length) {
       try {
-        setPct(0);
-        // uploadFile slices anything over ~3 MB — an owner's evidence hits the same host body
-        // limit an auditor's does, so both go through the one entry point.
-        const data = await uploadFile(o.id, f, (p) => setPct(p));
-        setPct(100);
-        if (data.file) evidence = [data.file as EvidenceFile];
+        evidence = await uploadAllEvidence(o.id, files);
       } catch (e) {
-        setPct(null);
         setBusy(false);
         toast(e instanceof Error ? e.message : "Upload failed.", "error");
         return;
@@ -196,13 +195,20 @@ export default function ObsComposer({
       }
     });
 
-    logAudit("obs.update", "Update posted on: " + o.title, { observationId: o.id });
+    logAudit("obs.update", "Update posted on: " + o.title, { observationId: o.id, attachments: evidence.length });
     setText("");
-    setFileName("");
-    setPct(null);
-    if (fileRef.current) fileRef.current.value = "";
+    setFiles([]);
     setBusy(false);
-    toast(progressMode ? "Progress report posted." : "Comment posted.", "success");
+    toast(
+      evidence.length
+        ? progressMode
+          ? "Progress report and attachment(s) posted."
+          : "Comment and attachment(s) posted."
+        : progressMode
+          ? "Progress report posted."
+          : "Comment posted.",
+      "success",
+    );
   }
 
   return (
@@ -219,20 +225,11 @@ export default function ObsComposer({
           placeholder={placeholder}
           aria-label={composerTitle}
         />
-        <label className="composer-attach" title="Attach file">
-          <input
-            type="file"
-            ref={fileRef}
-            style={{ display: "none" }}
-            onChange={(e) => setFileName(e.target.files?.[0]?.name || "")}
-          />
-          <span aria-hidden="true">📎</span>
-          <span className="visually-hidden">Attach a file</span>
-        </label>
       </div>
 
+      <FilePickMulti files={files} onChange={setFiles} label="📎 Attach files" />
+
       <div className="row" style={{ marginTop: 8, gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <span className="hint">{fileName || "No file chosen"}</span>
         {coOwnerExists ? (
           <select
             className="field-select field-select-sm"
@@ -249,7 +246,7 @@ export default function ObsComposer({
           className="btn sm"
           type="button"
           onClick={post}
-          disabled={busy || (!text.trim() && !fileName)}
+          disabled={busy || (!text.trim() && !files.length)}
         >
           {busy ? busyLabel : progressMode ? "Post progress report" : "Post comment"}
         </button>
@@ -267,18 +264,6 @@ export default function ObsComposer({
               ))}
             </ul>
           ) : null}
-        </div>
-      ) : null}
-
-      {pct !== null ? (
-        <div className="upload-progress">
-          <div className="upload-progress-row">
-            <span className="upload-progress-name">Uploading {fileName}</span>
-            <span className="upload-progress-pct">{pct}%</span>
-          </div>
-          <div className="upload-progress-track">
-            <div className="upload-progress-fill" style={{ width: `${pct}%` }} />
-          </div>
         </div>
       ) : null}
 

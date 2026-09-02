@@ -24,6 +24,7 @@ import {
   isPrimaryOwner,
   isSecondaryOwner,
   isWithdrawn,
+  closureFilesOf,
   obsThread,
   obsWithdrawStage,
 } from "@/lib/workspace/observations";
@@ -362,13 +363,14 @@ export default function ObsRemediation({
      Reviewers still see it where they need it — inside the View-remediation and Head-close
      modals, which is the point at which they are judging it. */
   const pkg: React.ReactNode[] = [];
+  const auditorClosureFiles = closureFilesOf(o);
   if (o.reportVerifiedAt && closed)
     pkg.push(
       <div className="obs-field" key="aud">
         <div className="ttl">Auditor verification &amp; closure note</div>
         <div className="txt">
           {o.closureNote ? <RichText text={o.closureNote} /> : <span className="hint">No note.</span>}
-          <Evidence files={o.closureFile ? [o.closureFile] : undefined} />
+          <Evidence files={auditorClosureFiles.length ? auditorClosureFiles : undefined} />
           <div className="hint" style={{ marginTop: 4 }}>
             Verified by {o.reportVerifiedByName || "—"}
             {o.reportVerifiedAt ? " · " + fmtDateTime(o.reportVerifiedAt) : ""}

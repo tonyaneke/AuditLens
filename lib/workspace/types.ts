@@ -93,6 +93,8 @@ export type Observation = {
   closureEvidence?: string;
   closureNote?: string;
   closureFile?: EvidenceFile | null;
+  /** Auditor closure evidence — prefer this over closureFile when present. */
+  closureFiles?: EvidenceFile[];
   closureRejection?: ClosureRejection | null;
   progressReport?: { by: string; byName: string; at: string } | null;
   updateRequestedAt?: string;
@@ -262,6 +264,8 @@ export type ExtFinding = {
   headComment?: string;
   closureNote?: string;
   closureFile?: EvidenceFile | null;
+  /** Auditor closure evidence — prefer this over closureFile when present. */
+  closureFiles?: EvidenceFile[];
   closureDate?: string;
   closureRejection?: ClosureRejection | null;
   progressReport?: { by: string; byName: string; at: string } | null;
