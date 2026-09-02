@@ -322,7 +322,7 @@ export default function ExternalPage() {
                     <td>
                       <Link
                         href={`/external/${f.id}`}
-                        style={{ fontWeight: 600 }}
+                        className="ext-row-title"
                         onClick={(e) => e.stopPropagation()}
                       >
                         {f.title}
