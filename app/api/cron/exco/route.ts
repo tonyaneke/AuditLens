@@ -158,9 +158,9 @@ export async function GET(request: Request) {
       await sendNotificationEmail({
         to: headEmails,
         subject: "AuditLens — Executive Assurance Brief auto-sent",
-        text: `The Executive Assurance Brief "${period}" was automatically sent to ${recipients.length} MD & EXCO recipient(s). Public link: ${link}`,
-        ctaUrl: link,
-        ctaLabel: "Open the Executive Assurance Brief",
+        text: `The Executive Assurance Brief "${period}" was automatically sent to ${recipients.length} MD & EXCO recipient(s).`,
+        ctaUrl: `${appUrl}/exco`,
+        ctaLabel: "View dashboard",
       });
     }
   } catch {

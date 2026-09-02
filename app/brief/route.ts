@@ -180,7 +180,7 @@ function briefStyles() {
   .attach-list{margin:0;padding-left:18px;font-size:13px}
   .fraud-action{padding:12px 0;border-bottom:1px solid var(--line)}
   .fraud-action:last-child{border-bottom:none}
-  .note-banner{font-size:13px;background:#fdfaf0;border-left:3px solid #a67c00;padding:10px 12px;border-radius:0 8px 8px 0;margin:0 0 14px}
+  .note-banner{font-size:13px;background:#fdfaf0;border:1px solid #e1eae7;padding:10px 12px;border-radius:8px;margin:0 0 14px}
   .closure-foot{font-size:12.5px;color:var(--muted);margin-top:16px;padding-top:12px;border-top:1px solid var(--line)}
   @media(max-width:720px){
     .kpis{grid-template-columns:1fr 1fr}

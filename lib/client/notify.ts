@@ -16,6 +16,7 @@ export function emailNotify(
   subject?: string,
   text?: string,
   ctaUrl?: string,
+  ctaLabel?: string,
 ): Promise<NotifyResult> {
   const list = (Array.isArray(to) ? to : [to]).filter(Boolean);
   if (!list.length) return Promise.resolve({ sent: false, reason: "no recipient address" });
@@ -36,6 +37,7 @@ export function emailNotify(
         subject: subject || "AuditLens notification",
         text: text || "",
         ctaUrl: cta,
+        ctaLabel: ctaLabel || undefined,
       }),
     })
       .then(async (res) => {

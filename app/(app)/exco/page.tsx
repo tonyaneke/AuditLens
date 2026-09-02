@@ -249,12 +249,21 @@ export default function ExcoPage() {
           sent,
         });
         const headEmails = heads.map((h) => h.email).filter(Boolean) as string[];
-        if (headEmails.length)
+        if (headEmails.length) {
+          let excoUrl = "/exco";
+          try {
+            excoUrl = location.origin + "/exco";
+          } catch {
+            /* ignore */
+          }
           emailNotify(
             headEmails,
             "AuditLens — Executive Assurance Brief sent",
-            `The Executive Assurance Brief "${b.period}" was sent to ${to.length} MD & EXCO recipient(s).${sent ? "" : " (Delivery to recipients could not be confirmed — check the email configuration.)"} Public link: ${link}`,
+            `The Executive Assurance Brief "${b.period}" was sent to ${to.length} MD & EXCO recipient(s).${sent ? "" : " (Delivery to recipients could not be confirmed — check the email configuration.)"}`,
+            excoUrl,
+            "View dashboard",
           );
+        }
         toast(
           sent
             ? `Brief sent to ${to.length} recipient(s).`

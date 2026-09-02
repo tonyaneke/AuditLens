@@ -235,7 +235,7 @@ export async function sendNotificationEmail(params: {
       from: { email: from, name: "AuditLens" },
       subject: params.subject,
       content: [
-        { type: "text/plain", value: `${params.text}\n\nSign in to AuditLens: ${signInLink}` },
+        { type: "text/plain", value: `${params.text}\n\n${ctaLabel}: ${signInLink}` },
         { type: "text/html", value: html },
       ],
     }),
@@ -280,7 +280,7 @@ export async function sendAdminConsolidatedEmail(params: {
       .map(n => `<li style="margin:6px 0"><a href="${escapeHtml(appUrl + '/' + n.link)}" style="color:#0d5a47;font-weight:600">${escapeHtml(n.title)}</a></li>`)
       .join("");
     headSection = `
-      <div style="margin:16px 0;padding:14px;background:#f2f7f5;border-radius:8px;border-left:4px solid #0d5a47">
+      <div style="margin:16px 0;padding:14px;background:#f2f7f5;border-radius:8px;border:1px solid #e1eae7">
         <div style="font-size:13px;font-weight:700;color:#0d5a47;margin-bottom:8px">📋 As Head of Audit — Approvals Needed</div>
         <ol style="margin:0;padding-left:20px;color:#19302a;font-size:13px;line-height:1.6">${items}</ol>
       </div>`;
@@ -292,7 +292,7 @@ export async function sendAdminConsolidatedEmail(params: {
       .map(n => `<li style="margin:6px 0"><a href="${escapeHtml(appUrl + '/' + n.link)}" style="color:#0d5a47;font-weight:600">${escapeHtml(n.title)}</a></li>`)
       .join("");
     ownerSection = `
-      <div style="margin:16px 0;padding:14px;background:#fdf6e3;border-radius:8px;border-left:4px solid #c98a00">
+      <div style="margin:16px 0;padding:14px;background:#fdf6e3;border-radius:8px;border:1px solid #e1eae7">
         <div style="font-size:13px;font-weight:700;color:#a67c00;margin-bottom:8px">👤 As Action Owner — Observations Assigned</div>
         <ol style="margin:0;padding-left:20px;color:#19302a;font-size:13px;line-height:1.6">${items}</ol>
       </div>`;
