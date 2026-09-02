@@ -38,7 +38,9 @@ export const DEPARTMENTS = [
 
 /* ---------------- 
 This is a test section to see what i am doing...Because this is supper weird that I am here to do all this section for the action 
-basic accessors ---------------- */
+basic accessors 
+Continue on the already existing code and trying to understand the code and logic behind it as this is only way ...this is only way to work on it
+---------------- */
 
 export function fraudActions(f: FraudRisk): FraudAction[] {
   return f.actions || [];

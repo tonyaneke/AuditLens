@@ -77,6 +77,10 @@ export default function FraudRiskDetailPage({ riskId }: { riskId: string }) {
   }
 
   function delAction(aid: string) {
+    if (!canManage) {
+      toast("Only Internal Audit can perform this action.", "error");
+      return;
+    }
     void modal.confirm({
       message: "Delete this prevention action?",
       danger: true,
@@ -177,13 +181,15 @@ export default function FraudRiskDetailPage({ riskId }: { riskId: string }) {
             Prevention actions{acts.length ? ` — ${implN}/${acts.length} implemented` : ""}
           </div>
           <div className="spacer" />
-          <button
-            className="btn sm"
-            type="button"
-            onClick={() => modal.open(<FraudActionDialog riskId={f.id} />)}
-          >
-            + Add action
-          </button>
+          {canManage ? (
+            <button
+              className="btn sm"
+              type="button"
+              onClick={() => modal.open(<FraudActionDialog riskId={f.id} />)}
+            >
+              + Add action
+            </button>
+          ) : null}
         </div>
         {acts.length ? (
           acts.map((a) => (
@@ -202,16 +208,20 @@ export default function FraudRiskDetailPage({ riskId }: { riskId: string }) {
                 </div>
               ) : null}
               <div className="row" style={{ gap: 6, marginTop: 8 }}>
-                <button
-                  className="btn ghost sm"
-                  type="button"
-                  onClick={() => modal.open(<FraudActionDialog riskId={f.id} actionId={a.id} />)}
-                >
-                  Edit
-                </button>
-                <button className="btn ghost sm danger" type="button" onClick={() => delAction(a.id)}>
-                  Delete
-                </button>
+                {canManage ? (
+                  <>
+                    <button
+                      className="btn ghost sm"
+                      type="button"
+                      onClick={() => modal.open(<FraudActionDialog riskId={f.id} actionId={a.id} />)}
+                    >
+                      Edit
+                    </button>
+                    <button className="btn ghost sm danger" type="button" onClick={() => delAction(a.id)}>
+                      Delete
+                    </button>
+                  </>
+                ) : null}
               </div>
             </div>
           ))

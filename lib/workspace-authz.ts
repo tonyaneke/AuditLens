@@ -219,6 +219,12 @@ export function authorizeWorkspaceWrite(
     violations,
   );
 
+  // Audit staff maintain fraud plan narrative and BAC quarterly updates alongside the register.
+  if (effective === STAFF_ROLE) {
+    if (inc.fraudPlanNarrative !== undefined) next.fraudPlanNarrative = inc.fraudPlanNarrative;
+    if (inc.fraudUpdate !== undefined) next.fraudUpdate = inc.fraudUpdate;
+  }
+
   /* Note any attempt to change a locked section (informational — the change is already
      discarded). Compared against what this viewer was actually SERVED, not against raw storage:
      the GET payload withholds several things from a locked section, so storage is the wrong

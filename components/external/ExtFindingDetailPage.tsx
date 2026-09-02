@@ -12,7 +12,7 @@ import { DetailHero, Meta, Section } from "@/components/audits/detail-parts";
 import ObsRemediation from "@/components/audits/ObsRemediation";
 import { deptLabel, deptNameOf } from "@/lib/dept-scope";
 import { ensureExtList } from "@/lib/workspace/external";
-import { isActionOwner, isHead } from "@/lib/workspace/observations";
+import { isActionOwner, canManageExtRegister } from "@/lib/workspace/observations";
 import { ck, fmtDate, isoToDate } from "@/lib/workspace/selectors";
 import type { Observation } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
@@ -26,10 +26,9 @@ export default function ExtFindingDetailPage({ fid }: { fid: string }) {
   const list = ensureExtList(db);
   const f = list.find((x) => x.id === fid);
 
-  // Legacy renderExtFinding: the Head of Audit, the auditor who raised it, or anyone when the
-  // finding has no raiser (e.g. imported) can manage it; action owners never see the assign action.
+  // Head, audit staff, the raiser, or anyone when the finding has no raiser (e.g. imported).
   const owner = isActionOwner(user);
-  const canManage = !!f && (isHead(user) || (!!f.raisedBy && f.raisedBy === user.id) || !f.raisedBy);
+  const canManage = !!f && canManageExtRegister(user, f);
   const backHref = owner ? "/portal/external" : "/external";
 
   // Port of modalDelExt / delExt — go back to the register after deleting.

@@ -181,6 +181,16 @@ export function canManageFraudRegister(user: SessionUser): boolean {
   return isHead(user) || isAuditStaff(user);
 }
 
+/** Head and audit staff maintain the external findings register; others only their own raises. */
+export function canManageExtRegister(
+  user: SessionUser,
+  finding?: { raisedBy?: string | null },
+): boolean {
+  if (canManageFraudRegister(user)) return true;
+  if (!finding) return false;
+  return !finding.raisedBy || finding.raisedBy === user.id;
+}
+
 // Check if user is admin with specific active role
 export function isAdminWithRole(user: SessionUser, role: string): boolean {
   return isAdmin(user) && user.activeRole === role;

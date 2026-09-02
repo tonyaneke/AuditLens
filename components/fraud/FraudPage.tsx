@@ -220,11 +220,13 @@ export default function FraudPage() {
   }
 
   function delFraudAction(rid: string, aid: string) {
-    mutate((d) => {
-      const f = (d.fraudRisks || []).find((x) => x.id === rid);
-      if (!f) return;
-      f.actions = (f.actions || []).filter((x) => x.id !== aid);
-      rollupFraud(f);
+    requireManage(() => {
+      mutate((d) => {
+        const f = (d.fraudRisks || []).find((x) => x.id === rid);
+        if (!f) return;
+        f.actions = (f.actions || []).filter((x) => x.id !== aid);
+        rollupFraud(f);
+      });
     });
   }
 
@@ -384,12 +386,16 @@ export default function FraudPage() {
           <span className="hint">
             {allActs.length ? implN + "/" + allActs.length + " actions implemented" : "no actions yet"}
           </span>
-          <button className="btn ghost sm" type="button" onClick={() => modal.open(<FraudUpdateDialog />)}>
-            📅 Quarterly update
-          </button>
-          <button className="btn ghost sm" type="button" onClick={() => modal.open(<FraudPlanDialog />)}>
-            Edit overview
-          </button>
+          {canManage ? (
+            <>
+              <button className="btn ghost sm" type="button" onClick={() => modal.open(<FraudUpdateDialog />)}>
+                📅 Quarterly update
+              </button>
+              <button className="btn ghost sm" type="button" onClick={() => modal.open(<FraudPlanDialog />)}>
+                Edit overview
+              </button>
+            </>
+          ) : null}
         </div>
         <div className="hint" style={{ margin: "4px 0 10px" }}>
           Each fraud risk from the assessment is listed below by residual priority. Add the
@@ -447,13 +453,15 @@ export default function FraudPage() {
                   {f.process ? " · " + f.process : ""}
                 </span>
                 <div className="spacer" />
-                <button
-                  className="btn sec sm"
-                  type="button"
-                  onClick={() => modal.open(<FraudActionDialog riskId={f.id} />)}
-                >
-                  + Add action
-                </button>
+                {canManage ? (
+                  <button
+                    className="btn sec sm"
+                    type="button"
+                    onClick={() => modal.open(<FraudActionDialog riskId={f.id} />)}
+                  >
+                    + Add action
+                  </button>
+                ) : null}
               </div>
               {acts.length ? (
                 <table style={{ marginTop: 8 }}>
@@ -481,22 +489,26 @@ export default function FraudPage() {
                           <span className={actStatusClass(a.status)}>{a.status || "Planned"}</span>
                         </td>
                         <td className="ra-actions-cell">
-                          <button
-                            className="btn-icon-action"
-                            type="button"
-                            title="Edit"
-                            onClick={() => modal.open(<FraudActionDialog riskId={f.id} actionId={a.id} />)}
-                          >
-                            ✎
-                          </button>
-                          <button
-                            className="btn-icon-action danger"
-                            type="button"
-                            title="Delete"
-                            onClick={() => delFraudAction(f.id, a.id)}
-                          >
-                            {TRASH}
-                          </button>
+                          {canManage ? (
+                            <>
+                              <button
+                                className="btn-icon-action"
+                                type="button"
+                                title="Edit"
+                                onClick={() => modal.open(<FraudActionDialog riskId={f.id} actionId={a.id} />)}
+                              >
+                                ✎
+                              </button>
+                              <button
+                                className="btn-icon-action danger"
+                                type="button"
+                                title="Delete"
+                                onClick={() => delFraudAction(f.id, a.id)}
+                              >
+                                {TRASH}
+                              </button>
+                            </>
+                          ) : null}
                         </td>
                       </tr>
                     ))}
