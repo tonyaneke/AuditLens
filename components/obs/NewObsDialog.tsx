@@ -11,11 +11,14 @@ import BusyButton from "@/components/feedback/BusyButton";
 import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal, useModalClose, useModalGuard } from "@/components/modals/ModalProvider";
 import { generateObsDraft } from "@/lib/client/obs-ai";
-import { clearModalDraft, loadModalDraft, saveModalDraft } from "@/lib/client/modal-drafts";
+import {
+  NEW_OBS_DRAFT_KEY,
+  clearModalDraft,
+  loadModalDraft,
+  saveModalDraft,
+} from "@/lib/client/modal-drafts";
 import { DEPARTMENTS } from "@/lib/workspace/process";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
-
-const DRAFT_KEY = "new-obs";
 
 type NewObsDraft = {
   ol: string;
@@ -47,17 +50,22 @@ export default function NewObsDialog() {
   })();
 
   useEffect(() => {
-    const saved = loadModalDraft<NewObsDraft>(DRAFT_KEY);
-    if (!saved) return;
-    if (saved.ol) setOl(saved.ol);
-    if (saved.area) setArea(saved.area);
-    if (saved.ctx) setCtx(saved.ctx);
-    if (saved.target) setTarget(saved.target);
-    setResumed(!!(saved.ol || saved.area || saved.ctx || saved.target));
+    let cancelled = false;
+    void loadModalDraft<NewObsDraft>(NEW_OBS_DRAFT_KEY).then((saved) => {
+      if (cancelled || !saved) return;
+      if (saved.ol) setOl(saved.ol);
+      if (saved.area) setArea(saved.area);
+      if (saved.ctx) setCtx(saved.ctx);
+      if (saved.target) setTarget(saved.target);
+      setResumed(!!(saved.ol || saved.area || saved.ctx || saved.target));
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const persistDraft = useCallback(() => {
-    saveModalDraft<NewObsDraft>(DRAFT_KEY, {
+  const persistDraft = useCallback(async () => {
+    return saveModalDraft<NewObsDraft>(NEW_OBS_DRAFT_KEY, {
       ol,
       area,
       ctx,
@@ -68,9 +76,12 @@ export default function NewObsDialog() {
   useModalGuard({
     dirty: !!(ol.trim() || area || ctx.trim()),
     message: "Your one-liner and context will be lost unless you save a draft.",
-    saveDraft: () => {
-      persistDraft();
-      toast("Draft saved — open New Observation again to continue.", "success");
+    saveDraft: async () => {
+      const ok = await persistDraft();
+      toast(
+        ok ? "Draft saved to your account — open New Observation again to continue." : "Could not save draft.",
+        ok ? "success" : "error",
+      );
     },
   });
 
@@ -88,7 +99,7 @@ export default function NewObsDialog() {
     setErr("");
     try {
       const draft = await generateObsDraft(db, ol.trim(), area, ctx.trim());
-      clearModalDraft(DRAFT_KEY);
+      await clearModalDraft(NEW_OBS_DRAFT_KEY);
       modal.close();
       modal.open(<RaiseFlow auditId={aid} reportId={rid} draft={draft} />, { wide: true });
     } catch (e) {
@@ -114,7 +125,7 @@ export default function NewObsDialog() {
     >
       {resumed ? (
         <div className="note" style={{ marginBottom: 12 }}>
-          Resuming a saved draft. Click outside to save and exit, or generate when ready.
+          Resuming a saved draft from your account. Click outside to save and exit, or generate when ready.
         </div>
       ) : null}
       <label>Your one-liner observation</label>

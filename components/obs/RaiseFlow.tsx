@@ -15,7 +15,7 @@ import { ModalFrame, useModal, useModalClose, useModalGuard } from "@/components
 import { runAiJson } from "@/lib/client/ai";
 import { logAudit } from "@/lib/client/audit-log";
 import { directory, loadDirectory } from "@/lib/client/directory";
-import { clearModalDraft, loadModalDraft, saveModalDraft } from "@/lib/client/modal-drafts";
+import { clearModalDraft, loadModalDraft, raiseDraftKey, saveModalDraft } from "@/lib/client/modal-drafts";
 import { urlForView } from "@/lib/routes";
 import {
   departments,
@@ -34,7 +34,7 @@ import {
   validateObservation,
 } from "@/lib/workspace/obs-validation";
 import { approvals, ck, uid } from "@/lib/workspace/selectors";
-import type { EvidenceFile, Observation } from "@/lib/workspace/types";
+import type { EvidenceFile, Observation, WorkspaceDb } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 
 type RaiseFlowDraft = {
@@ -50,8 +50,13 @@ type RaiseFlowDraft = {
   repeatOf: string;
 };
 
-function raiseDraftKey(auditId: string, reportId: string) {
-  return `raise:${auditId}:${reportId}`;
+function seedObservation(db: WorkspaceDb, draft: Observation): Observation {
+  const wanted = String(draft.ref || "").trim();
+  const taken = usedObsRefs(db);
+  return {
+    ...draft,
+    ref: wanted && !taken.has(wanted.toLowerCase()) ? wanted : nextObsRef(db),
+  };
 }
 
 export default function RaiseFlow({
@@ -70,50 +75,45 @@ export default function RaiseFlow({
   const router = useRouter();
   const head = isHead(user);
 
-  const restored = (() => {
-    const saved = loadModalDraft<RaiseFlowDraft>(raiseDraftKey(auditId, reportId));
-    return saved?.auditId === auditId && saved?.reportId === reportId ? saved : null;
-  })();
-
-  const [step, setStep] = useState<1 | 2 | 3>(() => restored?.step ?? 1);
-  /* QA-9 — the Ref field was free text with `e.g. 1.1` as its placeholder and no generator
-     behind it, so whoever raised an observation typed the example. That is how "1.1" came to
-     identify eleven different findings. Seeded with the next free reference instead; the field
-     stays editable, but a duplicate is now rejected on submit. */
-  const [o, setO] = useState<Observation>(() => {
-    if (restored?.o) return restored.o;
-    /* The draft can arrive carrying a reference — an AI draft may invent one, and raising from
-       a test copies the TEST's ref ("T1"), which is a different numbering scheme and is shared
-       by every observation raised from that test. Accept a supplied reference only if it is
-       genuinely free; otherwise assign the next one. The field is read-only, so a collision
-       here would leave the user unable to submit and unable to correct it. */
-    const wanted = String(draft.ref || "").trim();
-    const taken = usedObsRefs(db);
-    return {
-      ...draft,
-      ref: wanted && !taken.has(wanted.toLowerCase()) ? wanted : nextObsRef(db),
-    };
-  });
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [o, setO] = useState<Observation>(() => seedObservation(db, draft));
   const [err, setErr] = useState("");
 
   // Step 3 state
-  const [ownerId, setOwnerId] = useState(() => restored?.ownerId ?? String(o.ownerUserId || draft.ownerUserId || ""));
-  const [owner2Id, setOwner2Id] = useState(() => restored?.owner2Id ?? String(o.secondaryOwnerUserId || draft.secondaryOwnerUserId || ""));
-  const [timeline, setTimeline] = useState(() => restored?.timeline ?? String(o.timeline || draft.timeline || ""));
-  const [due, setDue] = useState(() => restored?.due ?? String(o.dueDate || draft.dueDate || ""));
-  const [isRepeat, setIsRepeat] = useState(() => restored?.isRepeat ?? !!o.isRepeat);
-  const [repeatOf, setRepeatOf] = useState(() => restored?.repeatOf ?? String(o.repeatOf || draft.repeatOf || ""));
+  const [ownerId, setOwnerId] = useState(() => String(draft.ownerUserId || ""));
+  const [owner2Id, setOwner2Id] = useState(() => String(draft.secondaryOwnerUserId || ""));
+  const [timeline, setTimeline] = useState(() => String(draft.timeline || ""));
+  const [due, setDue] = useState(() => String(draft.dueDate || ""));
+  const [isRepeat, setIsRepeat] = useState(!!draft.isRepeat);
+  const [repeatOf, setRepeatOf] = useState(() => String(draft.repeatOf || ""));
   const [repMenuOpen, setRepMenuOpen] = useState(false);
   const [aiRepMsg, setAiRepMsg] = useState<React.ReactNode>(null);
   const [dirVersion, setDirVersion] = useState(0);
-  /* Supporting documents are held as Files and uploaded inside submit(), not on pick: the draft
-     is not an observation yet, and a wizard the auditor backs out of would otherwise leave
-     orphaned uploads in SharePoint with no record pointing at them. */
   const [files, setFiles] = useState<File[]>([]);
-  const [resumed] = useState(!!restored);
+  const [resumed, setResumed] = useState(false);
 
-  const persistDraft = useCallback(() => {
-    saveModalDraft<RaiseFlowDraft>(raiseDraftKey(auditId, reportId), {
+  useEffect(() => {
+    let cancelled = false;
+    void loadModalDraft<RaiseFlowDraft>(raiseDraftKey(auditId, reportId)).then((saved) => {
+      if (cancelled || !saved) return;
+      if (saved.auditId !== auditId || saved.reportId !== reportId) return;
+      setStep(saved.step);
+      setO(saved.o);
+      setOwnerId(saved.ownerId);
+      setOwner2Id(saved.owner2Id);
+      setTimeline(saved.timeline);
+      setDue(saved.due);
+      setIsRepeat(saved.isRepeat);
+      setRepeatOf(saved.repeatOf);
+      setResumed(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [auditId, reportId]);
+
+  const persistDraft = useCallback(async () => {
+    return saveModalDraft<RaiseFlowDraft>(raiseDraftKey(auditId, reportId), {
       auditId,
       reportId,
       step,
@@ -131,9 +131,12 @@ export default function RaiseFlow({
     dirty: true,
     message:
       "Your observation draft will be lost unless you save it. Files chosen in step 2 are not kept in drafts.",
-    saveDraft: () => {
-      persistDraft();
-      toast("Draft saved — reopen the raise wizard on this report to continue.", "success");
+    saveDraft: async () => {
+      const ok = await persistDraft();
+      toast(
+        ok ? "Draft saved to your account — reopen the raise wizard on this report to continue." : "Could not save draft.",
+        ok ? "success" : "error",
+      );
     },
   });
 
@@ -304,7 +307,7 @@ export default function RaiseFlow({
       (head ? "Raised observation: " : "Submitted observation for approval: ") + finalObs.title,
       { auditId, reportId, observationId: finalObs.id },
     );
-    clearModalDraft(raiseDraftKey(auditId, reportId));
+    clearModalDraft(raiseDraftKey(auditId, reportId)).catch(() => {});
     modal.closeAll();
     router.push(urlForView("report", { audit: auditId, report: reportId }));
     toast(
@@ -330,7 +333,7 @@ export default function RaiseFlow({
       >
         {resumed ? (
           <div className="note" style={{ marginBottom: 12 }}>
-            Resuming a saved draft. Click outside to save and exit, or continue when ready.
+            Resuming a saved draft from your account. Click outside to save and exit, or continue when ready.
           </div>
         ) : null}
         <div className="hint" style={{ marginBottom: 12 }}>

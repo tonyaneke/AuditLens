@@ -63,3 +63,16 @@ model AuditLog {
   @@index([userId])
   @@index([category])
 }
+
+// Per-user form drafts (observation raise wizard, etc.) — server-side, not browser storage.
+model UserDraft {
+  id        String   @id @default(cuid())
+  userId    String
+  key       String
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, key])
+  @@index([userId])
+}
