@@ -5,6 +5,9 @@
 // #modal element: a small stack (confirm/success can layer over an open dialog and restore
 // it), and Promise-based confirm() that reproduces the legacy uiConfirm contract — busy
 // button, await the operation, flush the debounced workspace save, then close.
+//
+// Clicking the overlay or × no longer discards in-progress forms: modals that register a
+// guard via useModalGuard() get a top-right prompt to save a draft or exit without saving.
 
 import {
   createContext,
@@ -12,6 +15,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -19,6 +23,19 @@ import { pauseSync, resumeSync } from "@/lib/workspace/sync-pause";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 
 type ModalEntry = { id: number; node: ReactNode; wide?: boolean };
+
+export type ModalGuard = {
+  dirty: boolean;
+  saveDraft?: () => void | Promise<void>;
+  message?: string;
+};
+
+type ModalGuardHandle = { read: () => ModalGuard | null };
+
+type ModalEntryApi = {
+  registerGuard: (handle: ModalGuardHandle | null) => void;
+  requestClose: () => void;
+};
 
 type ConfirmOpts = {
   message: ReactNode;
@@ -41,12 +58,123 @@ type ModalApi = {
 };
 
 const ModalContext = createContext<ModalApi | null>(null);
+const ModalEntryContext = createContext<ModalEntryApi | null>(null);
 
 let nextModalId = 1;
+
+function ModalExitPrompt({
+  message,
+  canSave,
+  onKeep,
+  onSave,
+  onDiscard,
+}: {
+  message?: string;
+  canSave: boolean;
+  onKeep: () => void;
+  onSave: () => void | Promise<void>;
+  onDiscard: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="modal-exit-prompt in" role="dialog" aria-labelledby="modal-exit-title">
+      <div className="modal-exit-title" id="modal-exit-title">
+        Leave this screen?
+      </div>
+      <p className="modal-exit-msg">
+        {message || "You have unsaved changes. Save a draft to continue later, or exit without saving."}
+      </p>
+      <div className="modal-exit-actions">
+        <button className="btn sec sm" type="button" disabled={busy} onClick={onKeep}>
+          Keep editing
+        </button>
+        {canSave ? (
+          <button
+            className="btn sm"
+            type="button"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await onSave();
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {busy ? "Saving…" : "Save draft"}
+          </button>
+        ) : null}
+        <button className="btn ghost sm" type="button" disabled={busy} onClick={onDiscard}>
+          Exit without saving
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ModalEntryProvider({
+  children,
+  onClose,
+  onReady,
+}: {
+  children: ReactNode;
+  onClose: () => void;
+  onReady: (api: ModalEntryApi) => void;
+}) {
+  const guardHandleRef = useRef<ModalGuardHandle | null>(null);
+  const [exitOpen, setExitOpen] = useState(false);
+
+  const registerGuard = useCallback((handle: ModalGuardHandle | null) => {
+    guardHandleRef.current = handle;
+  }, []);
+
+  const requestClose = useCallback(() => {
+    const g = guardHandleRef.current?.read();
+    if (g?.dirty) {
+      setExitOpen(true);
+      return;
+    }
+    onClose();
+  }, [onClose]);
+
+  const api = useMemo<ModalEntryApi>(
+    () => ({ registerGuard, requestClose }),
+    [registerGuard, requestClose],
+  );
+
+  useEffect(() => {
+    onReady(api);
+    return () => onReady({ registerGuard: () => {}, requestClose: onClose });
+  }, [api, onReady, onClose, registerGuard]);
+
+  return (
+    <ModalEntryContext.Provider value={api}>
+      {children}
+      {exitOpen ? (
+        <ModalExitPrompt
+          message={guardHandleRef.current?.read()?.message}
+          canSave={!!guardHandleRef.current?.read()?.saveDraft}
+          onKeep={() => setExitOpen(false)}
+          onDiscard={() => {
+            setExitOpen(false);
+            onClose();
+          }}
+          onSave={async () => {
+            await guardHandleRef.current?.read()?.saveDraft?.();
+            setExitOpen(false);
+            onClose();
+          }}
+        />
+      ) : null}
+    </ModalEntryContext.Provider>
+  );
+}
 
 export function ModalProvider({ children }: { children: ReactNode }) {
   const [stack, setStack] = useState<ModalEntry[]>([]);
   const { saveNow } = useWorkspace();
+  const topApiRef = useRef<ModalEntryApi | null>(null);
 
   // Pause workspace polling while any modal is open (legacy pollData guard).
   useEffect(() => {
@@ -129,17 +257,29 @@ export function ModalProvider({ children }: { children: ReactNode }) {
 
   const top = stack[stack.length - 1];
 
+  const handleOverlayClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (e.target !== e.currentTarget) return;
+      topApiRef.current?.requestClose() ?? close();
+    },
+    [close],
+  );
+
   return (
     <ModalContext.Provider value={api}>
       {children}
-      <div
-        className={`overlay${top ? " show" : ""}`}
-        onClick={(e) => {
-          if (e.target === e.currentTarget) close();
-        }}
-      >
+      <div className={`overlay${top ? " show" : ""}`} onClick={handleOverlayClick}>
         {top ? (
-          <div className={`modal${top.wide ? " wide" : ""}`}>{top.node}</div>
+          <ModalEntryProvider
+            onClose={close}
+            onReady={(entryApi) => {
+              topApiRef.current = entryApi;
+            }}
+          >
+            <div className={`modal${top.wide ? " wide" : ""}`} onClick={(e) => e.stopPropagation()}>
+              {top.node}
+            </div>
+          </ModalEntryProvider>
         ) : null}
       </div>
     </ModalContext.Provider>
@@ -150,6 +290,26 @@ export function useModal(): ModalApi {
   const ctx = useContext(ModalContext);
   if (!ctx) throw new Error("useModal must be used inside <ModalProvider>");
   return ctx;
+}
+
+/** Prefer this over modal.close() for Cancel buttons — respects unsaved-work guard. */
+export function useModalClose(): () => void {
+  const entry = useContext(ModalEntryContext);
+  const modal = useContext(ModalContext);
+  return entry?.requestClose ?? modal?.close ?? (() => {});
+}
+
+/** Register dirty-state + optional draft save for the current modal. */
+export function useModalGuard(guard: ModalGuard) {
+  const entry = useContext(ModalEntryContext);
+  const ref = useRef(guard);
+  ref.current = guard;
+
+  useEffect(() => {
+    if (!entry) return;
+    entry.registerGuard({ read: () => ref.current });
+    return () => entry.registerGuard(null);
+  }, [entry]);
 }
 
 /** Standard dialog frame — legacy .mh/.mb/.mf structure with the × close button. */
@@ -164,8 +324,9 @@ export function ModalFrame({
   onClose?: () => void;
   children: ReactNode;
 }) {
+  const entry = useContext(ModalEntryContext);
   const modal = useContext(ModalContext);
-  const close = onClose || modal?.close;
+  const close = onClose || entry?.requestClose || modal?.close;
   return (
     <>
       <div className="mh">

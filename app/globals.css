@@ -4529,6 +4529,50 @@ body.ai-busy .ai-generate-btn:not(:disabled) {
 .toast-success { border-left-color: var(--low); }
 .toast-success .toast-ico { background: var(--low); }
 
+/* Modal exit prompt — shown top-right when clicking outside a guarded modal */
+.modal-exit-prompt {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 100000;
+  width: min(360px, calc(100vw - 36px));
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  box-shadow: 0 12px 32px rgba(15, 40, 34, 0.18), 0 2px 6px rgba(15, 40, 34, 0.08);
+  pointer-events: auto;
+  opacity: 0;
+  transform: translateX(18px) scale(0.98);
+  transition: opacity 0.24s ease, transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.modal-exit-prompt.in {
+  opacity: 1;
+  transform: translateX(0) scale(1);
+}
+
+.modal-exit-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--brand-700);
+  margin: 0 0 6px;
+}
+
+.modal-exit-msg {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.modal-exit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 /* ---- AI observation review textareas (taller, spaced) ---- */
 .rv-area { min-height: 100px; margin-bottom: 8px; }
 /* Roomy and airy enough that a whole pasted-in template is visible at once and the [gaps] left in

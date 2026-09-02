@@ -7,9 +7,10 @@
    dashboard the unread ones are surfaced once, up front. Opening a row navigates to the item
    and marks that one read; dismissing marks the whole batch read so it does not nag again. */
 
-import { useRouter } from "next/navigation";
+import { isRecentNotifAt } from "@/lib/client/notif-recency";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import { hrefForView, isLegacyPath } from "@/lib/routes";
+import { useRouter } from "next/navigation";
 import {
   extList,
   fmtDateTime,
@@ -36,10 +37,10 @@ const KIND_HEX: Record<string, string> = {
   fraud_update: "#c98a00",
 };
 
-/** Unread owner responses for this user, newest first. */
+/** Unread owner responses for this user from today or yesterday, newest first. */
 export function newResponseNotifs(db: WorkspaceDb, userId: string | undefined): NotificationItem[] {
   return myNotifications(db, userId).filter(
-    (n) => !n.read && RESPONSE_KINDS.has(String(n.kind || "")),
+    (n) => !n.read && RESPONSE_KINDS.has(String(n.kind || "")) && isRecentNotifAt(n.at),
   );
 }
 
@@ -98,7 +99,7 @@ export default function NewResponsesDialog({ items }: { items: NotificationItem[
       }
     >
       <p className="hint" style={{ margin: "0 0 10px" }}>
-        Action owners have responded on the items below. Open one to review and verify it.
+        Action owners have responded today or yesterday on the items below. Open one to review and verify it.
       </p>
       {items.map((n) => {
         const kind = String(n.kind || "");

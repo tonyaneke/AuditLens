@@ -5,16 +5,17 @@
 // from a test, manual). Step 1 reviews/edits the draft; step 2 assigns owners + timing and
 // submits — Head raises immediately (owner notified), staff submit for Head approval.
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FilePickMulti, MAX_UPLOAD_BYTES, tooLarge, uploadAllEvidence } from "@/components/audits/attach";
 import { useUser } from "@/components/chrome/UserContext";
 import BusyButton from "@/components/feedback/BusyButton";
 import { toast } from "@/components/feedback/ToastHost";
-import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
+import { ModalFrame, useModal, useModalClose, useModalGuard } from "@/components/modals/ModalProvider";
 import { runAiJson } from "@/lib/client/ai";
 import { logAudit } from "@/lib/client/audit-log";
 import { directory, loadDirectory } from "@/lib/client/directory";
+import { clearModalDraft, loadModalDraft, saveModalDraft } from "@/lib/client/modal-drafts";
 import { urlForView } from "@/lib/routes";
 import {
   departments,
@@ -36,6 +37,23 @@ import { approvals, ck, uid } from "@/lib/workspace/selectors";
 import type { EvidenceFile, Observation } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 
+type RaiseFlowDraft = {
+  auditId: string;
+  reportId: string;
+  step: 1 | 2 | 3;
+  o: Observation;
+  ownerId: string;
+  owner2Id: string;
+  timeline: string;
+  due: string;
+  isRepeat: boolean;
+  repeatOf: string;
+};
+
+function raiseDraftKey(auditId: string, reportId: string) {
+  return `raise:${auditId}:${reportId}`;
+}
+
 export default function RaiseFlow({
   auditId,
   reportId,
@@ -48,15 +66,22 @@ export default function RaiseFlow({
   const { db, mutate } = useWorkspace();
   const user = useUser();
   const modal = useModal();
+  const closeModal = useModalClose();
   const router = useRouter();
   const head = isHead(user);
 
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const restored = (() => {
+    const saved = loadModalDraft<RaiseFlowDraft>(raiseDraftKey(auditId, reportId));
+    return saved?.auditId === auditId && saved?.reportId === reportId ? saved : null;
+  })();
+
+  const [step, setStep] = useState<1 | 2 | 3>(() => restored?.step ?? 1);
   /* QA-9 — the Ref field was free text with `e.g. 1.1` as its placeholder and no generator
      behind it, so whoever raised an observation typed the example. That is how "1.1" came to
      identify eleven different findings. Seeded with the next free reference instead; the field
      stays editable, but a duplicate is now rejected on submit. */
   const [o, setO] = useState<Observation>(() => {
+    if (restored?.o) return restored.o;
     /* The draft can arrive carrying a reference — an AI draft may invent one, and raising from
        a test copies the TEST's ref ("T1"), which is a different numbering scheme and is shared
        by every observation raised from that test. Accept a supplied reference only if it is
@@ -72,12 +97,12 @@ export default function RaiseFlow({
   const [err, setErr] = useState("");
 
   // Step 3 state
-  const [ownerId, setOwnerId] = useState(String(o.ownerUserId || ""));
-  const [owner2Id, setOwner2Id] = useState(String(o.secondaryOwnerUserId || ""));
-  const [timeline, setTimeline] = useState(String(o.timeline || ""));
-  const [due, setDue] = useState(String(o.dueDate || ""));
-  const [isRepeat, setIsRepeat] = useState(!!o.isRepeat);
-  const [repeatOf, setRepeatOf] = useState(String(o.repeatOf || ""));
+  const [ownerId, setOwnerId] = useState(() => restored?.ownerId ?? String(o.ownerUserId || draft.ownerUserId || ""));
+  const [owner2Id, setOwner2Id] = useState(() => restored?.owner2Id ?? String(o.secondaryOwnerUserId || draft.secondaryOwnerUserId || ""));
+  const [timeline, setTimeline] = useState(() => restored?.timeline ?? String(o.timeline || draft.timeline || ""));
+  const [due, setDue] = useState(() => restored?.due ?? String(o.dueDate || draft.dueDate || ""));
+  const [isRepeat, setIsRepeat] = useState(() => restored?.isRepeat ?? !!o.isRepeat);
+  const [repeatOf, setRepeatOf] = useState(() => restored?.repeatOf ?? String(o.repeatOf || draft.repeatOf || ""));
   const [repMenuOpen, setRepMenuOpen] = useState(false);
   const [aiRepMsg, setAiRepMsg] = useState<React.ReactNode>(null);
   const [dirVersion, setDirVersion] = useState(0);
@@ -85,6 +110,32 @@ export default function RaiseFlow({
      is not an observation yet, and a wizard the auditor backs out of would otherwise leave
      orphaned uploads in SharePoint with no record pointing at them. */
   const [files, setFiles] = useState<File[]>([]);
+  const [resumed] = useState(!!restored);
+
+  const persistDraft = useCallback(() => {
+    saveModalDraft<RaiseFlowDraft>(raiseDraftKey(auditId, reportId), {
+      auditId,
+      reportId,
+      step,
+      o,
+      ownerId,
+      owner2Id,
+      timeline,
+      due,
+      isRepeat,
+      repeatOf,
+    });
+  }, [auditId, reportId, step, o, ownerId, owner2Id, timeline, due, isRepeat, repeatOf]);
+
+  useModalGuard({
+    dirty: true,
+    message:
+      "Your observation draft will be lost unless you save it. Files chosen in step 2 are not kept in drafts.",
+    saveDraft: () => {
+      persistDraft();
+      toast("Draft saved — reopen the raise wizard on this report to continue.", "success");
+    },
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -253,6 +304,7 @@ export default function RaiseFlow({
       (head ? "Raised observation: " : "Submitted observation for approval: ") + finalObs.title,
       { auditId, reportId, observationId: finalObs.id },
     );
+    clearModalDraft(raiseDraftKey(auditId, reportId));
     modal.closeAll();
     router.push(urlForView("report", { audit: auditId, report: reportId }));
     toast(
@@ -267,7 +319,7 @@ export default function RaiseFlow({
         title="Review & edit observation"
         footer={
           <>
-            <button className="btn sec" type="button" onClick={() => modal.close()}>
+            <button className="btn sec" type="button" onClick={closeModal}>
               Cancel
             </button>
             <button className="btn" type="button" onClick={next}>
@@ -276,6 +328,11 @@ export default function RaiseFlow({
           </>
         }
       >
+        {resumed ? (
+          <div className="note" style={{ marginBottom: 12 }}>
+            Resuming a saved draft. Click outside to save and exit, or continue when ready.
+          </div>
+        ) : null}
         <div className="hint" style={{ marginBottom: 12 }}>
           Step 1 of 3 — review what was drafted and edit anything before attaching evidence and
           assigning an owner.

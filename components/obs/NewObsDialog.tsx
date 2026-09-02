@@ -4,14 +4,25 @@
 // process/audit-area + target-report picker → AI drafts the observation → RaiseFlow
 // review/assign wizard takes over.
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import BusyButton from "@/components/feedback/BusyButton";
-import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
+import { toast } from "@/components/feedback/ToastHost";
+import { ModalFrame, useModal, useModalClose, useModalGuard } from "@/components/modals/ModalProvider";
 import { generateObsDraft } from "@/lib/client/obs-ai";
+import { clearModalDraft, loadModalDraft, saveModalDraft } from "@/lib/client/modal-drafts";
 import { DEPARTMENTS } from "@/lib/workspace/process";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
+
+const DRAFT_KEY = "new-obs";
+
+type NewObsDraft = {
+  ol: string;
+  area: string;
+  ctx: string;
+  target: string;
+};
 
 // Modal-only wizard — loads on first open.
 const RaiseFlow = dynamic(() => import("@/components/obs/RaiseFlow"), { loading: () => null });
@@ -19,6 +30,7 @@ const RaiseFlow = dynamic(() => import("@/components/obs/RaiseFlow"), { loading:
 export default function NewObsDialog() {
   const { db } = useWorkspace();
   const modal = useModal();
+  const closeModal = useModalClose();
   const audits = db.audits || [];
   const hasReports = audits.some((a) => (a.reports || []).length > 0);
 
@@ -27,11 +39,40 @@ export default function NewObsDialog() {
   const [ctx, setCtx] = useState("");
   const [target, setTarget] = useState("");
   const [err, setErr] = useState("");
+  const [resumed, setResumed] = useState(false);
 
   const defaultTarget = (() => {
     for (const a of audits) if ((a.reports || []).length) return `${a.id}|${a.reports[0].id}`;
     return "";
   })();
+
+  useEffect(() => {
+    const saved = loadModalDraft<NewObsDraft>(DRAFT_KEY);
+    if (!saved) return;
+    if (saved.ol) setOl(saved.ol);
+    if (saved.area) setArea(saved.area);
+    if (saved.ctx) setCtx(saved.ctx);
+    if (saved.target) setTarget(saved.target);
+    setResumed(!!(saved.ol || saved.area || saved.ctx || saved.target));
+  }, []);
+
+  const persistDraft = useCallback(() => {
+    saveModalDraft<NewObsDraft>(DRAFT_KEY, {
+      ol,
+      area,
+      ctx,
+      target: target || defaultTarget,
+    });
+  }, [ol, area, ctx, target, defaultTarget]);
+
+  useModalGuard({
+    dirty: !!(ol.trim() || area || ctx.trim()),
+    message: "Your one-liner and context will be lost unless you save a draft.",
+    saveDraft: () => {
+      persistDraft();
+      toast("Draft saved — open New Observation again to continue.", "success");
+    },
+  });
 
   async function generate() {
     if (!ol.trim()) {
@@ -47,6 +88,7 @@ export default function NewObsDialog() {
     setErr("");
     try {
       const draft = await generateObsDraft(db, ol.trim(), area, ctx.trim());
+      clearModalDraft(DRAFT_KEY);
       modal.close();
       modal.open(<RaiseFlow auditId={aid} reportId={rid} draft={draft} />, { wide: true });
     } catch (e) {
@@ -59,7 +101,7 @@ export default function NewObsDialog() {
       title="New Observation"
       footer={
         <>
-          <button className="btn sec" type="button" onClick={modal.close}>
+          <button className="btn sec" type="button" onClick={closeModal}>
             Cancel
           </button>
           {hasReports ? (
@@ -70,6 +112,11 @@ export default function NewObsDialog() {
         </>
       }
     >
+      {resumed ? (
+        <div className="note" style={{ marginBottom: 12 }}>
+          Resuming a saved draft. Click outside to save and exit, or generate when ready.
+        </div>
+      ) : null}
       <label>Your one-liner observation</label>
       <input
         type="text"
