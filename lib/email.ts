@@ -138,6 +138,7 @@ type BriefSnapshot = {
   total?: number;
   kpis?: { keyOpen?: number; keyOverdue?: number; overdue?: number; unmit?: number; extOpen?: number; extOverdueN?: number };
   matters?: string[];
+  criticalObs?: { title: string; audit?: string; owner?: string; overdue?: boolean }[];
 };
 export function buildBriefEmailHtml(s: BriefSnapshot, link: string) {
   const org = s.org || "";
@@ -151,6 +152,15 @@ export function buildBriefEmailHtml(s: BriefSnapshot, link: string) {
     const [fg, bg] = tones[tone] || tones.neutral;
     return `<td width="20%" valign="top" style="padding:4px"><div style="background:${bg};border:1px solid #e1eae7;border-radius:10px;padding:11px 11px"><div style="font-size:11px;font-weight:700;color:#19302a">${escapeHtml(label)}</div><div style="font-size:21px;font-weight:800;color:${fg};line-height:1.1;margin-top:6px">${escapeHtml(String(num))}</div><div style="font-size:10px;color:#64807a;margin-top:3px">${escapeHtml(sub)}</div></div></td>`;
   };
+  const rawCrit = Array.isArray(s.criticalObs)
+    ? s.criticalObs
+    : Array.isArray((s as { keyIssues?: unknown[] }).keyIssues)
+      ? ((s as { keyIssues: Array<{ criticality?: string; title?: string }> }).keyIssues).filter((x) => x && x.criticality === "Critical")
+      : [];
+  const critList: string[] = rawCrit
+    .map((item) => (typeof item === "string" ? item : (item as { title?: string; name?: string })?.title || (item as { title?: string; name?: string })?.name || ""))
+    .filter(Boolean);
+
   const remTone = (s.remRate || 0) >= 70 ? "good" : (s.remRate || 0) >= 40 ? "warn" : "bad";
   return `
   <div style="background:#f2f7f5;padding:20px 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
@@ -178,7 +188,11 @@ export function buildBriefEmailHtml(s: BriefSnapshot, link: string) {
       <div style="background:#ffffff;border:1px solid #e1eae7;border-radius:12px;padding:16px 20px;margin-top:12px">
         <div style="font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#0d5a47;margin-bottom:8px">Matters requiring EXCO attention</div>
         <ol style="margin:0;padding-left:20px;color:#19302a;font-size:13.5px;line-height:1.55">${matters.map((t) => `<li style="margin:7px 0">${escapeHtml(t)}</li>`).join("")}</ol>
-      </div>
+      </div>${critList.length ? `
+      <div style="background:#ffffff;border:1px solid #e1eae7;border-radius:12px;padding:16px 20px;margin-top:12px">
+        <div style="font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#b00020;margin-bottom:8px">Critical Observations (${critList.length})</div>
+        <ul style="margin:0;padding-left:20px;color:#19302a;font-size:13.5px;line-height:1.55">${critList.map((name) => `<li style="margin:7px 0;font-weight:600">${escapeHtml(name)}</li>`).join("")}</ul>
+      </div>` : ""}
       <p style="font-size:13px;color:#334155;margin:16px 4px 4px">The full Executive Assurance Brief — critical &amp; high-risk issues, recurring risk themes, unmitigated fraud risks and regulatory exposure — is available at the link below. Open it in your web browser to view the complete brief.</p>
       <div style="margin:10px 4px 4px"><a href="${escapeHtml(link)}" style="display:inline-block;background:#1f8a5b;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600;font-size:14px">Open the Executive Assurance Brief</a></div>
       <p style="font-size:11px;color:#94a3b8;margin:16px 4px 0;border-top:1px solid #e2e8f0;padding-top:10px">Prepared by Internal Audit, ${escapeHtml(org)} · ${escapeHtml(period)} · Strictly confidential — for the Managing Director &amp; Executive Committee.</p>

@@ -46,10 +46,21 @@ type Snapshot = {
   total?: number;
   kpis?: { keyOpen: number; keyOverdue: number; overdue: number; unmit: number; extOpen: number; extOverdueN: number };
   matters?: string[];
+  criticalObs?: Array<{ title?: string } | string>;
+  keyIssues?: Array<{ title?: string; criticality?: string }>;
 };
 
 function briefEmailText(s: Snapshot, link: string) {
   const k = s.kpis || { keyOpen: 0, keyOverdue: 0, overdue: 0, unmit: 0, extOpen: 0, extOverdueN: 0 };
+  const rawCrit = Array.isArray(s.criticalObs)
+    ? s.criticalObs
+    : Array.isArray(s.keyIssues)
+      ? s.keyIssues.filter((x) => x && x.criticality === "Critical")
+      : [];
+  const critList = rawCrit
+    .map((item) => (typeof item === "string" ? item : item?.title || ""))
+    .filter(Boolean);
+
   const lines = [
     `Internal Audit — Executive Assurance Brief for the MD & Executive Committee`,
     `${s.org || ""} · As at ${s.period || ""}`,
@@ -65,6 +76,15 @@ function briefEmailText(s: Snapshot, link: string) {
     ``,
     `Matters requiring EXCO attention:`,
     ...(s.matters || []).map((t, i) => `${i + 1}. ${t}`),
+  );
+  if (critList.length) {
+    lines.push(
+      ``,
+      `Critical Observations (${critList.length}):`,
+      ...critList.map((title, i) => `${i + 1}. ${title}`),
+    );
+  }
+  lines.push(
     ``,
     `Open the full Executive Assurance Brief here: ${link}`,
   );

@@ -59,6 +59,15 @@ function briefDate(b: ExcoBrief): Date | null {
 
 function buildExcoEmailText(s: Record<string, unknown>, org: string, link: string): string {
   const k = (s.kpis || {}) as Record<string, number>;
+  const rawCrit = Array.isArray(s.criticalObs)
+    ? s.criticalObs
+    : Array.isArray(s.keyIssues)
+      ? (s.keyIssues as Array<{ criticality?: string; title?: string }>).filter((x) => x && x.criticality === "Critical")
+      : [];
+  const critList = rawCrit
+    .map((item) => (typeof item === "string" ? item : (item as { title?: string })?.title || ""))
+    .filter(Boolean);
+
   const lines = [
     `Internal Audit — Executive Assurance Brief for the MD & Executive Committee`,
     `${s.org || org || ""} · As at ${s.period || ""}`,
@@ -74,6 +83,15 @@ function buildExcoEmailText(s: Record<string, unknown>, org: string, link: strin
     ``,
     `Matters requiring EXCO attention:`,
     ...((s.matters as string[]) || []).map((t, i) => `${i + 1}. ${t}`),
+  );
+  if (critList.length) {
+    lines.push(
+      ``,
+      `Critical Observations (${critList.length}):`,
+      ...critList.map((title, i) => `${i + 1}. ${title}`),
+    );
+  }
+  lines.push(
     ``,
     `Open the full Executive Assurance Brief here: ${link}`,
   );

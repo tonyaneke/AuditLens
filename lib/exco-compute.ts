@@ -109,6 +109,7 @@ export function computeExcoSnapshot(data: any, opts: { period?: string; headline
   if (plan.length && planPct < 60) matters.push(`Annual audit plan delivery is at ${planPct}% — monitor to ensure planned assurance coverage is achieved.`);
   if (!matters.length) matters.push(`No matters require escalation this period — remediation is broadly on track, with no High/Extreme fraud or regulatory exposures outstanding.`);
 
+  const critOpen = openItems.filter((x) => x.o.criticality === "Critical");
   const keySorted = keyOpen.slice().sort((a, b) => (Number(isOverdueObs(b.o, b.r)) - Number(isOverdueObs(a.o, a.r))) || (CRITS.indexOf(a.o.criticality || "") - CRITS.indexOf(b.o.criticality || "")));
   const extSorted = extOpen.slice().sort((a, b) => Number(extOverdue(b)) - Number(extOverdue(a)));
 
@@ -121,6 +122,12 @@ export function computeExcoSnapshot(data: any, opts: { period?: string; headline
     remRate, closed, total,
     kpis: { keyOpen: keyOpen.length, keyOverdue: keyOverdue.length, overdue: overdue.length, unmit: unmit.length, extOpen: extOpen.length, extOverdueN, watch: watch.length },
     matters,
+    criticalObs: critOpen.map((x) => ({
+      title: x.o.title || "",
+      audit: x.a.name || "",
+      owner: x.o.owner || "",
+      overdue: isOverdueObs(x.o, x.r),
+    })),
     keyIssues: keySorted.slice(0, 15).map((x) => mapBriefIssueDetail(x.o as Observation, x.a, x.r, data)),
     themes: themes.slice(0, 8),
     fraud: unmit.slice(0, 12).map((f) => mapBriefFraudDetail(f)),
