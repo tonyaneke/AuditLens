@@ -347,6 +347,82 @@ export default function TrackerPage() {
     filter.crit !== "All" || statusF !== "All" || tlF !== "All" || filter.owner !== "All" || filter.quarter !== "All" || filter.repeat;
   const bucketOf = (o: ObsWithContext) => closeBucketOf(o, o._r) ?? "No date";
 
+  function exportFilteredExcel() {
+    // Also apply status filter to pool for the download
+    const list = pool.filter(passStatus).sort(
+      (a, b) =>
+        String(a._a.name || "").localeCompare(String(b._a.name || "")) ||
+        String(a._r.title || "").localeCompare(String(b._r.title || "")) ||
+        String(a.ref || "").localeCompare(String(b.ref || "")),
+    );
+    if (!list.length) {
+      toast("No observations match the current filters.");
+      return;
+    }
+    const CRIT_BG: Record<string, [string, string]> = {
+      Critical: ["#f6dde0", "#7a0012"],
+      High: ["#fdecef", "#b00020"],
+      Moderate: ["#fdefe6", "#e8590c"],
+      Low: ["#eaf5eb", "#2e7d32"],
+      "Process Improvement": ["#e7eef5", "#2c5f8a"],
+    };
+    const STATUS_BG: Record<string, [string, string]> = {
+      Open: ["#fdecef", "#b00020"],
+      "In Progress": ["#fff3e6", "#a15c00"],
+      Closed: ["#eaf5eb", "#2e7d32"],
+    };
+    // Build a subtitle describing the active filters
+    const parts: string[] = [];
+    if (filter.crit !== "All") parts.push(filter.crit);
+    if (statusF !== "All") parts.push(statusF);
+    if (tlF !== "All") parts.push(groupLabel(tlF));
+    if (filter.owner !== "All") parts.push(filter.owner);
+    if (filter.quarter !== "All") parts.push(filter.quarter);
+    if (filter.repeat) parts.push("Repeats only");
+    const subtitle = parts.length ? parts.join(" · ") : "All";
+    const headers = ["Audit","Area / Department","Report","Ref","Observation","Criticality","Category","Description","Criteria","Risk / Impact","Root cause","Recommendation","Proposed SOP update","Management response","Owner","Timeline","Expected close","Actual close","Status","Overdue","Repeat","Repeat of","Raised by","Created"];
+    const cell = (v: string, style = "") => `<td${style ? ` style="${style}"` : ""}>${esc(v)}</td>`;
+    const rowsHtml = list
+      .map((o) => {
+        const ec = effectiveClose(o, o._r);
+        const od = isOverdueObs(o, o._r);
+        const cb = CRIT_BG[o.criticality] || ["#ffffff", "#1c2733"];
+        const sb = STATUS_BG[String(o.status || "Open")] || ["#ffffff", "#1c2733"];
+        return `<tr>${[
+          cell(o._a.name || ""),
+          cell((o._a.area as string) || ""),
+          cell(o._r.title || ""),
+          cell(o.ref || ""),
+          cell(o.title || "", "font-weight:bold"),
+          cell(o.criticality || "", `background:${cb[0]};color:${cb[1]};font-weight:bold;text-align:center`),
+          cell(o.category || ""),
+          cell(o.description || ""),
+          cell(o.criteria || ""),
+          cell(o.risk || ""),
+          cell(o.rootCause || ""),
+          cell(o.recommendation || ""),
+          cell(o.sopUpdate || ""),
+          cell(o.managementResponse || ""),
+          cell(o.owner || ""),
+          cell((o.timeline as string) || ""),
+          cell(ec ? fmtDate(ec) : ""),
+          cell(o.closedDateISO ? fmtDate(isoToDate(o.closedDateISO)) : ""),
+          cell(String(o.status || "Open"), `background:${sb[0]};color:${sb[1]};font-weight:bold;text-align:center`),
+          cell(od ? "OVERDUE" : "", od ? "background:#b00020;color:#ffffff;font-weight:bold;text-align:center" : ""),
+          cell(o.isRepeat ? "Yes" : "No", o.isRepeat ? "background:#efe3f7;color:#6b3fa0;font-weight:bold;text-align:center" : "text-align:center"),
+          cell(o.repeatOf || ""),
+          cell(o.raisedByName || ""),
+          cell(o.createdAt ? fmtDateTime(o.createdAt) : ""),
+        ].join("")}</tr>`;
+      })
+      .join("");
+    const table = `<table>
+      <tr><th colspan="${headers.length}" style="background:#0d5a47;color:#ffffff;font-size:13pt;text-align:left;padding:8pt">${esc(db.org || "AuditLens")} — Filtered Observations (${list.length}) · ${esc(subtitle)} · exported ${esc(fmtDate(new Date()))}</th></tr>
+      <tr>${headers.map((h) => `<th scope="col">${esc(h)}</th>`).join("")}</tr>
+      ${rowsHtml}</table>`;
+    excelDoc("AuditLens-filtered-observations-" + stamp(), table);
+  }
+
   const CLOSE_GROUPS = ["Ready to Close", ...CLOSE_BUCKETS, "No date", "Recently Closed"];
   const groupLabel = (g: string) =>
     g === "No date" ? "No expected close date" : g === "Ready to Close" ? "Ready to close — awaiting verification" : g === "Recently Closed" ? "Recently closed" : g;
@@ -511,9 +587,14 @@ export default function TrackerPage() {
             Repeats only
           </label>
           {filtersActive ? (
-            <button className="btn ghost sm" type="button" onClick={() => setFilter(NO_FILTER)}>
-              Clear filters
-            </button>
+            <>
+              <button className="btn ghost sm" type="button" onClick={() => setFilter(NO_FILTER)}>
+                Clear filters
+              </button>
+              <button className="btn sec sm" type="button" onClick={exportFilteredExcel}>
+                ⤓ Download filtered
+              </button>
+            </>
           ) : null}
         </div>
       </div>
