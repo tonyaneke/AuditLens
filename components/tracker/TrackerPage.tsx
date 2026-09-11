@@ -587,17 +587,19 @@ export default function TrackerPage() {
             Repeats only
           </label>
           {filtersActive ? (
-            <>
-              <button className="btn ghost sm" type="button" onClick={() => setFilter(NO_FILTER)}>
-                Clear filters
-              </button>
-              <button className="btn sec sm" type="button" onClick={exportFilteredExcel}>
-                ⤓ Download filtered
-              </button>
-            </>
+            <button className="btn ghost sm" type="button" onClick={() => setFilter(NO_FILTER)}>
+              Clear filters
+            </button>
           ) : null}
         </div>
       </div>
+      {filtersActive ? (
+        <div style={{ display: "flex", justifyContent: "flex-end", margin: "6px 0" }}>
+          <button className="btn sec sm" type="button" onClick={exportFilteredExcel}>
+            ⤓ Download filtered ({pool.filter(passStatus).length})
+          </button>
+        </div>
+      ) : null}
 
       {groups.length ? (
         groups.map(({ g, shown, total }) => (

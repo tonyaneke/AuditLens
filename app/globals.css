@@ -3142,10 +3142,21 @@ td.timeline-cell {
   padding: 13px 18px;
 }
 
+.tracker-filters .filter-group {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.tracker-filters .field-select-sm {
+  min-width: 0;
+  max-width: 110px;
+}
+
 .filter-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: nowrap;
 }
 
