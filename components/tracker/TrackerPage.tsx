@@ -62,8 +62,17 @@ const RECENT_COL: Record<string, string> = {
   closed: "#2e7d32",
 };
 
-type TrackerFilter = { crit: string; tl: string; status: string; owner: string; repeat: boolean };
-const NO_FILTER: TrackerFilter = { crit: "All", tl: "All", status: "All", owner: "All", repeat: false };
+type TrackerFilter = { crit: string; tl: string; status: string; owner: string; quarter: string; repeat: boolean };
+const NO_FILTER: TrackerFilter = { crit: "All", tl: "All", status: "All", owner: "All", quarter: "All", repeat: false };
+
+/** Derive the fiscal quarter label from a Date, e.g. "Q3 2025". */
+function quarterOf(d: Date | string | null | undefined): string | null {
+  if (!d) return null;
+  const dt = typeof d === "string" ? new Date(d) : d;
+  if (isNaN(dt.getTime())) return null;
+  const q = Math.ceil((dt.getMonth() + 1) / 3);
+  return `Q${q} ${dt.getFullYear()}`;
+}
 
 /** QA-5 — rows painted per group before "Show more". A display limit, never a data limit:
  * the group header always states the true total. */
@@ -310,9 +319,24 @@ export default function TrackerPage() {
     a.localeCompare(b),
   );
 
+  const quarters = useMemo(() => {
+    const set = new Set<string>();
+    obs.forEach((o) => {
+      const q = quarterOf(o.createdAt);
+      if (q) set.add(q);
+    });
+    return [...set].sort((a, b) => {
+      // Sort descending: most recent quarter first
+      const [qa, ya] = [a.charAt(1), a.slice(3)];
+      const [qb, yb] = [b.charAt(1), b.slice(3)];
+      return yb.localeCompare(ya) || qb.localeCompare(qa);
+    });
+  }, [obs]);
+
   let pool = obs.slice();
   if (filter.crit !== "All") pool = pool.filter((o) => o.criticality === filter.crit);
   if (filter.owner !== "All") pool = pool.filter((o) => String(o.owner || "") === filter.owner);
+  if (filter.quarter !== "All") pool = pool.filter((o) => quarterOf(o.createdAt) === filter.quarter);
   if (filter.repeat) pool = pool.filter((o) => o.isRepeat);
   const statusF = filter.status;
   const tlF = filter.tl;
@@ -320,7 +344,7 @@ export default function TrackerPage() {
   const showClosedGroup = statusF === "All" || statusF === "Closed";
   const passStatus = (o: ObsWithContext) => statusF === "All" || (o.status || "Open") === statusF;
   const filtersActive =
-    filter.crit !== "All" || statusF !== "All" || tlF !== "All" || filter.owner !== "All" || filter.repeat;
+    filter.crit !== "All" || statusF !== "All" || tlF !== "All" || filter.owner !== "All" || filter.quarter !== "All" || filter.repeat;
   const bucketOf = (o: ObsWithContext) => closeBucketOf(o, o._r) ?? "No date";
 
   const CLOSE_GROUPS = ["Ready to Close", ...CLOSE_BUCKETS, "No date", "Recently Closed"];
@@ -465,6 +489,14 @@ export default function TrackerPage() {
             <span className="filter-label">Owner</span>
             <select className="field-select field-select-sm" value={filter.owner} onChange={(e) => setFilter((f) => ({ ...f, owner: e.target.value }))}>
               {["All", ...owners].map((x) => (
+                <option key={x}>{x}</option>
+              ))}
+            </select>
+          </div>
+          <div className="filter-group">
+            <span className="filter-label">Quarter</span>
+            <select className="field-select field-select-sm" value={filter.quarter} onChange={(e) => setFilter((f) => ({ ...f, quarter: e.target.value }))}>
+              {["All", ...quarters].map((x) => (
                 <option key={x}>{x}</option>
               ))}
             </select>
