@@ -34,12 +34,13 @@ Wuraola Odubiyi also belongs to **People & Culture Department**.
 | Fatima Mustafa Bello | Professional - Credit Operations | fbello@credicorp.ng |
 | Saadatu Alkali | EA to the ED Credit and Portfolio Mgmt. | salkali@credicorp.ng |
 
-## Finance — 4 · 28 observations
+## Finance — 5 · 28 observations
 
 | Name | Job title | Email |
 | --- | --- | --- |
 | Jonathan Aderibigbe | Chief Financial Officer | jaderibigbe@credicorp.ng |
 | Tubolayefa George | Specialist - Finance | tgeorge@credicorp.ng |
+| Bukola Afariogun | Specialist - Finance | bafariogun@credicorp.ng |
 | Najma Goni | Management Trainee | ngoni@credicorp.ng |
 | Tochukwu Chukwuani | Management Trainee | tchukwuani@credicorp.ng |
 

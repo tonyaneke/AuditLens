@@ -58,6 +58,7 @@ export const STAFF_DIRECTORY: [string, string, string][] = [
   ["Saadatu Alkali", "EA to the ED Credit and Portfolio Mgmt.", "Credit Operations"],
   ["Jonathan Aderibigbe", "Chief Financial Officer", "Finance"],
   ["Tubolayefa George", "Specialist - Finance", "Finance"],
+  ["Bukola Afariogun", "Specialist - Finance", "Finance"],
   ["Najma Goni", "Management Trainee", "Finance"],
   ["Tochukwu Chukwuani", "Management Trainee", "Finance"],
   ["Emmanuel Nwaka", "Lead, Impact & Sustainability", "Impact & Sustainability"],
