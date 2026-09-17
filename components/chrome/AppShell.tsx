@@ -40,7 +40,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
         <div className="main-shell">
           <div className="topbar">
             <div className="topbar-left">
-              <div className="topbar-back">{chrome.back}</div>
+              {chrome.back ? <div className="topbar-back">{chrome.back}</div> : null}
               <div className="topbar-title-wrap">
                 {chrome.title ? <h2>{chrome.title}</h2> : null}
               </div>

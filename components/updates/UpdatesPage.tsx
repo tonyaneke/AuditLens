@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePageChrome } from "@/components/chrome/PageChrome";
-import { CritPill, Empty, Kpi, StatusPill } from "@/components/ui";
+import { CritPill, Empty, StatusPill } from "@/components/ui";
 import { DEPARTMENTS } from "@/components/settings/staff";
 import { deptNameOf } from "@/lib/dept-scope";
 import { departmentToSlug } from "@/lib/dept-slugs";
@@ -304,54 +304,6 @@ export default function UpdatesPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* In-page Title & Subtext */}
-      <div>
-        <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "var(--ink)" }}>
-          Latest Updates
-        </h2>
-        <div className="hint" style={{ marginTop: 2, fontSize: 13 }}>
-          Chronological activity feed of verified closures, progress updates, and owner responses across all departments.
-        </div>
-      </div>
-
-      {/* Summary KPI Cards */}
-      <div
-        className="kpis-grid"
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-          gap: 12,
-        }}
-      >
-        <Kpi
-          tone="base"
-          label="Total Activity Logs"
-          value={allActivities.length}
-          sub="Remediation history recorded"
-          icon="audit"
-        />
-        <Kpi
-          tone="good"
-          label="Verified Closures"
-          value={closureCount}
-          sub="Resolved & closed by IA"
-          icon="check"
-        />
-        <Kpi
-          tone="accent"
-          label="Progress Updates"
-          value={updateCount}
-          sub="Action owner submissions"
-          icon="obs"
-        />
-        <Kpi
-          tone="warn"
-          label="Management Responses"
-          value={responseCount}
-          sub="Formal action owner responses"
-          icon="alert"
-        />
-      </div>
 
       {/* Toolbar: Workflow Tabs, Department, Criticality, and Search */}
       <div

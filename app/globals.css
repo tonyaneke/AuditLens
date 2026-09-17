@@ -565,6 +565,9 @@ a {
 .topbar-back {
   flex-shrink: 0;
 }
+.topbar-back:empty {
+  display: none;
+}
 
 .topbar-title-wrap {
   min-width: 0;
