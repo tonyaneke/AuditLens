@@ -51,9 +51,10 @@ type Obj = Record<string, unknown>;
 
 const HEAD_ROLE = "head_of_audit";
 const STAFF_ROLE = "audit_staff";
+const EXECUTIVE_ROLE = "executive";
 
 // Roles that legitimately need the whole document. Everything else is scoped to its own records.
-const FULL_SCOPE_ROLES = new Set([HEAD_ROLE, STAFF_ROLE]);
+const FULL_SCOPE_ROLES = new Set([HEAD_ROLE, STAFF_ROLE, EXECUTIVE_ROLE]);
 
 /** The viewer a session represents. Uses effectiveRole so an admin viewing as an action owner is
  *  scoped like an action owner — the same rule the UI applies.

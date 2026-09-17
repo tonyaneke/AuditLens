@@ -302,6 +302,7 @@ export function UserDialog({
     ["audit_staff", "Audit Staff"],
     ["head_of_audit", "Head of Audit"],
     ["action_owner", "Action Owner"],
+    ["executive", "Executive (EXCO)"],
     ["admin", "Admin"],
   ];
 
@@ -506,7 +507,9 @@ export function UserDialog({
             ? "Sidebar access: all sections, including Settings and the Audit log."
             : role === "admin"
               ? "Full access to all sections. Can switch between any role."
-              : "Sidebar access: the Action Owner portal (their assigned observations) only."}
+              : role === "executive"
+                ? "Sidebar access: Executive Dashboard, all Departments (Internal & External observations), and Executive Briefs."
+                : "Sidebar access: the Action Owner portal (their assigned observations) only."}
         </div>
       )}
       {u?.createdAt ? (
@@ -654,7 +657,13 @@ export function DeleteUserDialog({
 
 /* ---------------- modalExcoRecipient / saveExcoRecipient ---------------- */
 
-export function ExcoRecipientDialog({ recipientId }: { recipientId?: string }) {
+export function ExcoRecipientDialog({
+  recipientId,
+  onSaved,
+}: {
+  recipientId?: string;
+  onSaved?: () => Promise<void>;
+}) {
   const { db, mutate } = useWorkspace();
   const modal = useModal();
   const existing = recipientId
@@ -664,9 +673,10 @@ export function ExcoRecipientDialog({ recipientId }: { recipientId?: string }) {
   const [name, setName] = useState(existing?.name || "");
   const [role, setRole] = useState(existing?.role || "");
   const [email, setEmail] = useState(existing?.email || "");
+  const [provisionLogin, setProvisionLogin] = useState(true);
   const [err, setErr] = useState("");
 
-  function save() {
+  async function save() {
     const nm = name.trim();
     const rl = role.trim();
     const em = email.trim().toLowerCase();
@@ -674,6 +684,28 @@ export function ExcoRecipientDialog({ recipientId }: { recipientId?: string }) {
       setErr("Name and a valid email are required.");
       return;
     }
+
+    if (provisionLogin) {
+      try {
+        const res = await fetch("/api/users", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: nm,
+            email: em,
+            department: "Office of the Managing Director",
+            role: "executive",
+          }),
+        });
+        if (!res.ok && res.status !== 409) {
+          const data = await res.json().catch(() => ({}));
+          console.warn("Could not auto-provision executive user:", data);
+        }
+      } catch (e) {
+        console.warn("Network error provisioning user:", e);
+      }
+    }
+
     mutate((d) => {
       d.exco = d.exco || {};
       d.exco.recipientList = d.exco.recipientList || [];
@@ -689,8 +721,18 @@ export function ExcoRecipientDialog({ recipientId }: { recipientId?: string }) {
         L.push({ id: uid(), name: nm, role: rl, email: em });
       }
     });
+
+    if (onSaved) {
+      await onSaved();
+    }
+
     modal.close();
-    toast("Recipient saved.", "success");
+    toast(
+      provisionLogin
+        ? "Recipient saved and Executive login provisioned."
+        : "Recipient saved.",
+      "success",
+    );
   }
 
   return (
@@ -701,7 +743,7 @@ export function ExcoRecipientDialog({ recipientId }: { recipientId?: string }) {
           <button className="btn sec" type="button" onClick={modal.close}>
             Cancel
           </button>
-          <button className="btn" type="button" onClick={save}>
+          <button className="btn" type="button" onClick={() => void save()}>
             Save
           </button>
         </>
@@ -728,6 +770,22 @@ export function ExcoRecipientDialog({ recipientId }: { recipientId?: string }) {
         onChange={(e) => setEmail(e.target.value)}
         placeholder="name@credicorp.ng"
       />
+      <div style={{ marginTop: 12 }}>
+        <label className="filter-check" style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+          <input
+            type="checkbox"
+            style={{ width: "auto", marginTop: 3 }}
+            checked={provisionLogin}
+            onChange={(e) => setProvisionLogin(e.target.checked)}
+          />
+          <span>
+            <b>Allow sign-in (Executive / EXCO portal)</b>
+            <div className="hint" style={{ marginTop: 2 }}>
+              Creates an Executive login for this recipient with full observation overview across all departments.
+            </div>
+          </span>
+        </label>
+      </div>
       {err ? (
         <div className="ai-err" style={{ marginTop: 8 }}>
           {err}

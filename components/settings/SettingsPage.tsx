@@ -197,6 +197,36 @@ export default function SettingsPage() {
     toast(on ? "Closure responses must now pass the check." : "Owners may submit after one warning.", "success");
   }
 
+  /* ---- provisionExcoUser ---- */
+  async function provisionExcoUser(r: { name?: string; email?: string }) {
+    const em = (r.email || "").trim().toLowerCase();
+    if (!em) {
+      toast("Recipient has no valid email address.", "error");
+      return;
+    }
+    try {
+      const res = await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: r.name || "Executive Member",
+          email: em,
+          department: "Office of the Managing Director",
+          role: "executive",
+        }),
+      });
+      if (res.ok) {
+        toast(`Executive login created for ${r.name || em}.`, "success");
+        await reload();
+      } else {
+        const d = await res.json().catch(() => ({}));
+        toast(String(d.error || "Could not create login account."), "error");
+      }
+    } catch {
+      toast("Network error creating login account.", "error");
+    }
+  }
+
   return (
     <>
       {/* ---- Departments & action owners ---- */}
@@ -481,14 +511,18 @@ export default function SettingsPage() {
         <div className="row">
           <h3 style={{ margin: 0 }}>MD &amp; EXCO brief recipients</h3>
           <div className="spacer" />
-          <button className="btn sm" type="button" onClick={() => modal.open(<ExcoRecipientDialog />)}>
+          <button
+            className="btn sm"
+            type="button"
+            onClick={() => modal.open(<ExcoRecipientDialog onSaved={reload} />)}
+          >
             + Add recipient
           </button>
         </div>
         <div className="hint" style={{ marginTop: 4 }}>
           These people receive the <b>Executive Assurance Brief</b> — automatically on the 1st and
           3rd week of each month from August 2026, and manually anytime from the Executive
-          Assurance Brief page.
+          Assurance Brief page. They have access to the Executive Governance Dashboard and Department Observations.
         </div>
         <div style={{ marginTop: 12 }}>
           {!recipients.length ? (
@@ -500,37 +534,67 @@ export default function SettingsPage() {
                   <th scope="col">Name</th>
                   <th scope="col">Role</th>
                   <th scope="col">Email</th>
+                  <th scope="col">Login</th>
                   <th scope="col"></th>
                 </tr>
               </thead>
               <tbody>
-                {recipients.map((r) => (
-                  <tr key={r.id}>
-                    <td>
-                      <b>{r.name || "—"}</b>
-                    </td>
-                    <td>{r.role || "—"}</td>
-                    <td>{r.email || "—"}</td>
-                    <td className="ra-actions-cell">
-                      <button
-                        className="btn-icon-action"
-                        type="button"
-                        title="Edit"
-                        onClick={() => modal.open(<ExcoRecipientDialog recipientId={r.id} />)}
-                      >
-                        ✎
-                      </button>
-                      <button
-                        className="btn-icon-action danger"
-                        type="button"
-                        title="Delete"
-                        onClick={() => delExcoRecipient(r.id)}
-                      >
-                        {TRASH}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {recipients.map((r) => {
+                  const rem = (r.email || "").trim().toLowerCase();
+                  const linkedUser =
+                    users?.find((u) => (u.email || "").trim().toLowerCase() === rem) ||
+                    directory.find((d) => (d.email || "").trim().toLowerCase() === rem);
+                  const isProvisioned = !!linkedUser;
+                  return (
+                    <tr key={r.id}>
+                      <td>
+                        <b>{r.name || "—"}</b>
+                      </td>
+                      <td>{r.role || "—"}</td>
+                      <td>{r.email || "—"}</td>
+                      <td>
+                        {isProvisioned ? (
+                          <span className="pill c-Low">Active (Executive)</span>
+                        ) : (
+                          <div className="row" style={{ gap: 6, alignItems: "center" }}>
+                            <span className="pill sop-pending-pill">No login</span>
+                            <button
+                              className="btn sec sm"
+                              type="button"
+                              style={{ padding: "2px 8px", fontSize: 11 }}
+                              onClick={() => void provisionExcoUser(r)}
+                              title="Create Executive login for this recipient"
+                            >
+                              + Provision
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                      <td className="ra-actions-cell">
+                        <button
+                          className="btn-icon-action"
+                          type="button"
+                          title="Edit"
+                          onClick={() =>
+                            modal.open(
+                              <ExcoRecipientDialog recipientId={r.id} onSaved={reload} />,
+                            )
+                          }
+                        >
+                          ✎
+                        </button>
+                        <button
+                          className="btn-icon-action danger"
+                          type="button"
+                          title="Delete"
+                          onClick={() => delExcoRecipient(r.id)}
+                        >
+                          {TRASH}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}

@@ -28,6 +28,11 @@ const ROLE_OPTIONS: RoleOption[] = [
     label: roleLabel("action_owner"),
     description: "Department head remediation portal",
   },
+  {
+    value: "executive",
+    label: roleLabel("executive"),
+    description: "MD & EXCO governance view across all departments",
+  },
 ];
 
 type RoleSwitcherProps = {

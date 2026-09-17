@@ -8,7 +8,9 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Alert02Icon,
   Analytics01Icon,
+  ArrowRight01Icon,
   BookOpen01Icon,
+  Building01Icon,
   CheckmarkBadge01Icon,
   DashboardSquare01Icon,
   File01Icon,
@@ -24,6 +26,8 @@ import {
 import type { SessionUser } from "@/lib/permissions";
 import { displayRoleLabel, effectiveRole, isAdmin, visibleViews } from "@/lib/permissions";
 import { FULL_MANUAL, OWNER_MANUAL } from "@/lib/manuals";
+import { DEPARTMENTS } from "@/components/settings/staff";
+import { departmentToSlug, getDepartmentStats } from "@/lib/dept-slugs";
 import {
   myExtPendingCount,
   myFraudPendingCount,
@@ -274,6 +278,81 @@ function PendingDot({ view, user }: { view: ViewKey; user: SessionUser }) {
   );
 }
 
+function ExecutiveDepartmentsNav() {
+  const { db } = useWorkspace();
+  const pathname = usePathname() || "";
+  const currentSlug = pathname.startsWith("/departments/") ? pathname.split("/")[2] || "" : "";
+  const currentSub = pathname.startsWith("/departments/") ? pathname.split("/")[3] || "internal" : "";
+
+  const [toggled, setToggled] = useState<Record<string, boolean>>({});
+
+  function toggle(slug: string, currentlyOpen: boolean) {
+    setToggled((prev) => ({ ...prev, [slug]: !currentlyOpen }));
+  }
+
+  return (
+    <div className="nav-section">
+      <div className="nav-label">DEPARTMENTS</div>
+      {DEPARTMENTS.map((dept) => {
+        const slug = departmentToSlug(dept);
+        const stats = getDepartmentStats(db, dept);
+        const isCurrentDept = currentSlug === slug;
+        // Default to open if it's the current department, otherwise look up manual toggle
+        const isOpen = toggled[slug] ?? isCurrentDept;
+        const hasOpen = stats.totals.pending > 0;
+
+        return (
+          <div key={dept} className="nav-dept-item">
+            <button
+              type="button"
+              className={`nav-dept-header ${isOpen ? "expanded" : ""}`}
+              onClick={() => toggle(slug, isOpen)}
+              title={`Toggle ${dept}`}
+              aria-expanded={isOpen}
+            >
+              <span className="nav-dept-title-wrap">
+                <HugeiconsIcon icon={Building01Icon} size={15} strokeWidth={1.75} style={{ opacity: 0.8 }} />
+                <span className="nav-dept-name">{dept.replace(/\s+Department$/i, "")}</span>
+              </span>
+              <span className="nav-dept-right">
+                {hasOpen ? <span className="nav-badge-sm">{stats.totals.pending}</span> : null}
+                <HugeiconsIcon
+                  icon={ArrowRight01Icon}
+                  size={14}
+                  strokeWidth={2}
+                  className={`nav-dept-chevron ${isOpen ? "expanded" : ""}`}
+                />
+              </span>
+            </button>
+            {isOpen && (
+              <div className="nav-dept-sub">
+                <Link
+                  href={`/departments/${slug}/internal`}
+                  className={`nav-dept-sub-link ${isCurrentDept && currentSub !== "external" ? "active" : ""}`}
+                >
+                  <span>Internal observations</span>
+                  {stats.internal.pending.length > 0 ? (
+                    <span className="nav-badge-sm">{stats.internal.pending.length}</span>
+                  ) : null}
+                </Link>
+                <Link
+                  href={`/departments/${slug}/external`}
+                  className={`nav-dept-sub-link ${isCurrentDept && currentSub === "external" ? "active" : ""}`}
+                >
+                  <span>External observations</span>
+                  {stats.external.pending.length > 0 ? (
+                    <span className="nav-badge-sm">{stats.external.pending.length}</span>
+                  ) : null}
+                </Link>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // Legacy-shell navigation: prefer window.go (the script's router — its bridge redirects
 // migrated views to real URLs), with the historical fallbacks kept intact.
 function legacyNavigate(view: string) {
@@ -293,6 +372,7 @@ export default function SidebarNav({ user, shell = "legacy" }: SidebarNavProps) 
   const [signingOut, setSigningOut] = useState(false);
   const pathname = usePathname();
   const activeView = shell === "app" ? viewForPathname(pathname || "/") : null;
+  const isExecutive = effectiveRole(user) === "executive";
 
   async function handleSignOut() {
     if (signingOut) return;
@@ -315,63 +395,92 @@ export default function SidebarNav({ user, shell = "legacy" }: SidebarNavProps) 
   return (
     <>
       <nav className="nav" id="nav">
-        {SECTIONS.map((section) => {
-          const items = section.items.filter((item) => access.has(item.view));
-          if (!items.length) return null;
-          return (
-            <div className="nav-section" key={section.label}>
-              <div className="nav-label">{section.label}</div>
-              {items.map((item) => {
-                const icon = (
-                  <span className="ic">
-                    <HugeiconsIcon icon={item.icon} size={ICON_SIZE} strokeWidth={1.75} />
-                  </span>
-                );
-                if (shell === "app") {
-                  const href = hrefForView(item.view);
-                  const active = activeView === item.view;
-                  const badge =
-                    item.view === "approvals" && effectiveRole(user) === "head_of_audit" ? (
-                      <ApprovalsBadge />
-                    ) : PORTAL_DOT_VIEWS.has(item.view) ? (
-                      <PendingDot view={item.view} user={user} />
-                    ) : null;
-                  // Migrated targets: client-side <Link>. Legacy targets: plain anchor —
-                  // a full page load hands over to the audit-bot shell.
-                  return MIGRATED_VIEWS.has(item.view) ? (
-                    <Link
+        {isExecutive ? (
+          <>
+            <div className="nav-section">
+              <div className="nav-label">MAIN</div>
+              <Link
+                href="/"
+                className={activeView === "dashboard" ? "active" : undefined}
+                data-view="dashboard"
+              >
+                <span className="ic">
+                  <HugeiconsIcon icon={DashboardSquare01Icon} size={ICON_SIZE} strokeWidth={1.75} />
+                </span>
+                Dashboard
+              </Link>
+              <Link
+                href="/exco"
+                className={activeView === "exco" ? "active" : undefined}
+                data-view="exco"
+              >
+                <span className="ic">
+                  <HugeiconsIcon icon={JusticeScale01Icon} size={ICON_SIZE} strokeWidth={1.75} />
+                </span>
+                Executive Assurance Brief
+              </Link>
+            </div>
+            <ExecutiveDepartmentsNav />
+          </>
+        ) : (
+          SECTIONS.map((section) => {
+            const items = section.items.filter((item) => access.has(item.view));
+            if (!items.length) return null;
+            return (
+              <div className="nav-section" key={section.label}>
+                <div className="nav-label">{section.label}</div>
+                {items.map((item) => {
+                  const icon = (
+                    <span className="ic">
+                      <HugeiconsIcon icon={item.icon} size={ICON_SIZE} strokeWidth={1.75} />
+                    </span>
+                  );
+                  if (shell === "app") {
+                    const href = hrefForView(item.view);
+                    const active = activeView === item.view;
+                    const badge =
+                      item.view === "approvals" && effectiveRole(user) === "head_of_audit" ? (
+                        <ApprovalsBadge />
+                      ) : PORTAL_DOT_VIEWS.has(item.view) ? (
+                        <PendingDot view={item.view} user={user} />
+                      ) : null;
+                    // Migrated targets: client-side <Link>. Legacy targets: plain anchor —
+                    // a full page load hands over to the audit-bot shell.
+                    return MIGRATED_VIEWS.has(item.view) ? (
+                      <Link
+                        key={item.view}
+                        href={href}
+                        data-view={item.view}
+                        className={active ? "active" : undefined}
+                      >
+                        {icon}
+                        {item.label}
+                        {badge}
+                      </Link>
+                    ) : (
+                      <a key={item.view} href={href} data-view={item.view}>
+                        {icon}
+                        {item.label}
+                        {badge}
+                      </a>
+                    );
+                  }
+                  return (
+                    <button
                       key={item.view}
-                      href={href}
+                      type="button"
                       data-view={item.view}
-                      className={active ? "active" : undefined}
+                      className={item.view === "dashboard" ? "active" : undefined}
                     >
                       {icon}
                       {item.label}
-                      {badge}
-                    </Link>
-                  ) : (
-                    <a key={item.view} href={href} data-view={item.view}>
-                      {icon}
-                      {item.label}
-                      {badge}
-                    </a>
+                    </button>
                   );
-                }
-                return (
-                  <button
-                    key={item.view}
-                    type="button"
-                    data-view={item.view}
-                    className={item.view === "dashboard" ? "active" : undefined}
-                  >
-                    {icon}
-                    {item.label}
-                  </button>
-                );
-              })}
-            </div>
-          );
-        })}
+                })}
+              </div>
+            );
+          })
+        )}
         <div className="nav-spacer" aria-hidden="true" />
       </nav>
 

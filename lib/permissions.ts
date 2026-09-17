@@ -37,6 +37,15 @@ export const DETAIL_VIEWS = [
   "guide",
 ] as const;
 
+// Views available to an executive / brief viewer (MD & EXCO).
+export const EXECUTIVE_VIEWS = [
+  "dashboard",
+  "exco",
+  "departments",
+  "observation",
+  "extfinding",
+] as const;
+
 export const ALL_VIEWS = [
   ...new Set<string>([
     ...MAIN_VIEWS,
@@ -44,6 +53,7 @@ export const ALL_VIEWS = [
     ...OVERSIGHT_VIEWS,
     ...ADMIN_VIEWS,
     ...OWNER_VIEWS,
+    ...EXECUTIVE_VIEWS,
     ...DETAIL_VIEWS,
   ]),
 ] as string[];
@@ -54,12 +64,14 @@ export type AppView =
   | (typeof OVERSIGHT_VIEWS)[number]
   | (typeof ADMIN_VIEWS)[number]
   | (typeof OWNER_VIEWS)[number]
+  | (typeof EXECUTIVE_VIEWS)[number]
   | (typeof DETAIL_VIEWS)[number];
 
 export const KNOWN_ROLES = [
   "head_of_audit",
   "audit_staff",
   "action_owner",
+  "executive",
   "admin",
 ] as const;
 
@@ -79,6 +91,7 @@ export const ROLE_LABELS: Record<string, string> = {
   head_of_audit: "Head of Audit",
   audit_staff: "Audit Staff",
   action_owner: "Action Owner",
+  executive: "Executive",
   admin: "Admin",
 };
 
@@ -160,6 +173,9 @@ export function canAccessView(user: SessionUser, view: string): boolean {
   if (role === "action_owner") {
     return (OWNER_VIEWS as readonly string[]).includes(view);
   }
+  if (role === "executive") {
+    return (EXECUTIVE_VIEWS as readonly string[]).includes(view);
+  }
   if (role === "head_of_audit") {
     return (ALL_VIEWS as readonly string[]).includes(view);
   }
@@ -172,6 +188,7 @@ export function canAccessView(user: SessionUser, view: string): boolean {
 export function allowedViews(user: SessionUser): string[] {
   const role = effectiveRole(user);
   if (role === "action_owner") return [...OWNER_VIEWS];
+  if (role === "executive") return [...EXECUTIVE_VIEWS];
   if (role === "head_of_audit") return [...ALL_VIEWS];
   const views: string[] = [...MAIN_VIEWS, ...DETAIL_VIEWS];
   for (const v of user.sidebarAccess) {
@@ -184,6 +201,7 @@ export function allowedViews(user: SessionUser): string[] {
 export function visibleViews(user: SessionUser): string[] {
   const role = effectiveRole(user);
   if (role === "action_owner") return ["dashboard", "myobs", "myext", "myfraud"];
+  if (role === "executive") return ["dashboard", "exco", "departments"];
   if (role === "head_of_audit") {
     return [...MAIN_VIEWS, ...ASSESSMENT_VIEWS, ...OVERSIGHT_VIEWS];
   }

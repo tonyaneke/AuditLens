@@ -14,19 +14,26 @@ const CaeReportDialog = dynamic(() => import("@/components/dashboard/CaeReportDi
 });
 import OwnerDashboard from "@/components/dashboard/OwnerDashboard";
 import StaffDashboard from "@/components/dashboard/StaffDashboard";
+import ExecutiveDashboard from "@/components/dashboard/ExecutiveDashboard";
 import { effectiveRole } from "@/lib/permissions";
 
 export default function DashboardPage() {
   const user = useUser();
   const modal = useModal();
-  const isOwner = effectiveRole(user) === "action_owner";
+  const role = effectiveRole(user);
+  const isOwner = role === "action_owner";
+  const isExecutive = role === "executive";
+
   usePageChrome({
-    title: "Dashboard",
-    actions: isOwner ? undefined : (
+    title: isExecutive ? "Executive Governance Dashboard" : "Dashboard",
+    actions: isOwner || isExecutive ? undefined : (
       <button className="btn sec sm" type="button" onClick={() => modal.open(<CaeReportDialog />)}>
         ⤓ Quarterly BAC report
       </button>
     ),
   });
-  return isOwner ? <OwnerDashboard /> : <StaffDashboard />;
+
+  if (isExecutive) return <ExecutiveDashboard />;
+  if (isOwner) return <OwnerDashboard />;
+  return <StaffDashboard />;
 }

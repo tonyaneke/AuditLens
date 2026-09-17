@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionWithFlags, createSession } from "@/lib/auth";
 import { type SessionUser } from "@/lib/permissions";
 
-const SWITCHABLE_ROLES = ["head_of_audit", "audit_staff", "action_owner"] as const;
+const SWITCHABLE_ROLES = ["head_of_audit", "audit_staff", "action_owner", "executive"] as const;
 
 export async function POST(request: Request) {
   try {
