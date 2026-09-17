@@ -23,7 +23,6 @@ export const DEPARTMENTS = [
   "Credit Operations",
   "Finance",
   "Impact & Sustainability",
-  "Internal Audit",
   "IT",
   "Legal",
   "Office of the Managing Director",

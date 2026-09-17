@@ -46,9 +46,13 @@ type UnifiedObservation = {
 
 function shortDeptName(name: string): string {
   const clean = name.replace(/\s+Department$/i, "").trim();
-  if (clean.toLowerCase() === "risk management") return "Risk Mgt";
-  if (clean.toLowerCase() === "corporate communications") return "Corp Comms";
-  if (clean.toLowerCase() === "credit operations") return "Credit Ops";
+  const lower = clean.toLowerCase();
+  if (lower === "office of the managing director" || lower === "omd") return "OMD";
+  if (lower === "risk management") return "Risk Mgt";
+  if (lower === "corporate communications") return "Corp Comms";
+  if (lower === "credit operations") return "Credit Ops";
+  if (lower === "people & culture" || lower === "people and culture") return "P&C";
+  if (lower === "impact & sustainability" || lower === "impact and sustainability") return "Impact & Sust";
   return clean;
 }
 
@@ -739,19 +743,16 @@ export default function ExecutiveDashboard() {
                   display: "grid",
                   gridTemplateColumns: `repeat(${rankedDepartments.length}, 1fr)`,
                   gap: 12,
-                  alignItems: "end",
-                  height: 145,
                 }}
               >
                 {rankedDepartments.map((ds, idx) => {
                   const cleanName = shortDeptName(ds.department);
                   const pendingCount = ds.internal.pending.length;
-                  const overdueCount = ds.internal.overdue.length;
                   const critCount = ds.internal.all.filter((o) => o.criticality === "Critical" && o.status !== "Closed").length;
                   const highCount = ds.internal.all.filter((o) => o.criticality === "High" && o.status !== "Closed").length;
                   const otherCount = Math.max(0, pendingCount - critCount - highCount);
                   const maxPending = Math.max(...rankedDepartments.map((d) => d.internal.pending.length), 1);
-                  const MAX_BAR_HEIGHT = 105;
+                  const MAX_BAR_HEIGHT = 100;
                   const barHeight =
                     pendingCount > 0
                       ? Math.max(12, Math.round((pendingCount / maxPending) * MAX_BAR_HEIGHT))
@@ -769,110 +770,90 @@ export default function ExecutiveDashboard() {
                         display: "flex",
                         flexDirection: "column",
                         alignItems: "center",
-                        justifyContent: "flex-end",
                         textDecoration: "none",
                         color: "inherit",
-                        height: "100%",
-                        padding: "4px 2px",
-                        borderRadius: 6,
+                        width: "100%",
                       }}
                       className="dash-bar-column"
-                      title={`${cleanName}: ${pendingCount} pending (${critCount} Critical, ${highCount} High, ${otherCount} Moderate/Low, ${overdueCount} overdue)`}
+                      title={`${cleanName}: ${pendingCount} pending (${critCount} Critical, ${highCount} High, ${otherCount} Moderate/Low)`}
                     >
-                      {/* Top Pending Count */}
-                      <span
-                        style={{
-                          fontSize: 12,
-                          fontWeight: 700,
-                          color: pendingCount > 0 ? "var(--ink)" : "var(--muted)",
-                          marginBottom: 6,
-                        }}
-                      >
-                        {pendingCount}
-                      </span>
-
-                      {/* Stacked Vertical Bar */}
+                      {/* Bar Column Area */}
                       <div
                         style={{
-                          width: "55%",
-                          maxWidth: 36,
-                          minWidth: 20,
-                          height: barHeight,
-                          background: pendingCount === 0 ? "#e2e8f0" : "transparent",
-                          borderRadius: "5px 5px 0 0",
-                          overflow: "hidden",
+                          height: 135,
+                          width: "100%",
                           display: "flex",
                           flexDirection: "column",
-                          transformOrigin: "bottom",
-                          animation: `barRise 0.65s cubic-bezier(0.16, 1, 0.3, 1) ${idx * 65}ms both`,
-                          boxShadow: pendingCount > 0 ? "0 2px 4px rgba(0,0,0,0.06)" : "none",
+                          alignItems: "center",
+                          justifyContent: "flex-end",
                         }}
                       >
-                        {critCount > 0 ? (
-                          <div
-                            style={{
-                              height: `${critPct}%`,
-                              background: "var(--high, #dc2626)",
-                              minHeight: 3,
-                            }}
-                            title={`${critCount} Critical`}
-                          />
-                        ) : null}
-                        {highCount > 0 ? (
-                          <div
-                            style={{
-                              height: `${highPct}%`,
-                              background: "#f59e0b",
-                              minHeight: 3,
-                            }}
-                            title={`${highCount} High`}
-                          />
-                        ) : null}
-                        {otherCount > 0 ? (
-                          <div
-                            style={{
-                              height: `${otherPct}%`,
-                              background: "var(--brand-500, #10b981)",
-                              minHeight: 3,
-                            }}
-                            title={`${otherCount} Moderate/Low`}
-                          />
-                        ) : null}
+                        {/* Top Pending Count */}
+                        <span
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: pendingCount > 0 ? "var(--ink)" : "var(--muted)",
+                            marginBottom: 6,
+                          }}
+                        >
+                          {pendingCount}
+                        </span>
+
+                        {/* Stacked Vertical Bar */}
+                        <div
+                          style={{
+                            width: "50%",
+                            maxWidth: 32,
+                            minWidth: 18,
+                            height: barHeight,
+                            background: pendingCount === 0 ? "#e2e8f0" : "transparent",
+                            borderRadius: "5px 5px 0 0",
+                            overflow: "hidden",
+                            display: "flex",
+                            flexDirection: "column",
+                            transformOrigin: "bottom",
+                            animation: `barRise 0.65s cubic-bezier(0.16, 1, 0.3, 1) ${idx * 65}ms both`,
+                            boxShadow: pendingCount > 0 ? "0 2px 4px rgba(0,0,0,0.06)" : "none",
+                          }}
+                        >
+                          {critCount > 0 ? (
+                            <div
+                              style={{
+                                height: `${critPct}%`,
+                                background: "var(--high, #dc2626)",
+                                minHeight: 3,
+                              }}
+                              title={`${critCount} Critical`}
+                            />
+                          ) : null}
+                          {highCount > 0 ? (
+                            <div
+                              style={{
+                                height: `${highPct}%`,
+                                background: "#f59e0b",
+                                minHeight: 3,
+                              }}
+                              title={`${highCount} High`}
+                            />
+                          ) : null}
+                          {otherCount > 0 ? (
+                            <div
+                              style={{
+                                height: `${otherPct}%`,
+                                background: "var(--brand-500, #10b981)",
+                                minHeight: 3,
+                              }}
+                              title={`${otherCount} Moderate/Low`}
+                            />
+                          ) : null}
+                        </div>
                       </div>
-                    </Link>
-                  );
-                })}
-              </div>
 
-              {/* Baseline axis line */}
-              <div style={{ height: 1, background: "var(--line, #e2e8f0)", width: "100%" }} />
+                      {/* Baseline axis line */}
+                      <div style={{ height: 1, background: "var(--line, #e2e8f0)", width: "100%", margin: "0 0 8px 0" }} />
 
-              {/* Department Names & Overdue sub-row */}
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: `repeat(${rankedDepartments.length}, 1fr)`,
-                  gap: 12,
-                  marginTop: 8,
-                }}
-              >
-                {rankedDepartments.map((ds) => {
-                  const cleanName = shortDeptName(ds.department);
-                  const overdueCount = ds.internal.overdue.length;
-                  return (
-                    <Link
-                      key={ds.department}
-                      href={`/departments/${ds.slug}/internal`}
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        textDecoration: "none",
-                        color: "inherit",
-                        textAlign: "center",
-                      }}
-                      title={`Open ${cleanName}`}
-                    >
+                      {/* Department Name */}
                       <span
                         style={{
                           fontSize: 11.5,
@@ -882,34 +863,11 @@ export default function ExecutiveDashboard() {
                           overflow: "hidden",
                           textOverflow: "ellipsis",
                           maxWidth: "100%",
+                          textAlign: "center",
                         }}
                       >
                         {cleanName}
                       </span>
-                      {overdueCount > 0 ? (
-                        <span
-                          style={{
-                            fontSize: 9.5,
-                            fontWeight: 700,
-                            color: "var(--high, #dc2626)",
-                            whiteSpace: "nowrap",
-                            marginTop: 1,
-                          }}
-                        >
-                          {overdueCount} overdue
-                        </span>
-                      ) : (
-                        <span
-                          style={{
-                            fontSize: 9.5,
-                            color: "var(--muted)",
-                            whiteSpace: "nowrap",
-                            marginTop: 1,
-                          }}
-                        >
-                          on track
-                        </span>
-                      )}
                     </Link>
                   );
                 })}

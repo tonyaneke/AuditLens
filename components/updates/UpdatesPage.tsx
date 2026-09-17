@@ -330,7 +330,7 @@ export default function UpdatesPage() {
                 color: activeTab === "all" ? "var(--brand-700, #0a4a3b)" : "var(--muted, #64748b)",
                 fontWeight: activeTab === "all" ? 700 : 500,
                 fontSize: 12,
-                padding: "5px 12px",
+                padding: "4px 10px",
                 borderRadius: 6,
                 cursor: "pointer",
                 boxShadow: activeTab === "all" ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
@@ -348,7 +348,7 @@ export default function UpdatesPage() {
                 color: activeTab === "closure" ? "var(--closed, #2e7d32)" : "var(--muted, #64748b)",
                 fontWeight: activeTab === "closure" ? 700 : 500,
                 fontSize: 12,
-                padding: "5px 12px",
+                padding: "4px 10px",
                 borderRadius: 6,
                 cursor: "pointer",
                 boxShadow: activeTab === "closure" ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
@@ -366,7 +366,7 @@ export default function UpdatesPage() {
                 color: activeTab === "update" ? "#2c5f8a" : "var(--muted, #64748b)",
                 fontWeight: activeTab === "update" ? 700 : 500,
                 fontSize: 12,
-                padding: "5px 12px",
+                padding: "4px 10px",
                 borderRadius: 6,
                 cursor: "pointer",
                 boxShadow: activeTab === "update" ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
@@ -384,7 +384,7 @@ export default function UpdatesPage() {
                 color: activeTab === "response" ? "#b06000" : "var(--muted, #64748b)",
                 fontWeight: activeTab === "response" ? 700 : 500,
                 fontSize: 12,
-                padding: "5px 12px",
+                padding: "4px 10px",
                 borderRadius: 6,
                 cursor: "pointer",
                 boxShadow: activeTab === "response" ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
@@ -395,55 +395,90 @@ export default function UpdatesPage() {
             </button>
           </div>
 
-          {/* Right side: Department + Criticality dropdowns + clear */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div className="filter-group">
-              <span className="filter-label">Department</span>
+          {/* Right side: Department + Criticality dropdowns (Inline, compact width, no column stacking) */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "nowrap", flexShrink: 0 }}>
+            <div className="filter-group" style={{ flexShrink: 0, gap: 5 }}>
+              <span className="filter-label" style={{ fontSize: 10.5 }}>Dept</span>
               <select
                 className="field-select field-select-sm"
                 value={deptFilter}
                 onChange={(e) => setDeptFilter(e.target.value)}
+                style={{
+                  width: 140,
+                  maxWidth: 140,
+                  fontSize: 12,
+                  height: 32,
+                  padding: "4px 24px 4px 8px",
+                  textOverflow: "ellipsis",
+                  overflow: "hidden",
+                  whiteSpace: "nowrap",
+                }}
               >
                 <option value="All">All Departments</option>
-                {DEPARTMENTS.map((d) => (
+                {DEPARTMENTS.filter((d) => d !== "Internal Audit").map((d) => (
                   <option key={d} value={d}>
-                    {d.replace(/\s+Department$/i, "")}
+                    {d === "Office of the Managing Director" ? "OMD" : d.replace(/\s+Department$/i, "")}
                   </option>
                 ))}
               </select>
             </div>
 
-            <div className="filter-group">
-              <span className="filter-label">Criticality</span>
+            <div className="filter-group" style={{ flexShrink: 0, gap: 5 }}>
+              <span className="filter-label" style={{ fontSize: 10.5 }}>Criticality</span>
               <select
                 className="field-select field-select-sm"
                 value={critFilter}
                 onChange={(e) => setCritFilter(e.target.value)}
+                style={{
+                  width: 110,
+                  maxWidth: 110,
+                  fontSize: 12,
+                  height: 32,
+                  padding: "4px 24px 4px 8px",
+                }}
               >
-                <option value="All">All Criticalities</option>
+                <option value="All">All</option>
                 <option value="Critical">Critical</option>
                 <option value="High">High</option>
-                <option value="Medium">Medium / Moderate</option>
+                <option value="Medium">Medium</option>
                 <option value="Low">Low</option>
               </select>
             </div>
-
-            {isFiltered ? (
-              <button
-                type="button"
-                className="btn ghost sm"
-                onClick={() => {
-                  setActiveTab("all");
-                  setDeptFilter("All");
-                  setCritFilter("All");
-                }}
-                style={{ fontSize: 11.5 }}
-              >
-                Clear filters
-              </button>
-            ) : null}
           </div>
         </div>
+
+        {/* Clear Filters button positioned down below the filter toolbar */}
+        {isFiltered ? (
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              marginTop: 8,
+              paddingTop: 8,
+              borderTop: "1px solid var(--line, #edf2f0)",
+            }}
+          >
+            <button
+              type="button"
+              className="btn ghost sm"
+              onClick={() => {
+                setActiveTab("all");
+                setDeptFilter("All");
+                setCritFilter("All");
+              }}
+              style={{
+                fontSize: 11.5,
+                color: "var(--muted)",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+              }}
+            >
+              <span>✕</span>
+              <span>Clear filters</span>
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {/* Feed Counter */}

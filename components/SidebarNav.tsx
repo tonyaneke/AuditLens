@@ -301,7 +301,7 @@ function ExecutiveDepartmentsNav() {
   return (
     <div className="nav-section" style={{ paddingTop: 20 }}>
       <div className="nav-label" style={{ paddingTop: 4 }}>DEPARTMENTS</div>
-      {DEPARTMENTS.map((dept) => {
+      {DEPARTMENTS.filter((dept) => dept !== "Internal Audit").map((dept) => {
         const slug = departmentToSlug(dept);
         const stats = getDepartmentStats(db, dept);
         const isCurrentDept = currentSlug === slug;
