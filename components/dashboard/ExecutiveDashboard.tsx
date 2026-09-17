@@ -153,6 +153,7 @@ export default function ExecutiveDashboard() {
   const [deptFilter, setDeptFilter] = useState<string>("All");
   const [critFilter, setCritFilter] = useState<string>("All");
   const [search, setSearch] = useState<string>("");
+  const [deptViewMode, setDeptViewMode] = useState<"cards" | "table">("cards");
 
   // Compile stats across all departments
   const departmentSummaries: DepartmentStats[] = useMemo(() => {
@@ -481,13 +482,10 @@ export default function ExecutiveDashboard() {
 
   return (
     <>
-      {/* Executive Welcome & Header — matches Head of Internal Audit styling */}
+      {/* Executive Welcome & Header */}
       <div className="dash-welcome anim-fade-in">
         <div className="dash-welcome-text">
           <h1>Welcome, {user.name}</h1>
-          <p className="dash-welcome-role">
-            Executive Committee · Cross-Department Governance &amp; Oversight
-          </p>
         </div>
       </div>
 
@@ -538,12 +536,12 @@ export default function ExecutiveDashboard() {
         />
       </div>
 
-      {/* Top 2-Column Section: Left (Criticality Donut + Recent Activity) vs Right (Table-only Critical Watch) */}
-      <div className="dash2" style={{ alignItems: "start", marginBottom: 18 }}>
+      {/* Top 2-Column Section: Left (Criticality Donut + Recent Activity) vs Right (Table Critical Watch) */}
+      <div className="dash2" style={{ alignItems: "stretch", marginBottom: 18 }}>
         {/* Left Column: Donut card (fit-content) + Recent Remediation Activity filling below */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 18, height: "100%" }}>
           {/* Card 1: Observations by Criticality & Status Posture (hugs actual height) */}
-          <div className="card chart-card anim-fade-in" style={{ height: "fit-content" }}>
+          <div className="card chart-card anim-fade-in" style={{ height: "fit-content", flexShrink: 0 }}>
             <div className="seclabel">Observations by Criticality &amp; Posture</div>
             <div className="donutwrap" style={{ marginTop: 10, marginBottom: 16 }}>
               <Donut segs={donutSegs} total={overallTotals.total} label="total" />
@@ -576,7 +574,7 @@ export default function ExecutiveDashboard() {
           </div>
 
           {/* Card 2: Recent Remediation Activity & Updates (Enhanced & fills the space below) */}
-          <div className="card anim-fade-in" style={{ display: "flex", flexDirection: "column" }}>
+          <div className="card anim-fade-in" style={{ flex: 1, display: "flex", flexDirection: "column" }}>
             <div
               className="row"
               style={{
@@ -594,31 +592,113 @@ export default function ExecutiveDashboard() {
                 </div>
               </div>
 
-              {/* Activity Filter Tabs */}
-              <div className="seg" role="tablist" style={{ fontSize: 11 }}>
+              {/* Activity Filter Tabs — Upgraded segmented controls */}
+              <div
+                style={{
+                  display: "inline-flex",
+                  background: "var(--surface-subtle, #eef2f0)",
+                  padding: 3,
+                  borderRadius: 8,
+                  gap: 3,
+                  border: "1px solid var(--line, #e2e8f0)",
+                }}
+                role="tablist"
+              >
                 <button
                   type="button"
-                  className={activityFilter === "all" ? "active" : undefined}
                   onClick={() => setActivityFilter("all")}
-                  style={{ padding: "3px 8px" }}
+                  style={{
+                    border: "none",
+                    background: activityFilter === "all" ? "#fff" : "transparent",
+                    color: activityFilter === "all" ? "var(--brand-700, #0a4a3b)" : "var(--muted, #64748b)",
+                    fontWeight: activityFilter === "all" ? 700 : 500,
+                    fontSize: 11.5,
+                    padding: "4px 10px",
+                    borderRadius: 6,
+                    cursor: "pointer",
+                    boxShadow: activityFilter === "all" ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+                    transition: "all 0.15s ease",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
                 >
-                  All ({recentActivities.length})
+                  <span>All</span>
+                  <span
+                    style={{
+                      fontSize: 10,
+                      padding: "1px 5px",
+                      borderRadius: 10,
+                      background: activityFilter === "all" ? "rgba(10,74,59,0.1)" : "rgba(0,0,0,0.05)",
+                      color: activityFilter === "all" ? "var(--brand-700, #0a4a3b)" : "inherit",
+                    }}
+                  >
+                    {recentActivities.length}
+                  </span>
                 </button>
                 <button
                   type="button"
-                  className={activityFilter === "closure" ? "active" : undefined}
                   onClick={() => setActivityFilter("closure")}
-                  style={{ padding: "3px 8px" }}
+                  style={{
+                    border: "none",
+                    background: activityFilter === "closure" ? "#fff" : "transparent",
+                    color: activityFilter === "closure" ? "var(--closed, #2e7d32)" : "var(--muted, #64748b)",
+                    fontWeight: activityFilter === "closure" ? 700 : 500,
+                    fontSize: 11.5,
+                    padding: "4px 10px",
+                    borderRadius: 6,
+                    cursor: "pointer",
+                    boxShadow: activityFilter === "closure" ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+                    transition: "all 0.15s ease",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
                 >
-                  Closures ({closureCount})
+                  <span>Closures</span>
+                  <span
+                    style={{
+                      fontSize: 10,
+                      padding: "1px 5px",
+                      borderRadius: 10,
+                      background: activityFilter === "closure" ? "rgba(46,125,50,0.12)" : "rgba(0,0,0,0.05)",
+                      color: activityFilter === "closure" ? "var(--closed, #2e7d32)" : "inherit",
+                    }}
+                  >
+                    {closureCount}
+                  </span>
                 </button>
                 <button
                   type="button"
-                  className={activityFilter === "update" ? "active" : undefined}
                   onClick={() => setActivityFilter("update")}
-                  style={{ padding: "3px 8px" }}
+                  style={{
+                    border: "none",
+                    background: activityFilter === "update" ? "#fff" : "transparent",
+                    color: activityFilter === "update" ? "#2c5f8a" : "var(--muted, #64748b)",
+                    fontWeight: activityFilter === "update" ? 700 : 500,
+                    fontSize: 11.5,
+                    padding: "4px 10px",
+                    borderRadius: 6,
+                    cursor: "pointer",
+                    boxShadow: activityFilter === "update" ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+                    transition: "all 0.15s ease",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
                 >
-                  Updates ({updateCount})
+                  <span>Updates</span>
+                  <span
+                    style={{
+                      fontSize: 10,
+                      padding: "1px 5px",
+                      borderRadius: 10,
+                      background: activityFilter === "update" ? "rgba(44,95,138,0.12)" : "rgba(0,0,0,0.05)",
+                      color: activityFilter === "update" ? "#2c5f8a" : "inherit",
+                    }}
+                  >
+                    {updateCount}
+                  </span>
                 </button>
               </div>
             </div>
@@ -626,433 +706,556 @@ export default function ExecutiveDashboard() {
             {!filteredActivities.length ? (
               <Empty big="📋">No recent remediation updates matching this filter.</Empty>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {filteredActivities.map((act) => {
-                  const accentColor =
-                    act.kind === "closure"
-                      ? "var(--closed, #2e7d32)"
-                      : act.kind === "update"
-                        ? "#2c5f8a"
-                        : "var(--prog, #e8590c)";
-
-                  return (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, flex: 1 }}>
+                {filteredActivities.map((act) => (
+                  <div
+                    key={act.id}
+                    onClick={() => openObservation(act.rawItem)}
+                    style={{
+                      padding: "12px 14px",
+                      borderRadius: 8,
+                      background: "var(--surface-subtle, #f8faf9)",
+                      border: "1px solid var(--line, #e2e8f0)",
+                      cursor: "pointer",
+                      transition: "transform 0.15s ease, box-shadow 0.15s ease",
+                    }}
+                    className="tracker-row"
+                    title="Click to inspect observation"
+                  >
                     <div
-                      key={act.id}
-                      onClick={() => openObservation(act.rawItem)}
+                      className="row"
                       style={{
-                        padding: "12px 14px",
-                        borderRadius: 8,
-                        background: "var(--surface-subtle, #f8faf9)",
-                        border: "1px solid var(--line, #e2e8f0)",
-                        borderLeft: `4px solid ${accentColor}`,
-                        cursor: "pointer",
-                        transition: "transform 0.15s ease, box-shadow 0.15s ease",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        flexWrap: "wrap",
+                        gap: 6,
+                        marginBottom: 6,
                       }}
-                      className="tracker-row"
-                      title="Click to inspect observation"
                     >
-                      <div
-                        className="row"
-                        style={{
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          flexWrap: "wrap",
-                          gap: 6,
-                          marginBottom: 6,
-                        }}
-                      >
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                          {act.kind === "closure" ? (
-                            <span
-                              className="pill c-Low"
-                              style={{ fontSize: 10, padding: "2px 6px", fontWeight: 700 }}
-                            >
-                              ✓ Verified Closed
-                            </span>
-                          ) : act.kind === "update" ? (
-                            <span
-                              className="pill sop-pending-pill"
-                              style={{ fontSize: 10, padding: "2px 6px", fontWeight: 700 }}
-                            >
-                              ✎ Progress Update
-                            </span>
-                          ) : (
-                            <span
-                              className="pill"
-                              style={{
-                                fontSize: 10,
-                                padding: "2px 6px",
-                                background: "#edf4f1",
-                                color: "#19302a",
-                                fontWeight: 700,
-                              }}
-                            >
-                              💬 Response
-                            </span>
-                          )}
-
-                          <span style={{ fontWeight: 700, fontSize: 12.5, color: "var(--ink)" }}>
-                            {act.title}
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                        {act.kind === "closure" ? (
+                          <span
+                            className="pill c-Low"
+                            style={{ fontSize: 10, padding: "2px 6px", fontWeight: 700 }}
+                          >
+                            ✓ Verified Closed
                           </span>
-                          <span className="hint" style={{ fontSize: 11 }}>
-                            ({act.ref})
+                        ) : act.kind === "update" ? (
+                          <span
+                            className="pill sop-pending-pill"
+                            style={{ fontSize: 10, padding: "2px 6px", fontWeight: 700 }}
+                          >
+                            ✎ Progress Update
                           </span>
-                        </div>
-
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        ) : (
                           <span
                             className="pill"
-                            style={{ background: "#eef2f7", color: "#475569", fontSize: 10 }}
+                            style={{
+                              fontSize: 10,
+                              padding: "2px 6px",
+                              background: "#edf4f1",
+                              color: "#19302a",
+                              fontWeight: 700,
+                            }}
                           >
-                            {act.department.replace(/\s+Department$/i, "")}
+                            💬 Response
                           </span>
-                          <CritPill crit={act.criticality} />
-                          <span className="hint" style={{ fontSize: 11 }}>
-                            {act.dateISO ? timeAgo(act.dateISO) || act.dateStr : act.dateStr}
-                          </span>
-                        </div>
+                        )}
+
+                        <span style={{ fontWeight: 700, fontSize: 12.5, color: "var(--ink)" }}>
+                          {act.title}
+                        </span>
                       </div>
 
-                      <div
-                        style={{
-                          fontSize: 12,
-                          color: "var(--ink-secondary, #334155)",
-                          lineHeight: 1.4,
-                          background: "#fff",
-                          padding: "8px 12px",
-                          borderRadius: 6,
-                          border: "1px solid #edf2f7",
-                        }}
-                      >
-                        <span style={{ fontStyle: "italic" }}>&ldquo;{act.text}&rdquo;</span>
-                        <div
-                          style={{
-                            marginTop: 4,
-                            fontSize: 11,
-                            color: "var(--muted)",
-                            fontWeight: 500,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                          }}
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span
+                          className="pill"
+                          style={{ background: "#eef2f7", color: "#475569", fontSize: 10 }}
                         >
-                          <span>
-                            {act.kind === "closure" ? "Verified by " : "Logged by "}
-                            <b>{act.actor}</b>
-                          </span>
-                          <span style={{ color: "var(--accent)", fontSize: 11 }}>View details ↗</span>
-                        </div>
+                          {act.department.replace(/\s+Department$/i, "")}
+                        </span>
+                        <CritPill crit={act.criticality} />
+                        <span className="hint" style={{ fontSize: 11 }}>
+                          {act.dateISO ? timeAgo(act.dateISO) || act.dateStr : act.dateStr}
+                        </span>
                       </div>
                     </div>
-                  );
-                })}
+
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: "var(--ink-secondary, #334155)",
+                        lineHeight: 1.4,
+                        background: "#fff",
+                        padding: "8px 12px",
+                        borderRadius: 6,
+                        border: "1px solid #edf2f7",
+                      }}
+                    >
+                      <span style={{ fontStyle: "italic" }}>&ldquo;{act.text}&rdquo;</span>
+                      <div
+                        style={{
+                          marginTop: 4,
+                          fontSize: 11,
+                          color: "var(--muted)",
+                          fontWeight: 500,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                        }}
+                      >
+                        <span>
+                          {act.kind === "closure" ? "Verified by " : "Logged by "}
+                          <b>{act.actor}</b>
+                        </span>
+                        <span style={{ color: "var(--accent)", fontSize: 11 }}>View details ↗</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
         </div>
 
-        {/* Right Column: Key Exposures (Table Only — NO header, NO subtext, NO overdue pill) */}
-        <div
-          className="card anim-fade-in"
-          style={{
-            padding: 0,
-            overflow: "hidden",
-            display: "flex",
-            flexDirection: "column",
-          }}
-        >
-          {!highCritWatch.length ? (
-            <div style={{ padding: 24 }}>
-              <Empty big="✓">
-                No open Critical or High-risk observations across any department.
-              </Empty>
+        {/* Right Column: Critical & High Priority Watch + Department Risk Exposure */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+          {/* Card 1: Critical & High Priority Watch */}
+          <div
+            className="card anim-fade-in"
+            style={{
+              padding: 0,
+              overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            {/* Header section (without subtext) */}
+            <div
+              className="row"
+              style={{
+                padding: "16px 20px 12px 20px",
+                borderBottom: "1px solid var(--line, #e2e8f0)",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+              }}
+            >
+              <div>
+                <div className="seclabel">Critical &amp; High Priority Watch</div>
+              </div>
+              {highCritWatch.length > 0 && (
+                <span className="pill c-High" style={{ fontSize: 10.5, fontWeight: 700 }}>
+                  {highCritWatch.length} Active
+                </span>
+              )}
             </div>
-          ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ margin: 0 }}>
-                <thead>
-                  <tr>
-                    <th scope="col">Severity &amp; Ref</th>
-                    <th scope="col">Observation</th>
-                    <th scope="col">Dept</th>
-                    <th scope="col">Owner</th>
-                    <th scope="col">Target</th>
-                    <th scope="col"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {highCritWatch.map((item) => (
-                    <tr
-                      key={`${item.type}-${item.id}`}
-                      className="tracker-row"
-                      onClick={() => openObservation(item)}
-                      title="Click to view details"
-                    >
-                      <td style={{ whiteSpace: "nowrap" }}>
-                        <div className="row" style={{ gap: 6, alignItems: "center" }}>
-                          <CritPill crit={item.criticality} />
-                          <span style={{ fontWeight: 600, fontSize: 11.5 }}>{item.ref}</span>
-                        </div>
-                      </td>
-                      <td style={{ maxWidth: 180 }}>
-                        <RowOpen onOpen={() => openObservation(item)} label={`Open ${item.title}`}>
-                          <b style={{ fontSize: 12 }}>{item.title}</b>
-                        </RowOpen>
-                      </td>
-                      <td>
-                        <span
-                          className="pill"
-                          style={{ background: "#edf4f1", color: "#19302a", fontSize: 10.5 }}
-                        >
-                          {item.department.replace(/\s+Department$/i, "")}
-                        </span>
-                      </td>
-                      <td>
-                        <div style={{ fontSize: 11.5 }}>{item.ownerName}</div>
-                      </td>
-                      <td style={{ whiteSpace: "nowrap" }}>
-                        {item.targetDate ? (
-                          <div>
-                            <div style={{ fontSize: 11.5, fontWeight: 600 }}>{item.targetDate}</div>
-                            {item.isOverdue ? (
-                              <span
-                                className="pill c-Critical"
-                                style={{ fontSize: 9.5, padding: "1px 4px", marginTop: 2 }}
-                              >
-                                Overdue
-                              </span>
-                            ) : item.daysDiff != null && item.daysDiff <= 14 ? (
-                              <span
-                                className="pill c-High"
-                                style={{ fontSize: 9.5, padding: "1px 4px", marginTop: 2 }}
-                              >
-                                Due in {item.daysDiff}d
-                              </span>
-                            ) : null}
-                          </div>
-                        ) : (
-                          <span className="hint">—</span>
-                        )}
-                      </td>
-                      <td className="ra-actions-cell">
-                        <button
-                          className="btn-icon-action"
-                          type="button"
-                          title="View observation details"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openObservation(item);
-                          }}
-                        >
-                          ↗
-                        </button>
-                      </td>
+
+            {!highCritWatch.length ? (
+              <div style={{ padding: 24, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Empty big="✓">
+                  No open Critical or High-risk observations across any department.
+                </Empty>
+              </div>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ margin: 0 }}>
+                  <thead>
+                    <tr>
+                      <th scope="col" style={{ width: 110 }}>Severity</th>
+                      <th scope="col">Observation</th>
+                      <th scope="col">Department</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Department Risk Exposure & Workload — Represented as Cards */}
-      <div className="card anim-fade-in" style={{ marginBottom: 18 }}>
-        <div
-          className="row"
-          style={{
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: 16,
-            flexWrap: "wrap",
-            gap: 8,
-          }}
-        >
-          <div>
-            <div className="seclabel">Department Risk Exposure &amp; Workload</div>
-            <div className="hint" style={{ marginTop: 2 }}>
-              Workload distribution, risk severity breakdown, and remediation progress per department.
-            </div>
+                  </thead>
+                  <tbody>
+                    {highCritWatch.map((item) => (
+                      <tr
+                        key={`${item.type}-${item.id}`}
+                        className="tracker-row"
+                        onClick={() => openObservation(item)}
+                        title="Click to view details"
+                        style={{ cursor: "pointer" }}
+                      >
+                        <td style={{ whiteSpace: "nowrap" }}>
+                          <CritPill crit={item.criticality} />
+                        </td>
+                        <td>
+                          <b style={{ fontSize: 12.5, color: "var(--ink)" }}>{item.title}</b>
+                        </td>
+                        <td>
+                          <span
+                            className="pill"
+                            style={{ background: "#edf4f1", color: "#19302a", fontSize: 10.5 }}
+                          >
+                            {item.department.replace(/\s+Department$/i, "")}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-          <div style={{ fontSize: 12, color: "var(--muted)" }}>
-            Showing {rankedDepartments.length} active departments
-          </div>
-        </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-            gap: 14,
-          }}
-        >
-          {rankedDepartments.map((ds) => {
-            const cleanName = ds.department.replace(/\s+Department$/i, "");
-            const critCount =
-              ds.internal.all.filter((o) => o.criticality === "Critical").length +
-              ds.external.all.filter((f) => f.severity === "Critical").length;
-            const highCount =
-              ds.internal.all.filter((o) => o.criticality === "High").length +
-              ds.external.all.filter((f) => f.severity === "High").length;
-            const medCount =
-              ds.internal.all.filter((o) => o.criticality === "Moderate").length +
-              ds.external.all.filter((f) => f.severity === "Medium").length;
-            const lowCount = ds.totals.total - critCount - highCount - medCount;
-
-            return (
-              <div
-                key={ds.department}
-                style={{
-                  background: "#fff",
-                  border: "1px solid var(--line, #e2e8f0)",
-                  borderRadius: 10,
-                  padding: "14px 16px",
-                  display: "flex",
-                  flexDirection: "column",
-                  justifyContent: "space-between",
-                  boxShadow: "0 1px 3px rgba(10, 74, 59, 0.04)",
-                  transition: "transform 0.15s ease, box-shadow 0.15s ease",
-                }}
-              >
-                <div>
-                  <div
-                    className="row"
-                    style={{
-                      alignItems: "flex-start",
-                      justifyContent: "space-between",
-                      gap: 8,
-                      marginBottom: 8,
-                    }}
-                  >
-                    <Link
-                      href={`/departments/${ds.slug}/internal`}
-                      style={{
-                        fontWeight: 700,
-                        fontSize: 13.5,
-                        color: "var(--brand-700, #0a4a3b)",
-                        textDecoration: "none",
-                        lineHeight: 1.3,
-                      }}
-                    >
-                      {cleanName}
-                    </Link>
-                    {ds.health === "good" ? (
-                      <span className="pill c-Low" style={{ fontSize: 10, padding: "2px 6px" }}>Good</span>
-                    ) : ds.health === "attention" ? (
-                      <span className="pill c-High" style={{ fontSize: 10, padding: "2px 6px" }}>Attention</span>
-                    ) : (
-                      <span className="pill sop-pending-pill" style={{ fontSize: 10, padding: "2px 6px" }}>In Progress</span>
-                    )}
-                  </div>
-
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 8 }}>
-                    <span style={{ fontSize: 20, fontWeight: 700, color: ds.totals.pending > 0 ? "var(--high)" : "var(--closed)" }}>
-                      {ds.totals.pending}
-                    </span>
-                    <span style={{ fontSize: 11.5, color: "var(--muted)" }}>
-                      pending / {ds.totals.total} total
-                    </span>
-                  </div>
-
-                  {/* Badges for Critical / High / Overdue */}
-                  <div className="row" style={{ gap: 4, flexWrap: "wrap", marginBottom: 10 }}>
-                    {critCount > 0 ? (
-                      <span className="pill c-Critical" style={{ fontSize: 9.5, padding: "1px 5px" }}>
-                        {critCount} Critical
-                      </span>
-                    ) : null}
-                    {highCount > 0 ? (
-                      <span className="pill c-High" style={{ fontSize: 9.5, padding: "1px 5px" }}>
-                        {highCount} High
-                      </span>
-                    ) : null}
-                    {ds.totals.overdue > 0 ? (
-                      <span className="pill c-Critical" style={{ fontSize: 9.5, padding: "1px 5px", fontWeight: 700 }}>
-                        {ds.totals.overdue} Overdue
-                      </span>
-                    ) : null}
-                    {critCount === 0 && highCount === 0 && ds.totals.overdue === 0 ? (
-                      <span className="pill" style={{ background: "#edf4f1", color: "#2e7d32", fontSize: 9.5 }}>
-                        No Critical/High
-                      </span>
-                    ) : null}
-                  </div>
-
-                  {/* Stacked Severity Distribution Bar */}
-                  {ds.totals.total > 0 ? (
-                    <div
-                      style={{
-                        height: 6,
-                        borderRadius: 3,
-                        background: "#e2ece8",
-                        overflow: "hidden",
-                        display: "flex",
-                        marginBottom: 10,
-                      }}
-                      title={`Critical: ${critCount}, High: ${highCount}, Medium: ${medCount}, Low/Other: ${Math.max(0, lowCount)}`}
-                    >
-                      {critCount > 0 ? (
-                        <div style={{ width: `${(critCount / ds.totals.total) * 100}%`, background: SEV_COLOR.Critical }} />
-                      ) : null}
-                      {highCount > 0 ? (
-                        <div style={{ width: `${(highCount / ds.totals.total) * 100}%`, background: SEV_COLOR.High }} />
-                      ) : null}
-                      {medCount > 0 ? (
-                        <div style={{ width: `${(medCount / ds.totals.total) * 100}%`, background: SEV_COLOR.Moderate }} />
-                      ) : null}
-                      {lowCount > 0 ? (
-                        <div style={{ width: `${(lowCount / ds.totals.total) * 100}%`, background: SEV_COLOR.Low }} />
-                      ) : null}
-                    </div>
-                  ) : null}
-
-                  {/* Completion Rate */}
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                    <span style={{ fontSize: 11, color: "var(--muted)" }}>Remediation Rate</span>
-                    <span
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 700,
-                        color:
-                          ds.totals.rate >= 80
-                            ? "var(--closed)"
-                            : ds.totals.rate >= 50
-                              ? "var(--med)"
-                              : "var(--high)",
-                      }}
-                    >
-                      {ds.totals.rate}%
-                    </span>
-                  </div>
-                </div>
-
-                {/* Card Action Buttons */}
-                <div
-                  className="row"
-                  style={{
-                    gap: 6,
-                    paddingTop: 10,
-                    borderTop: "1px solid #f1f5f9",
-                  }}
-                >
-                  <Link
-                    href={`/departments/${ds.slug}/internal`}
-                    className="btn sec sm"
-                    style={{ flex: 1, textAlign: "center", justifyContent: "center", fontSize: 11 }}
-                  >
-                    Internal ({ds.internal.pending.length})
-                  </Link>
-                  <Link
-                    href={`/departments/${ds.slug}/external`}
-                    className="btn sec sm"
-                    style={{ flex: 1, textAlign: "center", justifyContent: "center", fontSize: 11 }}
-                  >
-                    External ({ds.external.pending.length})
-                  </Link>
+          {/* Card 2: Department Risk Exposure & Workload — Positioned under Critical & High Watch */}
+          <div className="card anim-fade-in">
+            <div
+              className="row"
+              style={{
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 16,
+                flexWrap: "wrap",
+                gap: 10,
+              }}
+            >
+              <div>
+                <div className="seclabel">Department Risk Exposure &amp; Workload</div>
+                <div className="hint" style={{ marginTop: 2 }}>
+                  Workload distribution, risk severity breakdown, and remediation progress per department.
                 </div>
               </div>
-            );
-          })}
+
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                {/* View Mode Toggle: Cards vs Table */}
+                <div
+                  style={{
+                    display: "inline-flex",
+                    background: "var(--surface-subtle, #eef2f0)",
+                    padding: 3,
+                    borderRadius: 8,
+                    gap: 3,
+                    border: "1px solid var(--line, #e2e8f0)",
+                  }}
+                  role="tablist"
+                  aria-label="Department view mode"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setDeptViewMode("cards")}
+                    style={{
+                      border: "none",
+                      background: deptViewMode === "cards" ? "#fff" : "transparent",
+                      color: deptViewMode === "cards" ? "var(--brand-700, #0a4a3b)" : "var(--muted, #64748b)",
+                      fontWeight: deptViewMode === "cards" ? 700 : 500,
+                      fontSize: 12,
+                      padding: "4px 12px",
+                      borderRadius: 6,
+                      cursor: "pointer",
+                      boxShadow: deptViewMode === "cards" ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    ⊞ Cards
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeptViewMode("table")}
+                    style={{
+                      border: "none",
+                      background: deptViewMode === "table" ? "#fff" : "transparent",
+                      color: deptViewMode === "table" ? "var(--brand-700, #0a4a3b)" : "var(--muted, #64748b)",
+                      fontWeight: deptViewMode === "table" ? 700 : 500,
+                      fontSize: 12,
+                      padding: "4px 12px",
+                      borderRadius: 6,
+                      cursor: "pointer",
+                      boxShadow: deptViewMode === "table" ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    ☰ Table
+                  </button>
+                </div>
+
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                  {rankedDepartments.length} departments
+                </div>
+              </div>
+            </div>
+
+            {deptViewMode === "cards" ? (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+                  gap: 14,
+                }}
+              >
+                {rankedDepartments.map((ds) => {
+                  const cleanName = ds.department.replace(/\s+Department$/i, "");
+                  const critCount =
+                    ds.internal.all.filter((o) => o.criticality === "Critical").length +
+                    ds.external.all.filter((f) => f.severity === "Critical").length;
+                  const highCount =
+                    ds.internal.all.filter((o) => o.criticality === "High").length +
+                    ds.external.all.filter((f) => f.severity === "High").length;
+                  const medCount =
+                    ds.internal.all.filter((o) => o.criticality === "Moderate").length +
+                    ds.external.all.filter((f) => f.severity === "Medium").length;
+                  const lowCount = ds.totals.total - critCount - highCount - medCount;
+
+                  return (
+                    <div
+                      key={ds.department}
+                      style={{
+                        background: "#fff",
+                        border: "1px solid var(--line, #e2e8f0)",
+                        borderRadius: 10,
+                        padding: "14px 16px",
+                        display: "flex",
+                        flexDirection: "column",
+                        justifyContent: "space-between",
+                        boxShadow: "0 1px 3px rgba(10, 74, 59, 0.04)",
+                        transition: "transform 0.15s ease, box-shadow 0.15s ease",
+                      }}
+                    >
+                      <div>
+                        <div
+                          className="row"
+                          style={{
+                            alignItems: "flex-start",
+                            justifyContent: "space-between",
+                            gap: 8,
+                            marginBottom: 8,
+                          }}
+                        >
+                          <Link
+                            href={`/departments/${ds.slug}/internal`}
+                            style={{
+                              fontWeight: 700,
+                              fontSize: 13.5,
+                              color: "var(--brand-700, #0a4a3b)",
+                              textDecoration: "none",
+                              lineHeight: 1.3,
+                            }}
+                          >
+                            {cleanName}
+                          </Link>
+                          {ds.health === "good" ? (
+                            <span className="pill c-Low" style={{ fontSize: 10, padding: "2px 6px" }}>Good</span>
+                          ) : ds.health === "attention" ? (
+                            <span className="pill c-High" style={{ fontSize: 10, padding: "2px 6px" }}>Attention</span>
+                          ) : (
+                            <span className="pill sop-pending-pill" style={{ fontSize: 10, padding: "2px 6px" }}>In Progress</span>
+                          )}
+                        </div>
+
+                        <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 8 }}>
+                          <span style={{ fontSize: 20, fontWeight: 700, color: ds.totals.pending > 0 ? "var(--high)" : "var(--closed)" }}>
+                            {ds.totals.pending}
+                          </span>
+                          <span style={{ fontSize: 11.5, color: "var(--muted)" }}>
+                            pending / {ds.totals.total} total
+                          </span>
+                        </div>
+
+                        {/* Badges for Critical / High / Overdue */}
+                        <div className="row" style={{ gap: 4, flexWrap: "wrap", marginBottom: 10 }}>
+                          {critCount > 0 ? (
+                            <span className="pill c-Critical" style={{ fontSize: 9.5, padding: "1px 5px" }}>
+                              {critCount} Critical
+                            </span>
+                          ) : null}
+                          {highCount > 0 ? (
+                            <span className="pill c-High" style={{ fontSize: 9.5, padding: "1px 5px" }}>
+                              {highCount} High
+                            </span>
+                          ) : null}
+                          {ds.totals.overdue > 0 ? (
+                            <span className="pill c-Critical" style={{ fontSize: 9.5, padding: "1px 5px", fontWeight: 700 }}>
+                              {ds.totals.overdue} Overdue
+                            </span>
+                          ) : null}
+                          {critCount === 0 && highCount === 0 && ds.totals.overdue === 0 ? (
+                            <span className="pill" style={{ background: "#edf4f1", color: "#2e7d32", fontSize: 9.5 }}>
+                              No Critical/High
+                            </span>
+                          ) : null}
+                        </div>
+
+                        {/* Stacked Severity Distribution Bar */}
+                        {ds.totals.total > 0 ? (
+                          <div
+                            style={{
+                              height: 6,
+                              borderRadius: 3,
+                              background: "#e2ece8",
+                              overflow: "hidden",
+                              display: "flex",
+                              marginBottom: 10,
+                            }}
+                            title={`Critical: ${critCount}, High: ${highCount}, Medium: ${medCount}, Low/Other: ${Math.max(0, lowCount)}`}
+                          >
+                            {critCount > 0 ? (
+                              <div style={{ width: `${(critCount / ds.totals.total) * 100}%`, background: SEV_COLOR.Critical }} />
+                            ) : null}
+                            {highCount > 0 ? (
+                              <div style={{ width: `${(highCount / ds.totals.total) * 100}%`, background: SEV_COLOR.High }} />
+                            ) : null}
+                            {medCount > 0 ? (
+                              <div style={{ width: `${(medCount / ds.totals.total) * 100}%`, background: SEV_COLOR.Moderate }} />
+                            ) : null}
+                            {lowCount > 0 ? (
+                              <div style={{ width: `${(lowCount / ds.totals.total) * 100}%`, background: SEV_COLOR.Low }} />
+                            ) : null}
+                          </div>
+                        ) : null}
+
+                        {/* Completion Rate */}
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                          <span style={{ fontSize: 11, color: "var(--muted)" }}>Remediation Rate</span>
+                          <span
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 700,
+                              color:
+                                ds.totals.rate >= 80
+                                  ? "var(--closed)"
+                                  : ds.totals.rate >= 50
+                                    ? "var(--med)"
+                                    : "var(--high)",
+                            }}
+                          >
+                            {ds.totals.rate}%
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Card Action Buttons */}
+                      <div
+                        className="row"
+                        style={{
+                          gap: 6,
+                          paddingTop: 10,
+                          borderTop: "1px solid #f1f5f9",
+                        }}
+                      >
+                        <Link
+                          href={`/departments/${ds.slug}/internal`}
+                          className="btn sec sm"
+                          style={{ flex: 1, textAlign: "center", justifyContent: "center", fontSize: 11 }}
+                        >
+                          Internal ({ds.internal.pending.length})
+                        </Link>
+                        <Link
+                          href={`/departments/${ds.slug}/external`}
+                          className="btn sec sm"
+                          style={{ flex: 1, textAlign: "center", justifyContent: "center", fontSize: 11 }}
+                        >
+                          External ({ds.external.pending.length})
+                        </Link>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              /* Table View Alternative */
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ margin: 0 }}>
+                  <thead>
+                    <tr>
+                      <th scope="col">Department</th>
+                      <th scope="col">Status</th>
+                      <th scope="col">Pending</th>
+                      <th scope="col">Total</th>
+                      <th scope="col">Critical</th>
+                      <th scope="col">High</th>
+                      <th scope="col">Remediation Rate</th>
+                      <th scope="col" style={{ textAlign: "right" }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rankedDepartments.map((ds) => {
+                      const cleanName = ds.department.replace(/\s+Department$/i, "");
+                      const critCount =
+                        ds.internal.all.filter((o) => o.criticality === "Critical").length +
+                        ds.external.all.filter((f) => f.severity === "Critical").length;
+                      const highCount =
+                        ds.internal.all.filter((o) => o.criticality === "High").length +
+                        ds.external.all.filter((f) => f.severity === "High").length;
+
+                      return (
+                        <tr key={ds.department}>
+                          <td>
+                            <Link
+                              href={`/departments/${ds.slug}/internal`}
+                              style={{ fontWeight: 600, color: "var(--brand-700)", textDecoration: "none" }}
+                            >
+                              {cleanName}
+                            </Link>
+                          </td>
+                          <td>
+                            {ds.health === "good" ? (
+                              <span className="pill c-Low" style={{ fontSize: 10, padding: "2px 6px" }}>Good</span>
+                            ) : ds.health === "attention" ? (
+                              <span className="pill c-High" style={{ fontSize: 10, padding: "2px 6px" }}>Attention</span>
+                            ) : (
+                              <span className="pill sop-pending-pill" style={{ fontSize: 10, padding: "2px 6px" }}>In Progress</span>
+                            )}
+                          </td>
+                          <td>
+                            <span style={{ fontWeight: 700, color: ds.totals.pending > 0 ? "var(--high)" : "var(--closed)" }}>
+                              {ds.totals.pending}
+                            </span>
+                          </td>
+                          <td>{ds.totals.total}</td>
+                          <td>
+                            {critCount > 0 ? (
+                              <span className="pill c-Critical" style={{ fontSize: 10, padding: "1px 5px" }}>{critCount}</span>
+                            ) : (
+                              <span className="hint">0</span>
+                            )}
+                          </td>
+                          <td>
+                            {highCount > 0 ? (
+                              <span className="pill c-High" style={{ fontSize: 10, padding: "1px 5px" }}>{highCount}</span>
+                            ) : (
+                              <span className="hint">0</span>
+                            )}
+                          </td>
+                          <td>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <div style={{ width: 80, height: 6, borderRadius: 3, background: "#e2ece8", overflow: "hidden" }}>
+                                <div
+                                  style={{
+                                    width: `${ds.totals.rate}%`,
+                                    height: "100%",
+                                    background: ds.totals.rate >= 80 ? "var(--closed)" : ds.totals.rate >= 50 ? "var(--med)" : "var(--high)",
+                                  }}
+                                />
+                              </div>
+                              <span style={{ fontSize: 11.5, fontWeight: 600 }}>{ds.totals.rate}%</span>
+                            </div>
+                          </td>
+                          <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                            <div style={{ display: "inline-flex", gap: 6 }}>
+                              <Link
+                                href={`/departments/${ds.slug}/internal`}
+                                className="btn sec sm"
+                                style={{ fontSize: 11, padding: "3px 8px" }}
+                              >
+                                Internal ({ds.internal.pending.length})
+                              </Link>
+                              <Link
+                                href={`/departments/${ds.slug}/external`}
+                                className="btn sec sm"
+                                style={{ fontSize: 11, padding: "3px 8px" }}
+                              >
+                                External ({ds.external.pending.length})
+                              </Link>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

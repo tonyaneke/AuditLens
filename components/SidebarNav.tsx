@@ -284,10 +284,18 @@ function ExecutiveDepartmentsNav() {
   const currentSlug = pathname.startsWith("/departments/") ? pathname.split("/")[2] || "" : "";
   const currentSub = pathname.startsWith("/departments/") ? pathname.split("/")[3] || "internal" : "";
 
-  const [toggled, setToggled] = useState<Record<string, boolean>>({});
+  const [manualOpenSlug, setManualOpenSlug] = useState<string | null | undefined>(undefined);
+  const [lastRouteSlug, setLastRouteSlug] = useState(currentSlug);
 
-  function toggle(slug: string, currentlyOpen: boolean) {
-    setToggled((prev) => ({ ...prev, [slug]: !currentlyOpen }));
+  if (currentSlug !== lastRouteSlug) {
+    setLastRouteSlug(currentSlug);
+    setManualOpenSlug(undefined);
+  }
+
+  const effectiveOpenSlug = manualOpenSlug !== undefined ? manualOpenSlug : (currentSlug || null);
+
+  function toggle(slug: string) {
+    setManualOpenSlug(effectiveOpenSlug === slug ? null : slug);
   }
 
   return (
@@ -297,8 +305,7 @@ function ExecutiveDepartmentsNav() {
         const slug = departmentToSlug(dept);
         const stats = getDepartmentStats(db, dept);
         const isCurrentDept = currentSlug === slug;
-        // Default to open if it's the current department, otherwise look up manual toggle
-        const isOpen = toggled[slug] ?? isCurrentDept;
+        const isOpen = effectiveOpenSlug === slug;
         const hasOpen = stats.totals.pending > 0;
 
         return (
@@ -306,7 +313,7 @@ function ExecutiveDepartmentsNav() {
             <button
               type="button"
               className={`nav-dept-header ${isOpen ? "expanded" : ""}`}
-              onClick={() => toggle(slug, isOpen)}
+              onClick={() => toggle(slug)}
               title={`Toggle ${dept}`}
               aria-expanded={isOpen}
             >
