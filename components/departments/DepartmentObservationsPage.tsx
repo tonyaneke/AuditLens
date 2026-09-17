@@ -297,7 +297,7 @@ export default function DepartmentObservationsPage({
           <div style={{ minWidth: 220 }}>
             <input
               type="text"
-              placeholder={`Search ${cleanDeptName} observations, references, owners…`}
+              placeholder={`Search ${cleanDeptName} observations, descriptions, owners…`}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               style={{ width: "100%", padding: "6px 12px", fontSize: 12.5 }}
@@ -321,11 +321,10 @@ export default function DepartmentObservationsPage({
               type="button"
               className="myobs-card"
               onClick={() => openItem(item)}
-              title={`Open ${item.ref}: ${item.title}`}
+              title={`Open observation: ${item.title}`}
             >
               <div className="myobs-card-top">
                 <CritPill crit={item.criticality} />
-                <span className="tag">{item.ref}</span>
                 <StatusPill status={item.status} />
                 {item.isOverdue && item.status !== "Closed" ? (
                   <span className="pill c-Critical portal-overdue">overdue</span>
@@ -337,9 +336,23 @@ export default function DepartmentObservationsPage({
 
               <div className="myobs-card-title">{item.title}</div>
 
+              {item.findingDetail ? (
+                <div
+                  style={{
+                    fontSize: 12.5,
+                    color: "var(--ink-secondary, #475569)",
+                    lineHeight: 1.45,
+                    display: "-webkit-box",
+                    WebkitLineClamp: 3,
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden",
+                  }}
+                >
+                  {item.findingDetail}
+                </div>
+              ) : null}
+
               <div className="myobs-card-meta">
-                {item.source}
-                {" · "}
                 Owner: {item.ownerName || "Unassigned"}
               </div>
 
