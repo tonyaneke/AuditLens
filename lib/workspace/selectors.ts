@@ -125,10 +125,21 @@ export function addDays(d: Date, n: number): Date {
 export function daysBetween(a: Date, b: Date): number {
   return Math.round((b.getTime() - a.getTime()) / 86400000);
 }
-export function fmtDate(d: Date | null | undefined): string {
+export function fmtDate(d: Date | string | null | undefined): string {
   if (!d) return "";
+  let dateObj: Date;
+  if (typeof d === "string") {
+    const parsed = isoToDate(d) || looseDate(d);
+    if (!parsed) return d;
+    dateObj = parsed;
+  } else if (d instanceof Date) {
+    if (isNaN(d.getTime())) return "";
+    dateObj = d;
+  } else {
+    return String(d);
+  }
   const m = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  return d.getDate() + " " + m[d.getMonth()] + " " + d.getFullYear();
+  return dateObj.getDate() + " " + m[dateObj.getMonth()] + " " + dateObj.getFullYear();
 }
 export function fmtDateTime(iso: string | undefined | null): string {
   if (!iso) return "";

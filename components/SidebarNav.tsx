@@ -409,16 +409,6 @@ export default function SidebarNav({ user, shell = "legacy" }: SidebarNavProps) 
                 </span>
                 Dashboard
               </Link>
-              <Link
-                href="/exco"
-                className={activeView === "exco" ? "active" : undefined}
-                data-view="exco"
-              >
-                <span className="ic">
-                  <HugeiconsIcon icon={JusticeScale01Icon} size={ICON_SIZE} strokeWidth={1.75} />
-                </span>
-                Executive Assurance Brief
-              </Link>
             </div>
             <ExecutiveDepartmentsNav />
           </>

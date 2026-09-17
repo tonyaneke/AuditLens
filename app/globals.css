@@ -32,7 +32,7 @@
   --shadow-sm: 0 1px 3px rgba(10, 74, 59, 0.06);
   --shadow-md: 0 4px 16px rgba(10, 74, 59, 0.08);
   --radius: 10px;
-  --sidebar-w: 260px;
+  --sidebar-w: 295px;
 }
 
 * {
@@ -439,9 +439,9 @@ a {
 }
 
 .nav-dept-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: normal;
+  line-height: 1.25;
 }
 
 .nav-dept-right {
