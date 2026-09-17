@@ -1,10 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { usePageChrome } from "@/components/chrome/PageChrome";
-import { CritPill, Empty, Kpi, RowOpen, StatusPill } from "@/components/ui";
+import { CritPill, Empty, Kpi, StatusPill } from "@/components/ui";
 import { getDepartmentStats, slugToDepartment } from "@/lib/dept-slugs";
 import { hrefForView, isLegacyPath } from "@/lib/routes";
 import {
@@ -165,43 +164,6 @@ export default function DepartmentObservationsPage({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* Header & Subnav Tabs */}
-      <div className="card" style={{ padding: "16px 20px" }}>
-        <div className="row" style={{ alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-          <div>
-            <div className="hint" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700, color: "var(--navy2)" }}>
-              Department Observations
-            </div>
-            <h2 style={{ margin: "2px 0 0", fontSize: 22, color: "var(--ink)" }}>
-              {cleanDeptName}
-            </h2>
-          </div>
-
-          {/* Internal vs External Toggle Tabs */}
-          <div className="seg" role="tablist">
-            <Link
-              href={`/departments/${deptSlug}/internal`}
-              className={`seg-btn ${type === "internal" ? "active" : ""}`}
-              style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}
-            >
-              <span>Internal observations</span>
-              <span className="pill" style={{ fontSize: 11, padding: "1px 6px", background: type === "internal" ? "rgba(255,255,255,0.25)" : "#e6eeeb" }}>
-                {stats.internal.all.length}
-              </span>
-            </Link>
-            <Link
-              href={`/departments/${deptSlug}/external`}
-              className={`seg-btn ${type === "external" ? "active" : ""}`}
-              style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}
-            >
-              <span>External observations</span>
-              <span className="pill" style={{ fontSize: 11, padding: "1px 6px", background: type === "external" ? "rgba(255,255,255,0.25)" : "#e6eeeb" }}>
-                {stats.external.all.length}
-              </span>
-            </Link>
-          </div>
-        </div>
-      </div>
 
       {/* Mini Dashboard Snapshot */}
       <div className="kpis-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
@@ -235,46 +197,88 @@ export default function DepartmentObservationsPage({
         />
       </div>
 
-      {/* Observation Explorer & Detailed Cards */}
-      <div className="card">
-        <div className="row" style={{ alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
-          <div>
-            <h3 style={{ margin: 0 }}>
-              {type === "internal" ? "Internal Observations Register" : "External Findings Register"}
-            </h3>
-            <div className="hint" style={{ marginTop: 2 }}>
-              Inspect what was raised, track remediation progress and target dates, and review past completed actions.
-            </div>
-          </div>
-
-          {/* Workflow Tabs: What's Left vs What Has Been Done */}
-          <div className="seg" role="tablist">
-            <button
-              type="button"
-              className={activeFilter === "pending" ? "active" : undefined}
-              onClick={() => setActiveFilter("pending")}
-            >
-              What&rsquo;s Left ({pendingCount})
-            </button>
-            <button
-              type="button"
-              className={activeFilter === "done" ? "active" : undefined}
-              onClick={() => setActiveFilter("done")}
-            >
-              What Has Been Done ({doneCount})
-            </button>
-            <button
-              type="button"
-              className={activeFilter === "all" ? "active" : undefined}
-              onClick={() => setActiveFilter("all")}
-            >
-              All ({totalCount})
-            </button>
-          </div>
+      {/* Toolbar: Workflow Tabs & Filters */}
+      <div
+        className="row"
+        style={{
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: 12,
+          marginTop: 4,
+          marginBottom: 4,
+        }}
+      >
+        {/* Workflow Tabs: What's Left vs What Has Been Done */}
+        <div
+          style={{
+            display: "inline-flex",
+            background: "var(--surface-subtle, #eef2f0)",
+            padding: 3,
+            borderRadius: 8,
+            gap: 3,
+            border: "1px solid var(--line, #e2e8f0)",
+          }}
+          role="tablist"
+        >
+          <button
+            type="button"
+            onClick={() => setActiveFilter("pending")}
+            style={{
+              border: "none",
+              background: activeFilter === "pending" ? "#fff" : "transparent",
+              color: activeFilter === "pending" ? "var(--brand-700, #0a4a3b)" : "var(--muted, #64748b)",
+              fontWeight: activeFilter === "pending" ? 700 : 500,
+              fontSize: 12,
+              padding: "5px 12px",
+              borderRadius: 6,
+              cursor: "pointer",
+              boxShadow: activeFilter === "pending" ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+              transition: "all 0.15s ease",
+            }}
+          >
+            What&rsquo;s Left ({pendingCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveFilter("done")}
+            style={{
+              border: "none",
+              background: activeFilter === "done" ? "#fff" : "transparent",
+              color: activeFilter === "done" ? "var(--brand-700, #0a4a3b)" : "var(--muted, #64748b)",
+              fontWeight: activeFilter === "done" ? 700 : 500,
+              fontSize: 12,
+              padding: "5px 12px",
+              borderRadius: 6,
+              cursor: "pointer",
+              boxShadow: activeFilter === "done" ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+              transition: "all 0.15s ease",
+            }}
+          >
+            What Has Been Done ({doneCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveFilter("all")}
+            style={{
+              border: "none",
+              background: activeFilter === "all" ? "#fff" : "transparent",
+              color: activeFilter === "all" ? "var(--brand-700, #0a4a3b)" : "var(--muted, #64748b)",
+              fontWeight: activeFilter === "all" ? 700 : 500,
+              fontSize: 12,
+              padding: "5px 12px",
+              borderRadius: 6,
+              cursor: "pointer",
+              boxShadow: activeFilter === "all" ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+              transition: "all 0.15s ease",
+            }}
+          >
+            All ({totalCount})
+          </button>
         </div>
 
         {/* Filters */}
-        <div className="row" style={{ gap: 10, flexWrap: "wrap", marginBottom: 14, alignItems: "center" }}>
+        <div className="row" style={{ gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           <div className="filter-group">
             <span className="filter-label">Criticality</span>
             <select
@@ -290,7 +294,7 @@ export default function DepartmentObservationsPage({
             </select>
           </div>
 
-          <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ minWidth: 220 }}>
             <input
               type="text"
               placeholder={`Search ${cleanDeptName} observations, references, owners…`}
@@ -300,97 +304,60 @@ export default function DepartmentObservationsPage({
             />
           </div>
         </div>
+      </div>
 
-        {/* Observations List */}
-        {!filteredItems.length ? (
+      {/* Observations Grid (Action Owner Card Styling) */}
+      {!filteredItems.length ? (
+        <div className="card">
           <Empty big="✦">
             No observations match this criteria for {cleanDeptName}.
           </Empty>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {filteredItems.map((item) => (
-              <div
-                key={item.id}
-                className="card tracker-row"
-                style={{
-                  margin: 0,
-                  padding: "14px 16px",
-                  border: "1px solid var(--line)",
-                  borderLeft: `4px solid ${
-                    item.criticality === "Critical"
-                      ? "var(--crit)"
-                      : item.criticality === "High"
-                        ? "var(--high)"
-                        : item.criticality === "Medium" || item.criticality === "Moderate"
-                          ? "var(--med)"
-                          : "var(--low)"
-                  }`,
-                  cursor: "pointer",
-                }}
-                onClick={() => openItem(item)}
-              >
-                <div className="row" style={{ alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                  <div style={{ flex: 1, minWidth: 260 }}>
-                    <div className="row" style={{ gap: 8, alignItems: "center", marginBottom: 4 }}>
-                      <span style={{ fontWeight: 700, fontSize: 12, color: "var(--navy2)" }}>{item.ref}</span>
-                      <CritPill crit={item.criticality} />
-                      <StatusPill status={item.status} />
-                      {item.isOverdue && item.status !== "Closed" && (
-                        <span className="pill c-Critical" style={{ fontSize: 10.5, padding: "2px 6px" }}>
-                          Overdue
-                        </span>
-                      )}
-                      {!item.isOverdue && item.daysRemaining != null && item.daysRemaining <= 14 && item.status !== "Closed" && (
-                        <span className="pill c-High" style={{ fontSize: 10.5, padding: "2px 6px" }}>
-                          Due in {item.daysRemaining}d
-                        </span>
-                      )}
-                    </div>
-
-                    <div style={{ fontSize: 14, fontWeight: 600, color: "var(--ink)", marginBottom: 4 }}>
-                      <RowOpen onOpen={() => openItem(item)} label={`Open observation ${item.title}`}>
-                        {item.title}
-                      </RowOpen>
-                    </div>
-
-                    {item.findingDetail ? (
-                      <div className="hint" style={{ fontSize: 12, lineHeight: 1.45, marginBottom: 6, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-                        {item.findingDetail}
-                      </div>
-                    ) : null}
-
-                    {item.ownerResponse ? (
-                      <div style={{ fontSize: 11.5, color: "#195244", background: "#edf6f3", padding: "6px 10px", borderRadius: 6, marginTop: 6 }}>
-                        <b>Latest Progress:</b> {item.ownerResponse.slice(0, 180)}
-                        {item.ownerResponse.length > 180 ? "…" : ""}
-                      </div>
-                    ) : null}
-                  </div>
-
-                  {/* Metadata Sidebar: Progress, Remediation Date, Owner */}
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 200, flexShrink: 0 }}>
-                    <div style={{ fontSize: 11.5 }}>
-                      <span className="hint">Source:</span> <b>{item.source}</b>
-                    </div>
-                    <div style={{ fontSize: 11.5 }}>
-                      <span className="hint">Action Owner:</span> <b>{item.ownerName}</b>
-                    </div>
-                    <div style={{ fontSize: 11.5 }}>
-                      <span className="hint">Remediation Date:</span>{" "}
-                      <b>{item.remediationDate || "Not set"}</b>
-                    </div>
-                    {item.raisedDate ? (
-                      <div style={{ fontSize: 11 }}>
-                        <span className="hint">Raised:</span> {item.raisedDate}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
+        </div>
+      ) : (
+        <div className="myobs-grid">
+          {filteredItems.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className="myobs-card"
+              onClick={() => openItem(item)}
+              title={`Open ${item.ref}: ${item.title}`}
+            >
+              <div className="myobs-card-top">
+                <CritPill crit={item.criticality} />
+                <span className="tag">{item.ref}</span>
+                <StatusPill status={item.status} />
+                {item.isOverdue && item.status !== "Closed" ? (
+                  <span className="pill c-Critical portal-overdue">overdue</span>
+                ) : null}
+                {!item.isOverdue && item.daysRemaining != null && item.daysRemaining <= 14 && item.status !== "Closed" ? (
+                  <span className="pill c-High">Due in {item.daysRemaining}d</span>
+                ) : null}
               </div>
-            ))}
-          </div>
-        )}
-      </div>
+
+              <div className="myobs-card-title">{item.title}</div>
+
+              <div className="myobs-card-meta">
+                {item.source}
+                {" · "}
+                Owner: {item.ownerName || "Unassigned"}
+              </div>
+
+              {item.remediationDate ? (
+                <div className="myobs-card-foot">
+                  <span className="hint">Expected close</span>
+                  <span>
+                    {item.remediationDate}
+                    {item.isOverdue && item.status !== "Closed" ? (
+                      <span className="pill c-Critical portal-overdue" style={{ marginLeft: 6 }}>overdue</span>
+                    ) : null}
+                  </span>
+                </div>
+              ) : null}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
