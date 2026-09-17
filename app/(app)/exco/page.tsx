@@ -5,6 +5,7 @@
 // the shared lib/exco-compute.ts (also used by the cron), so client and server stay in sync.
 
 import { useState } from "react";
+import Link from "next/link";
 import { usePageChrome } from "@/components/chrome/PageChrome";
 import BusyButton from "@/components/feedback/BusyButton";
 import { toast } from "@/components/feedback/ToastHost";
@@ -342,6 +343,15 @@ export default function ExcoPage() {
     title: "Executive Assurance Brief",
     actions: (
       <>
+        <Link
+          href="/settings#exco-recipients"
+          className="btn sec sm"
+          style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
+          title="Manage and onboard MD & EXCO recipients"
+        >
+          <span>✉</span>
+          <span>Onboard EXCO</span>
+        </Link>
         <button className="btn sec sm" type="button" onClick={() => modal.open(<KeyMessageDialog />)}>
           Key message
         </button>

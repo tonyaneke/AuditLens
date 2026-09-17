@@ -213,6 +213,7 @@ export default function SettingsPage() {
           email: em,
           department: "Office of the Managing Director",
           role: "executive",
+          active: true,
         }),
       });
       if (res.ok) {
@@ -225,6 +226,186 @@ export default function SettingsPage() {
     } catch {
       toast("Network error creating login account.", "error");
     }
+  }
+
+  /* ---- onboardRecipient (from EXCO recipients table) ---- */
+  async function onboardRecipient(
+    r: { id?: string; name?: string; email?: string; role?: string },
+    existingUser?: ManagedUser,
+  ) {
+    const em = (r.email || "").trim().toLowerCase();
+    if (!em) {
+      toast("Recipient has no valid email address.", "error");
+      return;
+    }
+    const name = r.name || existingUser?.name || "Executive Member";
+    const sent = !!existingUser?.welcomeEmailSentAt;
+
+    await modal.confirm({
+      title: sent ? `Re-send Onboarding Email to ${name}?` : `Onboard ${name}?`,
+      message: `Send an official executive onboarding invitation to ${em}? They will receive instructions for Microsoft SSO sign-in to access the Executive Governance Dashboard, Department Observations, and Executive Briefs.${
+        sent ? ` (An onboarding email was sent previously on ${formatAddedDate(existingUser!.welcomeEmailSentAt!)}).` : ""
+      }`,
+      confirmLabel: sent ? "Re-send Email" : "Send Onboarding Email",
+      busyLabel: "Sending invitation…",
+      onConfirm: async () => {
+        if (!existingUser) {
+          try {
+            await fetch("/api/users", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                name,
+                email: em,
+                department: "Office of the Managing Director",
+                role: "executive",
+                active: true,
+              }),
+            });
+          } catch {
+            /* proceed to onboard */
+          }
+        }
+
+        try {
+          const res = await fetch("/api/users/onboard", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: em, userId: existingUser?.id }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok) {
+            toast(`Onboarding email sent to ${em}.`, "success");
+            await reload();
+          } else {
+            toast(String(data.error || "Failed to send onboarding email."), "error");
+          }
+        } catch {
+          toast("Network error sending onboarding email.", "error");
+        }
+      },
+    });
+  }
+
+  /* ---- onboardSingleUser (from Users table) ---- */
+  async function onboardSingleUser(u: ManagedUser, name?: string) {
+    if (!u.email) {
+      toast("User has no valid email address.", "error");
+      return;
+    }
+    const userName = name || u.name || "User";
+    const sent = !!u.welcomeEmailSentAt;
+
+    await modal.confirm({
+      title: sent ? `Re-send Onboarding Email to ${userName}?` : `Onboard ${userName}?`,
+      message: `Send an onboarding invitation email to ${u.email}? They will receive sign-in instructions for AuditLens.${
+        sent ? ` (An onboarding email was sent previously on ${formatAddedDate(u.welcomeEmailSentAt!)}).` : ""
+      }`,
+      confirmLabel: sent ? "Re-send Email" : "Send Onboarding Email",
+      busyLabel: "Sending invitation…",
+      onConfirm: async () => {
+        try {
+          const res = await fetch("/api/users/onboard", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId: u.id, email: u.email }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok) {
+            toast(`Onboarding email sent to ${u.email}.`, "success");
+            await reload();
+          } else {
+            toast(String(data.error || "Failed to send onboarding email."), "error");
+          }
+        } catch {
+          toast("Network error sending onboarding email.", "error");
+        }
+      },
+    });
+  }
+
+  /* ---- onboardAllExecutives ---- */
+  async function onboardAllExecutives() {
+    const list = recipients.filter((r) => r.email && r.email.includes("@"));
+    if (!list.length) {
+      toast("No recipients found with valid email addresses.", "error");
+      return;
+    }
+
+    await modal.confirm({
+      title: "Onboard All Executive Members?",
+      message: `Send executive onboarding emails to all ${list.length} MD & EXCO members (including re-onboarding Mr. Ladi Amusu with the full Executive view)? Each recipient will receive an invitation to access the Executive Governance Dashboard and Department Observations.`,
+      confirmLabel: `Onboard All (${list.length})`,
+      busyLabel: "Sending invitations…",
+      onConfirm: async () => {
+        // First ensure each recipient has a user account provisioned
+        for (const r of list) {
+          const em = (r.email || "").trim().toLowerCase();
+          const hasUser = users?.some((u) => (u.email || "").trim().toLowerCase() === em);
+          if (!hasUser) {
+            await fetch("/api/users", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                name: r.name || "Executive Member",
+                email: em,
+                department: "Office of the Managing Director",
+                role: "executive",
+                active: true,
+              }),
+            }).catch(() => {});
+          }
+        }
+
+        try {
+          const res = await fetch("/api/users/onboard", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ allExecutives: true }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok) {
+            toast(
+              `Onboarding emails successfully sent to ${data.sentCount || list.length} executive(s).`,
+              "success",
+            );
+            await reload();
+          } else {
+            toast(String(data.error || "Failed to send onboarding emails."), "error");
+          }
+        } catch {
+          toast("Network error sending onboarding emails.", "error");
+        }
+      },
+    });
+  }
+
+  /* ---- sendTestOnboardingEmail ---- */
+  async function sendTestOnboardingEmail() {
+    const testEmail = "eanishe@credicorp.ng";
+    await modal.confirm({
+      title: "Send Test Onboarding Email?",
+      message: `Send a test preview of the Executive Onboarding email to ${testEmail}? This lets you verify the design, branding, and links before sending to the MD & EXCO.`,
+      confirmLabel: `Send Test to ${testEmail}`,
+      busyLabel: "Sending test email…",
+      onConfirm: async () => {
+        try {
+          const res = await fetch("/api/users/onboard", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ isTest: true, testEmail }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok) {
+            toast(`Test email sent to ${testEmail}. Check your inbox!`, "success");
+          } else {
+            toast(String(data.error || "Failed to send test email."), "error");
+          }
+        } catch {
+          toast("Network error sending test email.", "error");
+        }
+      },
+    });
   }
 
   return (
@@ -454,6 +635,18 @@ export default function SettingsPage() {
                       </td>
                       <td>{u.createdAt ? formatAddedDate(u.createdAt) : "—"}</td>
                       <td className="ra-actions-cell" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          className="btn-icon-action"
+                          type="button"
+                          title={
+                            u.welcomeEmailSentAt
+                              ? `Onboarding email sent ${formatAddedDate(u.welcomeEmailSentAt)}. Click to resend.`
+                              : "Send onboarding email"
+                          }
+                          onClick={() => void onboardSingleUser(u, u.name)}
+                        >
+                          ✉
+                        </button>
                         <button className="btn-icon-action" type="button" title="Edit" onClick={openEdit}>
                           ✎
                         </button>
@@ -507,22 +700,37 @@ export default function SettingsPage() {
       </div>
 
       {/* ---- MD & EXCO brief recipients ---- */}
-      <div className="card">
-        <div className="row">
-          <h3 style={{ margin: 0 }}>MD &amp; EXCO brief recipients</h3>
+      <div className="card" id="exco-recipients">
+        <div className="row" style={{ flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+          <div>
+            <h3 style={{ margin: 0 }}>MD &amp; EXCO brief recipients</h3>
+            <div className="hint" style={{ marginTop: 2 }}>
+              Executive Committee members with governance oversight &amp; assurance access.
+            </div>
+          </div>
           <div className="spacer" />
-          <button
-            className="btn sm"
-            type="button"
-            onClick={() => modal.open(<ExcoRecipientDialog onSaved={reload} />)}
-          >
-            + Add recipient
-          </button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <button
+              className="btn brand sm"
+              type="button"
+              onClick={() => void onboardAllExecutives()}
+              title="Send onboarding emails to all MD & EXCO members (including re-onboarding)"
+            >
+              🚀 Onboard All Executives
+            </button>
+            <button
+              className="btn sm"
+              type="button"
+              onClick={() => modal.open(<ExcoRecipientDialog onSaved={reload} />)}
+            >
+              + Add recipient
+            </button>
+          </div>
         </div>
-        <div className="hint" style={{ marginTop: 4 }}>
+        <div className="hint" style={{ marginTop: 6 }}>
           These people receive the <b>Executive Assurance Brief</b> — automatically on the 1st and
           3rd week of each month from August 2026, and manually anytime from the Executive
-          Assurance Brief page. They have access to the Executive Governance Dashboard and Department Observations.
+          Assurance Brief page. They have full access to the Executive Governance Dashboard and Department Observations.
         </div>
         <div style={{ marginTop: 12 }}>
           {!recipients.length ? (
@@ -535,6 +743,7 @@ export default function SettingsPage() {
                   <th scope="col">Role</th>
                   <th scope="col">Email</th>
                   <th scope="col">Login</th>
+                  <th scope="col">Onboarding</th>
                   <th scope="col"></th>
                 </tr>
               </thead>
@@ -544,7 +753,9 @@ export default function SettingsPage() {
                   const linkedUser =
                     users?.find((u) => (u.email || "").trim().toLowerCase() === rem) ||
                     directory.find((d) => (d.email || "").trim().toLowerCase() === rem);
+                  const userObj = users?.find((u) => (u.email || "").trim().toLowerCase() === rem);
                   const isProvisioned = !!linkedUser;
+                  const onboardedAt = userObj?.welcomeEmailSentAt;
                   return (
                     <tr key={r.id}>
                       <td>
@@ -569,6 +780,40 @@ export default function SettingsPage() {
                             </button>
                           </div>
                         )}
+                      </td>
+                      <td>
+                        <div className="row" style={{ gap: 6, alignItems: "center" }}>
+                          <button
+                            className={onboardedAt ? "btn sec sm" : "btn brand sm"}
+                            type="button"
+                            style={{
+                              padding: "2px 8px",
+                              fontSize: 11,
+                              fontWeight: onboardedAt ? 500 : 700,
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 4,
+                            }}
+                            onClick={() => void onboardRecipient(r, userObj)}
+                            title={
+                              onboardedAt
+                                ? `Onboarding email sent ${formatAddedDate(onboardedAt)}. Click to resend.`
+                                : "Send executive onboarding invitation now"
+                            }
+                          >
+                            <span>✉</span>
+                            <span>{onboardedAt ? "Re-onboard" : "Onboard"}</span>
+                          </button>
+                          {onboardedAt ? (
+                            <span className="hint" style={{ fontSize: 10.5 }}>
+                              Sent {formatAddedDate(onboardedAt)}
+                            </span>
+                          ) : (
+                            <span className="hint" style={{ fontSize: 10.5, color: "var(--accent)" }}>
+                              Ready
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="ra-actions-cell">
                         <button

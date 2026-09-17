@@ -375,3 +375,105 @@ export async function sendAdminConsolidatedEmail(params: {
 
   return { sent: true as const };
 }
+
+export type ExecutiveOnboardingEmailParams = {
+  to: string;
+  name: string;
+  loginUrl: string;
+  roleTitle?: string;
+  isTest?: boolean;
+};
+
+export async function sendExecutiveOnboardingEmail(params: ExecutiveOnboardingEmailParams) {
+  const apiKey = process.env.SENDGRID_API_KEY?.trim();
+  const from = SENDER_EMAIL;
+
+  if (!apiKey) {
+    return {
+      sent: false as const,
+      error: "Email is not configured (SENDGRID_API_KEY).",
+    };
+  }
+
+  const subject = params.isTest
+    ? "[TEST PREVIEW] Welcome to AuditLens — Executive Governance Access"
+    : "Welcome to AuditLens — Executive Governance Access";
+
+  const roleText = params.roleTitle || "Executive Management / MD & EXCO";
+
+  const text = [
+    params.isTest ? `*** TEST PREVIEW (Sent to ${params.to}) ***\n` : "",
+    `Hello ${params.name},`,
+    "",
+    "You have been granted executive access to AuditLens, CrediCorp's Internal Audit and Executive Governance platform.",
+    "",
+    "As a member of Executive Management, you have real-time oversight and governance access to:",
+    "• Executive Governance Dashboard — Portfolio remediation rate, open key exposures, and audit plan progress",
+    "• Department Observations — Breakdown of resolved actions vs outstanding remediation across all business units",
+    "• Executive Assurance Briefs — Routine and on-demand governance briefs prepared by Internal Audit",
+    "• Latest Remediation Updates — Live stream of verified closures and management actions",
+    "",
+    `Sign in with your Microsoft (organisation) account at: ${params.loginUrl}`,
+    "",
+    "Choose \"Sign in with Microsoft\" and use your work account — there is no separate password.",
+    "",
+    "If you have any questions or require assistance, please contact the Internal Audit team.",
+  ].filter(Boolean).join("\n");
+
+  const testBanner = params.isTest
+    ? `<div style="background:#fff3cd;border:1px solid #ffeeba;border-radius:8px;padding:10px 14px;margin-bottom:18px;font-size:12.5px;color:#856404;font-weight:600">
+        🔔 <strong>Test Preview</strong>: This is a verification copy of the executive onboarding invitation sent to <code>${escapeHtml(params.to)}</code>.
+      </div>`
+    : "";
+
+  const html = brandedEmail({
+    heading: "Executive Governance Access Provisioned",
+    bodyHtml: `
+      ${testBanner}
+      <p>Hello <strong>${escapeHtml(params.name)}</strong>,</p>
+      <p>You have been granted executive access to <strong>AuditLens</strong>, CrediCorp's Internal Audit and Executive Governance platform.</p>
+      
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px 18px;margin:18px 0">
+        <div style="font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#0d5a47;margin-bottom:8px">Your Executive Oversight Includes:</div>
+        <ul style="margin:0;padding-left:18px;color:#334155;font-size:13px;line-height:1.6">
+          <li style="margin:4px 0"><strong>Executive Governance Dashboard</strong> — Portfolio remediation rate, due status tracking, open key exposures, and audit plan execution.</li>
+          <li style="margin:4px 0"><strong>Department Observations</strong> — Real-time tracking of what has been resolved and what remains outstanding across all business units.</li>
+          <li style="margin:4px 0"><strong>Executive Assurance Briefs</strong> — Access to periodic and on-demand briefs prepared for the Managing Director &amp; Executive Committee.</li>
+          <li style="margin:4px 0"><strong>Latest Updates Stream</strong> — Continuous audit trail of verified closures, management updates, and responses.</li>
+        </ul>
+      </div>
+
+      <p style="color:#475569;font-size:13px;margin:14px 0">Click the button below to access AuditLens. On the sign-in page, select <strong>Sign in with Microsoft</strong> using your official CrediCorp credentials.</p>
+    `,
+    ctaLabel: "Open AuditLens",
+    ctaUrl: params.loginUrl,
+  });
+
+  const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      personalizations: [{ to: [{ email: params.to, name: params.name }] }],
+      from: { email: from, name: "AuditLens" },
+      subject,
+      content: [
+        { type: "text/plain", value: text },
+        { type: "text/html", value: html },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    return {
+      sent: false as const,
+      error: detail || `SendGrid returned ${res.status}.`,
+    };
+  }
+
+  return { sent: true as const };
+}
+
