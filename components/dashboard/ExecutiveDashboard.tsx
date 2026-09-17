@@ -17,6 +17,7 @@ import {
   fmtDate,
   isOverdueObs,
   obsIsApproved,
+  percentages,
   timeAgo,
   uid,
   type ObsWithContext,
@@ -57,6 +58,8 @@ type ActivityItem = {
   rawItem: UnifiedObservation;
 };
 
+const EXEC_CRITS = ["Critical", "High", "Moderate", "Low"] as const;
+
 const SEV_COLOR: Record<string, string> = {
   Critical: "#7a0012",
   High: "#b00020",
@@ -65,6 +68,81 @@ const SEV_COLOR: Record<string, string> = {
   Low: "#2e7d32",
   "Process Improvement": "#2c5f8a",
 };
+
+function Donut({
+  segs,
+  total,
+  label,
+}: {
+  segs: { value: number; color: string }[];
+  total: number;
+  label: string;
+}) {
+  const r = 54;
+  const C = 2 * Math.PI * r;
+  const arcs: { color: string; len: number; off: number; delay: number }[] = [];
+  {
+    let off = 0;
+    let idx = 0;
+    for (const s of segs) {
+      if (s.value <= 0) continue;
+      const len = total ? (s.value / total) * C : 0;
+      arcs.push({ color: s.color, len, off, delay: idx * 0.12 });
+      off += len;
+      idx++;
+    }
+  }
+  return (
+    <svg
+      className="donut-chart"
+      viewBox="0 0 140 140"
+      width="144"
+      height="144"
+      style={{ flexShrink: 0 }}
+    >
+      <circle cx="70" cy="70" r={r} fill="none" stroke="#eef2f7" strokeWidth="16" />
+      {arcs.map((s, i) => (
+        <circle
+          key={i}
+          className="donut-seg"
+          cx="70"
+          cy="70"
+          r={r}
+          fill="none"
+          stroke={s.color}
+          strokeWidth="16"
+          strokeDashoffset={(-s.off).toFixed(2)}
+          transform="rotate(-90 70 70)"
+          style={{
+            ["--seg-len" as string]: s.len.toFixed(2),
+            ["--seg-delay" as string]: `${s.delay}s`,
+          }}
+        />
+      ))}
+      <text
+        className="donut-center-num"
+        x="70"
+        y="66"
+        textAnchor="middle"
+        fontSize="28"
+        fontWeight="700"
+        fill="#0d5a47"
+      >
+        {total}
+      </text>
+      <text
+        className="donut-center-lbl"
+        x="70"
+        y="86"
+        textAnchor="middle"
+        fontSize="11"
+        fill="#64748b"
+      >
+        {label}
+      </text>
+    </svg>
+  );
+}
 
 export default function ExecutiveDashboard() {
   const { db } = useWorkspace();
@@ -135,7 +213,7 @@ export default function ExecutiveDashboard() {
       list.push({
         id: o.id,
         type: "Internal",
-        ref: o.code || `OBS-${o.id.slice(-4)}`,
+        ref: String(o.ref || `OBS-${o.id.slice(-4)}`),
         title: o.title || "Untitled observation",
         department: deptName,
         departmentSlug: departmentToSlug(deptName),
@@ -145,7 +223,7 @@ export default function ExecutiveDashboard() {
         isOverdue: isOver,
         daysDiff: days,
         ownerName: o.owner || "Unassigned",
-        source: o._r?.title ? `${o._a?.title || "Audit"} · ${o._r.title}` : o._a?.title || "Internal Audit",
+        source: String(o._r?.title ? `${o._a?.name || "Audit"} · ${o._r.title}` : o._a?.name || "Internal Audit"),
         rawInternal: o,
       });
     }
@@ -247,7 +325,7 @@ export default function ExecutiveDashboard() {
               actor: u.byName || u.by || raw.owner || "Action Owner",
               dateStr: u.at ? fmtDate(u.at) : "",
               dateISO: u.at || "",
-              text: u.note || "Remediation progress update submitted.",
+              text: u.text || "Remediation progress update submitted.",
               rawItem: obs,
             });
           }
@@ -323,6 +401,49 @@ export default function ExecutiveDashboard() {
     });
   }, [allObservations, activeTab, deptFilter, critFilter, search]);
 
+  // Criticality distribution counts
+  const byC = useMemo(() => {
+    const counts: Record<string, number> = {
+      Critical: 0,
+      High: 0,
+      Moderate: 0,
+      Low: 0,
+    };
+    for (const o of allObservations) {
+      const c = o.criticality === "Medium" ? "Moderate" : o.criticality;
+      if (counts[c] !== undefined) counts[c]++;
+      else counts.Moderate = (counts.Moderate || 0) + 1;
+    }
+    return counts;
+  }, [allObservations]);
+
+  // Criticality percentages
+  const critPercentages = useMemo(() => {
+    return percentages(EXEC_CRITS.map((c) => byC[c] || 0));
+  }, [byC]);
+
+  // Donut chart segments
+  const donutSegs = useMemo(() => {
+    return EXEC_CRITS.map((c) => ({
+      value: byC[c] || 0,
+      color: SEV_COLOR[c],
+    }));
+  }, [byC]);
+
+  // Due status counts for open items
+  const dueStatusCounts = useMemo(() => {
+    let overdue = 0;
+    let watchlist = 0;
+    let onTrack = 0;
+    for (const o of allObservations) {
+      if (o.status === "Closed") continue;
+      if (o.isOverdue) overdue++;
+      else if (o.daysDiff != null && o.daysDiff <= 14) watchlist++;
+      else onTrack++;
+    }
+    return { overdue, watchlist, onTrack };
+  }, [allObservations]);
+
   function openObservation(item: UnifiedObservation) {
     if (item.type === "Internal" && item.rawInternal) {
       const o = item.rawInternal;
@@ -341,7 +462,7 @@ export default function ExecutiveDashboard() {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+    <>
       {/* Executive Welcome & Header — matches Head of Internal Audit styling */}
       <div className="dash-welcome anim-fade-in">
         <div className="dash-welcome-text">
@@ -359,67 +480,218 @@ export default function ExecutiveDashboard() {
           display: "grid",
           gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
           gap: 12,
+          marginBottom: 18,
         }}
       >
         <Kpi
+          tone="base"
           label="Total Observations"
           value={overallTotals.total}
-          hint={`${overallTotals.internalTotal} internal · ${overallTotals.externalTotal} external`}
+          sub={`${overallTotals.internalTotal} internal · ${overallTotals.externalTotal} external`}
+          icon="audit"
         />
         <Kpi
+          tone="good"
           label="What Has Been Done"
           value={overallTotals.done}
-          hint={`${overallTotals.rate}% overall remediation rate`}
-          color="var(--closed)"
+          sub={`${overallTotals.rate}% overall remediation rate`}
+          icon="check"
         />
         <Kpi
+          tone="accent"
           label="What's Left (Pending)"
           value={overallTotals.pending}
-          hint="Open & In Progress"
-          color="var(--high)"
+          sub="Open & In Progress"
+          icon="obs"
         />
         <Kpi
+          tone={overallTotals.overdue > 0 ? "warn" : "base"}
           label="Overdue Actions"
           value={overallTotals.overdue}
-          hint="Target date passed"
-          color={overallTotals.overdue > 0 ? "var(--crit)" : undefined}
+          sub="Target date passed"
+          icon="alert"
         />
         <Kpi
+          tone="warn"
           label="Critical & High"
           value={overallTotals.critHighTotal}
-          hint="High severity matters"
-          color="var(--crit)"
+          sub="High severity matters"
+          icon="alert"
         />
       </div>
 
-      {/* Graphical Governance Section (Single Column Layout) */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-        {/* 1. Department Exposure & Remediation Progress (Single Column) */}
-        <div className="card anim-fade-in">
+      {/* Multi-column Grid Row 1: Severity Distribution & Critical/High Watch */}
+      <div className="dash2">
+        {/* Card 1: Observations by Criticality & Status Posture */}
+        <div className="card chart-card anim-fade-in">
+          <div className="seclabel">Observations by Criticality &amp; Posture</div>
+          <div className="donutwrap" style={{ marginTop: 10, marginBottom: 16 }}>
+            <Donut segs={donutSegs} total={overallTotals.total} label="total" />
+            <div className="legend" style={{ flex: 1 }}>
+              {EXEC_CRITS.map((c, i) => (
+                <div className="li" key={c}>
+                  <span className="dot" style={{ background: SEV_COLOR[c] }} />
+                  <span className="lname">{c}</span>
+                  <span className="lval">{byC[c] || 0}</span>
+                  <span className="lpct">{critPercentages[i]}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="tline">
+            <div className="tcell tcell-overdue">
+              <div className="tn">{dueStatusCounts.overdue}</div>
+              <div className="tl">Overdue</div>
+            </div>
+            <div className="tcell tcell-watch">
+              <div className="tn">{dueStatusCounts.watchlist}</div>
+              <div className="tl">Watchlist · ≤2wks</div>
+            </div>
+            <div className="tcell tcell-track">
+              <div className="tn">{dueStatusCounts.onTrack}</div>
+              <div className="tl">On track</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Card 2: Key Exposures: Critical & High Priority Governance Watch */}
+        <div className="card anim-fade-in" style={{ display: "flex", flexDirection: "column" }}>
           <div
             className="row"
             style={{
               alignItems: "center",
               justifyContent: "space-between",
-              marginBottom: 14,
+              marginBottom: 10,
               flexWrap: "wrap",
               gap: 8,
             }}
           >
             <div>
-              <h3 style={{ margin: 0, fontSize: 16 }}>
-                Department Risk Exposure &amp; Workload
-              </h3>
-              <div className="hint" style={{ marginTop: 2 }}>
-                Cross-department ranking of pending observations, risk severity breakdown, and completion rate.
+              <div className="seclabel">Critical &amp; High Priority Watch</div>
+              <div className="hint" style={{ marginTop: 2, fontSize: 11.5 }}>
+                Key exposures requiring executive oversight &amp; target date tracking.
               </div>
             </div>
-            <div style={{ fontSize: 12, color: "var(--muted)" }}>
-              Ranked by pending observations
+            {overallTotals.overdue > 0 ? (
+              <span className="pill c-Critical" style={{ fontSize: 10.5, fontWeight: 700 }}>
+                {overallTotals.overdue} Overdue
+              </span>
+            ) : null}
+          </div>
+
+          {!highCritWatch.length ? (
+            <Empty big="✓">
+              No open Critical or High-risk observations across any department.
+            </Empty>
+          ) : (
+            <div style={{ overflowX: "auto", flex: 1 }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Severity &amp; Ref</th>
+                    <th scope="col">Observation</th>
+                    <th scope="col">Dept</th>
+                    <th scope="col">Target</th>
+                    <th scope="col"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {highCritWatch.map((item) => (
+                    <tr
+                      key={`${item.type}-${item.id}`}
+                      className="tracker-row"
+                      onClick={() => openObservation(item)}
+                      title="Click to view details"
+                    >
+                      <td style={{ whiteSpace: "nowrap" }}>
+                        <div className="row" style={{ gap: 6, alignItems: "center" }}>
+                          <CritPill crit={item.criticality} />
+                          <span style={{ fontWeight: 600, fontSize: 11.5 }}>{item.ref}</span>
+                        </div>
+                      </td>
+                      <td style={{ maxWidth: 190 }}>
+                        <RowOpen onOpen={() => openObservation(item)} label={`Open ${item.title}`}>
+                          <b style={{ fontSize: 12 }}>{item.title}</b>
+                        </RowOpen>
+                      </td>
+                      <td>
+                        <span
+                          className="pill"
+                          style={{ background: "#edf4f1", color: "#19302a", fontSize: 10.5 }}
+                        >
+                          {item.department.replace(/\s+Department$/i, "")}
+                        </span>
+                      </td>
+                      <td style={{ whiteSpace: "nowrap" }}>
+                        {item.targetDate ? (
+                          <div>
+                            <div style={{ fontSize: 11.5, fontWeight: 600 }}>{item.targetDate}</div>
+                            {item.isOverdue ? (
+                              <span
+                                className="pill c-Critical"
+                                style={{ fontSize: 9.5, padding: "1px 4px", marginTop: 2 }}
+                              >
+                                Overdue
+                              </span>
+                            ) : item.daysDiff != null && item.daysDiff <= 14 ? (
+                              <span
+                                className="pill c-High"
+                                style={{ fontSize: 9.5, padding: "1px 4px", marginTop: 2 }}
+                              >
+                                Due in {item.daysDiff}d
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <span className="hint">—</span>
+                        )}
+                      </td>
+                      <td className="ra-actions-cell">
+                        <button
+                          className="btn-icon-action"
+                          type="button"
+                          title="View observation details"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openObservation(item);
+                          }}
+                        >
+                          ↗
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Multi-column Grid Row 2: Department Workload & Recent Activity */}
+      <div className="dash2">
+        {/* Card 3: Department Risk Exposure & Workload */}
+        <div className="card anim-fade-in" style={{ display: "flex", flexDirection: "column" }}>
+          <div
+            className="row"
+            style={{
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: 12,
+              flexWrap: "wrap",
+              gap: 8,
+            }}
+          >
+            <div>
+              <div className="seclabel">Department Risk Exposure &amp; Workload</div>
+              <div className="hint" style={{ marginTop: 2, fontSize: 11.5 }}>
+                Ranked by pending observations and completion progress.
+              </div>
             </div>
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, flex: 1 }}>
             {rankedDepartments.map((ds) => {
               const cleanName = ds.department.replace(/\s+Department$/i, "");
               const critCount =
@@ -437,13 +709,13 @@ export default function ExecutiveDashboard() {
                 <div
                   key={ds.department}
                   style={{
-                    padding: "12px 14px",
+                    padding: "10px 12px",
                     borderRadius: 8,
                     background: "var(--surface-subtle, #f8faf9)",
                     border: "1px solid var(--line, #e2e8f0)",
                     display: "flex",
                     flexDirection: "column",
-                    gap: 8,
+                    gap: 6,
                   }}
                 >
                   <div
@@ -452,15 +724,15 @@ export default function ExecutiveDashboard() {
                       alignItems: "center",
                       justifyContent: "space-between",
                       flexWrap: "wrap",
-                      gap: 8,
+                      gap: 6,
                     }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <Link
                         href={`/departments/${ds.slug}/internal`}
                         style={{
                           fontWeight: 700,
-                          fontSize: 13.5,
+                          fontSize: 12.5,
                           color: "var(--brand-700, #0a4a3b)",
                           textDecoration: "none",
                         }}
@@ -470,62 +742,62 @@ export default function ExecutiveDashboard() {
                       {critCount > 0 ? (
                         <span
                           className="pill c-Critical"
-                          style={{ fontSize: 10.5, padding: "2px 6px" }}
-                          title={`${critCount} Critical observations`}
+                          style={{ fontSize: 9.5, padding: "1px 5px" }}
+                          title={`${critCount} Critical`}
                         >
-                          {critCount} Critical
+                          {critCount}C
                         </span>
                       ) : null}
                       {highCount > 0 ? (
                         <span
                           className="pill c-High"
-                          style={{ fontSize: 10.5, padding: "2px 6px" }}
-                          title={`${highCount} High observations`}
+                          style={{ fontSize: 9.5, padding: "1px 5px" }}
+                          title={`${highCount} High`}
                         >
-                          {highCount} High
+                          {highCount}H
                         </span>
                       ) : null}
                     </div>
 
-                    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                      <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 11.5, color: "var(--muted)" }}>
                         <b style={{ color: ds.totals.pending > 0 ? "var(--high)" : "var(--ink)" }}>
                           {ds.totals.pending} left
                         </b>{" "}
-                        of {ds.totals.total} total ·{" "}
+                        ·{" "}
                         <span style={{ color: "var(--closed)", fontWeight: 600 }}>
                           {ds.totals.rate}% done
                         </span>
-                      </div>
+                      </span>
 
-                      <div className="row" style={{ gap: 6 }}>
+                      <div className="row" style={{ gap: 4 }}>
                         <Link
                           href={`/departments/${ds.slug}/internal`}
                           className="btn sec sm"
-                          style={{ padding: "2px 8px", fontSize: 11 }}
-                          title="View Internal Observations"
+                          style={{ padding: "2px 6px", fontSize: 10 }}
+                          title="Internal Observations"
                         >
-                          Internal ({ds.internal.pending.length})
+                          Int ({ds.internal.pending.length})
                         </Link>
                         <Link
                           href={`/departments/${ds.slug}/external`}
                           className="btn sec sm"
-                          style={{ padding: "2px 8px", fontSize: 11 }}
-                          title="View External Observations"
+                          style={{ padding: "2px 6px", fontSize: 10 }}
+                          title="External Observations"
                         >
-                          External ({ds.external.pending.length})
+                          Ext ({ds.external.pending.length})
                         </Link>
                       </div>
                     </div>
                   </div>
 
-                  {/* Graphical Stacked Distribution & Progress Bar */}
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  {/* Stacked Severity Distribution & Progress Bar */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <div
                       style={{
                         flex: 1,
-                        height: 8,
-                        borderRadius: 4,
+                        height: 6,
+                        borderRadius: 3,
                         background: "#e2ece8",
                         overflow: "hidden",
                         display: "flex",
@@ -570,7 +842,7 @@ export default function ExecutiveDashboard() {
                       style={{
                         fontSize: 11,
                         fontWeight: 700,
-                        minWidth: 32,
+                        minWidth: 28,
                         textAlign: "right",
                         color:
                           ds.totals.rate >= 80
@@ -589,8 +861,8 @@ export default function ExecutiveDashboard() {
           </div>
         </div>
 
-        {/* 2. Key Exposures: Critical & High Priority Governance Watch (Single Column) */}
-        <div className="card anim-fade-in">
+        {/* Card 4: Recent Remediation Activity & Updates */}
+        <div className="card anim-fade-in" style={{ display: "flex", flexDirection: "column" }}>
           <div
             className="row"
             style={{
@@ -602,157 +874,26 @@ export default function ExecutiveDashboard() {
             }}
           >
             <div>
-              <h3 style={{ margin: 0, fontSize: 16 }}>
-                Critical &amp; High Priority Governance Watch
-              </h3>
-              <div className="hint" style={{ marginTop: 2 }}>
-                High-criticality observations requiring immediate oversight, target date monitoring, and remediation focus.
+              <div className="seclabel">Recent Remediation Activity &amp; Updates</div>
+              <div className="hint" style={{ marginTop: 2, fontSize: 11.5 }}>
+                Live feed of progress notes, department responses, and verified closures.
               </div>
             </div>
-            {overallTotals.overdue > 0 ? (
-              <span className="pill c-Critical" style={{ fontSize: 11, fontWeight: 700 }}>
-                {overallTotals.overdue} Overdue Action{overallTotals.overdue === 1 ? "" : "s"}
-              </span>
-            ) : null}
-          </div>
-
-          {!highCritWatch.length ? (
-            <Empty big="✓">
-              No open Critical or High-risk observations across any department.
-            </Empty>
-          ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table>
-                <thead>
-                  <tr>
-                    <th scope="col">Severity &amp; Ref</th>
-                    <th scope="col">Observation</th>
-                    <th scope="col">Department</th>
-                    <th scope="col">Owner</th>
-                    <th scope="col">Remediation Target</th>
-                    <th scope="col">Status</th>
-                    <th scope="col"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {highCritWatch.map((item) => (
-                    <tr
-                      key={`${item.type}-${item.id}`}
-                      className="tracker-row"
-                      onClick={() => openObservation(item)}
-                      title="Click to view details"
-                    >
-                      <td style={{ whiteSpace: "nowrap" }}>
-                        <div className="row" style={{ gap: 6, alignItems: "center" }}>
-                          <CritPill c={item.criticality} />
-                          <span style={{ fontWeight: 600, fontSize: 12 }}>{item.ref}</span>
-                        </div>
-                        <div className="hint" style={{ fontSize: 10, marginTop: 2 }}>
-                          {item.type} audit
-                        </div>
-                      </td>
-                      <td style={{ maxWidth: 300 }}>
-                        <RowOpen onOpen={() => openObservation(item)} label={`Open ${item.title}`}>
-                          <b>{item.title}</b>
-                        </RowOpen>
-                        <div className="hint" style={{ fontSize: 11, marginTop: 2 }}>
-                          {item.source}
-                        </div>
-                      </td>
-                      <td>
-                        <span
-                          className="pill"
-                          style={{ background: "#edf4f1", color: "#19302a", fontSize: 11 }}
-                        >
-                          {item.department.replace(/\s+Department$/i, "")}
-                        </span>
-                      </td>
-                      <td>
-                        <div style={{ fontSize: 12 }}>{item.ownerName}</div>
-                      </td>
-                      <td style={{ whiteSpace: "nowrap" }}>
-                        {item.targetDate ? (
-                          <div>
-                            <div style={{ fontSize: 12, fontWeight: 600 }}>{item.targetDate}</div>
-                            {item.isOverdue ? (
-                              <span
-                                className="pill c-Critical"
-                                style={{ fontSize: 10, padding: "1px 5px", marginTop: 2 }}
-                              >
-                                Overdue
-                              </span>
-                            ) : item.daysDiff != null && item.daysDiff <= 14 ? (
-                              <span
-                                className="pill c-High"
-                                style={{ fontSize: 10, padding: "1px 5px", marginTop: 2 }}
-                              >
-                                Due in {item.daysDiff}d
-                              </span>
-                            ) : null}
-                          </div>
-                        ) : (
-                          <span className="hint">—</span>
-                        )}
-                      </td>
-                      <td>
-                        <StatusPill s={item.status} />
-                      </td>
-                      <td className="ra-actions-cell">
-                        <button
-                          className="btn-icon-action"
-                          type="button"
-                          title="View observation details"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openObservation(item);
-                          }}
-                        >
-                          ↗
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* 3. Recent Remediation Activity & Updates (Single Column) */}
-        <div className="card anim-fade-in">
-          <div
-            className="row"
-            style={{
-              alignItems: "center",
-              justifyContent: "space-between",
-              marginBottom: 12,
-              flexWrap: "wrap",
-              gap: 8,
-            }}
-          >
-            <div>
-              <h3 style={{ margin: 0, fontSize: 16 }}>
-                Recent Remediation Activity &amp; Progress Updates
-              </h3>
-              <div className="hint" style={{ marginTop: 2 }}>
-                Live feed of remediation progress notes, department responses, and verified closures.
-              </div>
-            </div>
-            <div style={{ fontSize: 12, color: "var(--muted)" }}>
-              Latest cross-department updates
+            <div style={{ fontSize: 11, color: "var(--muted)" }}>
+              Latest cross-department
             </div>
           </div>
 
           {!recentActivities.length ? (
             <Empty big="📋">No recent remediation updates recorded yet.</Empty>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: 1 }}>
               {recentActivities.map((act) => (
                 <div
                   key={act.id}
                   onClick={() => openObservation(act.rawItem)}
                   style={{
-                    padding: "12px 14px",
+                    padding: "10px 12px",
                     borderRadius: 8,
                     background: "var(--surface-subtle, #f8faf9)",
                     border: "1px solid var(--line, #e2e8f0)",
@@ -767,31 +908,31 @@ export default function ExecutiveDashboard() {
                       alignItems: "center",
                       justifyContent: "space-between",
                       flexWrap: "wrap",
-                      gap: 8,
-                      marginBottom: 6,
+                      gap: 6,
+                      marginBottom: 4,
                     }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       {act.kind === "closure" ? (
                         <span
                           className="pill c-Low"
-                          style={{ fontSize: 10.5, padding: "2px 6px", fontWeight: 700 }}
+                          style={{ fontSize: 9.5, padding: "1px 5px", fontWeight: 700 }}
                         >
-                          ✓ Verified Closed
+                          ✓ Closed
                         </span>
                       ) : act.kind === "update" ? (
                         <span
                           className="pill sop-pending-pill"
-                          style={{ fontSize: 10.5, padding: "2px 6px", fontWeight: 700 }}
+                          style={{ fontSize: 9.5, padding: "1px 5px", fontWeight: 700 }}
                         >
-                          ✎ Progress Update
+                          ✎ Update
                         </span>
                       ) : (
                         <span
                           className="pill"
                           style={{
-                            fontSize: 10.5,
-                            padding: "2px 6px",
+                            fontSize: 9.5,
+                            padding: "1px 5px",
                             background: "#edf4f1",
                             color: "#19302a",
                             fontWeight: 700,
@@ -801,22 +942,19 @@ export default function ExecutiveDashboard() {
                         </span>
                       )}
 
-                      <span style={{ fontWeight: 600, fontSize: 12.5 }}>
+                      <span style={{ fontWeight: 600, fontSize: 12 }}>
                         {act.title}
-                      </span>
-                      <span className="hint" style={{ fontSize: 11 }}>
-                        ({act.ref})
                       </span>
                     </div>
 
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <span
                         className="pill"
-                        style={{ background: "#eef2f7", color: "#475569", fontSize: 10.5 }}
+                        style={{ background: "#eef2f7", color: "#475569", fontSize: 10 }}
                       >
                         {act.department.replace(/\s+Department$/i, "")}
                       </span>
-                      <span className="hint" style={{ fontSize: 11.5 }}>
+                      <span className="hint" style={{ fontSize: 11 }}>
                         {act.dateISO ? timeAgo(act.dateISO) || act.dateStr : act.dateStr}
                       </span>
                     </div>
@@ -824,11 +962,11 @@ export default function ExecutiveDashboard() {
 
                   <div
                     style={{
-                      fontSize: 12.5,
+                      fontSize: 12,
                       color: "var(--ink-secondary, #334155)",
-                      lineHeight: 1.4,
+                      lineHeight: 1.35,
                       background: "#fff",
-                      padding: "8px 12px",
+                      padding: "6px 10px",
                       borderRadius: 6,
                       border: "1px solid #edf2f7",
                     }}
@@ -836,8 +974,8 @@ export default function ExecutiveDashboard() {
                     &ldquo;{act.text}&rdquo;
                     <div
                       style={{
-                        marginTop: 4,
-                        fontSize: 11,
+                        marginTop: 3,
+                        fontSize: 10.5,
                         color: "var(--muted)",
                         fontWeight: 500,
                       }}
@@ -852,13 +990,22 @@ export default function ExecutiveDashboard() {
         </div>
       </div>
 
-      {/* Snapshot of Observations: What's Left vs What Has Been Done */}
-      <div className="card">
-        <div className="row" style={{ alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+      {/* Row 3: Full-width Cross-Department Observations Snapshot */}
+      <div className="card anim-fade-in">
+        <div
+          className="row"
+          style={{
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 10,
+            marginBottom: 12,
+          }}
+        >
           <div>
-            <h3 style={{ margin: 0 }}>Observations Snapshot</h3>
+            <div className="seclabel">Cross-Department Observations Snapshot</div>
             <div className="hint" style={{ marginTop: 2 }}>
-              Inspect observations raised across all departments, track remediation dates, and see past resolutions.
+              Inspect observations across all departments, review remediation dates, and track past closures.
             </div>
           </div>
           {/* Tabs */}
@@ -888,7 +1035,10 @@ export default function ExecutiveDashboard() {
         </div>
 
         {/* Filters */}
-        <div className="row" style={{ gap: 10, flexWrap: "wrap", marginBottom: 14, alignItems: "center" }}>
+        <div
+          className="row"
+          style={{ gap: 10, flexWrap: "wrap", marginBottom: 14, alignItems: "center" }}
+        >
           <div className="filter-group">
             <span className="filter-label">Department</span>
             <select
@@ -915,7 +1065,7 @@ export default function ExecutiveDashboard() {
               <option value="All">All Criticalities</option>
               <option value="Critical">Critical</option>
               <option value="High">High</option>
-              <option value="Medium">Medium / Moderate</option>
+              <option value="Moderate">Medium / Moderate</option>
               <option value="Low">Low</option>
             </select>
           </div>
@@ -961,7 +1111,7 @@ export default function ExecutiveDashboard() {
                     <td style={{ whiteSpace: "nowrap" }}>
                       <div className="row" style={{ gap: 6, alignItems: "center" }}>
                         <span style={{ fontWeight: 600, fontSize: 12 }}>{item.ref}</span>
-                        <CritPill c={item.criticality} />
+                        <CritPill crit={item.criticality} />
                       </div>
                       <div className="hint" style={{ fontSize: 10.5, marginTop: 2 }}>
                         {item.type} finding
@@ -976,12 +1126,15 @@ export default function ExecutiveDashboard() {
                       </div>
                     </td>
                     <td>
-                      <span className="pill" style={{ background: "#edf4f1", color: "#19302a", fontSize: 11 }}>
+                      <span
+                        className="pill"
+                        style={{ background: "#edf4f1", color: "#19302a", fontSize: 11 }}
+                      >
                         {item.department.replace(/\s+Department$/i, "")}
                       </span>
                     </td>
                     <td>
-                      <StatusPill s={item.status} />
+                      <StatusPill status={item.status} />
                     </td>
                     <td style={{ whiteSpace: "nowrap" }}>
                       {item.targetDate ? (
@@ -989,11 +1142,17 @@ export default function ExecutiveDashboard() {
                           <div style={{ fontSize: 12, fontWeight: 500 }}>{item.targetDate}</div>
                           {item.status !== "Closed" && (
                             item.isOverdue ? (
-                              <span className="pill c-Critical" style={{ fontSize: 10, padding: "1px 5px", marginTop: 2 }}>
+                              <span
+                                className="pill c-Critical"
+                                style={{ fontSize: 10, padding: "1px 5px", marginTop: 2 }}
+                              >
                                 Overdue
                               </span>
                             ) : item.daysDiff != null && item.daysDiff <= 14 ? (
-                              <span className="pill c-High" style={{ fontSize: 10, padding: "1px 5px", marginTop: 2 }}>
+                              <span
+                                className="pill c-High"
+                                style={{ fontSize: 10, padding: "1px 5px", marginTop: 2 }}
+                              >
                                 Due in {item.daysDiff}d
                               </span>
                             ) : null
@@ -1026,6 +1185,6 @@ export default function ExecutiveDashboard() {
           </div>
         )}
       </div>
-    </div>
+    </>
   );
 }

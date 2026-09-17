@@ -92,10 +92,10 @@ export default function DepartmentObservationsPage({
 
       return {
         id: o.id,
-        ref: o.code || `OBS-${o.id.slice(-4)}`,
+        ref: String(o.ref || `OBS-${o.id.slice(-4)}`),
         title: o.title || "Untitled Observation",
-        findingDetail: o.finding || o.recommendation,
-        source: o._r?.title ? `${o._a?.title || "Audit"} · ${o._r.title}` : o._a?.title || "Internal Audit",
+        findingDetail: String(o.description || o.recommendation || ""),
+        source: String(o._r?.title ? `${o._a?.name || "Audit"} · ${o._r.title}` : o._a?.name || "Internal Audit"),
         raisedDate: o.raisedAt ? (fmtDate(o.raisedAt) || o.raisedAt) : undefined,
         criticality: o.criticality || "Moderate",
         status: o.status || "Open",
@@ -103,7 +103,7 @@ export default function DepartmentObservationsPage({
         isOverdue: isOver,
         daysRemaining: days,
         ownerName: o.owner || "Unassigned",
-        ownerResponse: o.ownerResponse || (o.updates && o.updates.length ? o.updates[o.updates.length - 1].note : undefined),
+        ownerResponse: o.ownerResponse || (o.updates && o.updates.length ? o.updates[o.updates.length - 1].text : undefined),
         rawInternal: o,
       };
     });
@@ -206,27 +206,32 @@ export default function DepartmentObservationsPage({
       {/* Mini Dashboard Snapshot */}
       <div className="kpis-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
         <Kpi
+          tone="base"
           label="Total Observations"
           value={totalCount}
-          hint={`${type === "internal" ? "Internal audit" : "Regulatory & external"} findings`}
+          sub={`${type === "internal" ? "Internal audit" : "Regulatory & external"} findings`}
+          icon="audit"
         />
         <Kpi
+          tone="good"
           label="What Has Been Done"
           value={doneCount}
-          hint={`${remRate}% resolved & closed`}
-          color="var(--closed)"
+          sub={`${remRate}% resolved & closed`}
+          icon="check"
         />
         <Kpi
+          tone="accent"
           label="What's Left (Pending)"
           value={pendingCount}
-          hint="Under active remediation"
-          color="var(--high)"
+          sub="Under active remediation"
+          icon="obs"
         />
         <Kpi
+          tone={overdueCount > 0 ? "warn" : "base"}
           label="Overdue Actions"
           value={overdueCount}
-          hint="Remediation date passed"
-          color={overdueCount > 0 ? "var(--crit)" : undefined}
+          sub="Remediation date passed"
+          icon="alert"
         />
       </div>
 
@@ -328,8 +333,8 @@ export default function DepartmentObservationsPage({
                   <div style={{ flex: 1, minWidth: 260 }}>
                     <div className="row" style={{ gap: 8, alignItems: "center", marginBottom: 4 }}>
                       <span style={{ fontWeight: 700, fontSize: 12, color: "var(--navy2)" }}>{item.ref}</span>
-                      <CritPill c={item.criticality} />
-                      <StatusPill s={item.status} />
+                      <CritPill crit={item.criticality} />
+                      <StatusPill status={item.status} />
                       {item.isOverdue && item.status !== "Closed" && (
                         <span className="pill c-Critical" style={{ fontSize: 10.5, padding: "2px 6px" }}>
                           Overdue
