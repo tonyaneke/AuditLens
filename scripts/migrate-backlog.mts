@@ -96,7 +96,7 @@ const OWNERS: Owner[] = [
 const EXCO_RECIPIENTS: { name: string; role: string; email: string }[] = [
   { name: "Uzoma Nwagba", role: "Managing Director", email: "unwagba@credicorp.ng" },
   { name: "Aisha Abdullahi", role: "Executive Director – Credit & Portfolio Management", email: "aabdullahi@credicorp.ng" },
-  { name: "Olanike Kolawole", role: "Executive Director – Operations", email: "okolawole@credicorp.ng" },
+  { name: "Olanike Kolawole", role: "Executive Director – Operations", email: "nkolawole@credicorp.ng" },
 ];
 
 const ownerByLabel = new Map<string, Owner>();

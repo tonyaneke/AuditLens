@@ -36,9 +36,7 @@ export async function POST(request: NextRequest) {
       | undefined;
     const recipients = data?.exco?.recipientList || [];
     const matched = recipients.find(
-      (r) =>
-        (r.email || "").trim().toLowerCase() === email ||
-        (email.includes("kolawole") && (r.email || "").toLowerCase().includes("kolawole")),
+      (r) => (r.email || "").trim().toLowerCase() === email,
     );
     if (matched) {
       user = await prisma.user.create({
