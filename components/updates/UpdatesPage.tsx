@@ -316,21 +316,6 @@ export default function UpdatesPage() {
         }}
       >
         <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-            <Link
-              href="/"
-              style={{
-                fontSize: 12.5,
-                color: "var(--muted)",
-                textDecoration: "none",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 4,
-              }}
-            >
-              &larr; Executive Dashboard
-            </Link>
-          </div>
           <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "var(--ink)" }}>
             Remediation Activity &amp; Latest Updates
           </h2>

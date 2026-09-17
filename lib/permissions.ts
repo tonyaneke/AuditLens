@@ -104,11 +104,38 @@ export function roleLabel(role: string | undefined | null): string {
 /** The label to show for a user, accounting for an admin viewing as another role.
  * Always states both the acting role and that they are an admin — an admin who has switched
  * view still holds admin authority, and hiding that is what made the sidebar look inconsistent. */
+const EXECUTIVE_TITLES: Record<string, string> = {
+  "nkolawole@credicorp.ng": "Executive Director, Operations",
+  "olanike kolawole": "Executive Director, Operations",
+  "aabdullahi@credicorp.ng": "Executive Director, Credit & Portfolio Management",
+  "aisha abdullahi": "Executive Director, Credit & Portfolio Management",
+  "unwagba@credicorp.ng": "Managing Director",
+  "uzoma nwagba": "Managing Director",
+  "lamusu@credicorp.ng": "Chief of Staff",
+  "ladi amusu": "Chief of Staff",
+};
+
+export function getExecutiveTitle(user: SessionUser | null | undefined): string {
+  if (!user) return "Executive";
+  const em = (user.email || "").toLowerCase().trim();
+  const nm = (user.name || "").toLowerCase().trim();
+  if (EXECUTIVE_TITLES[em]) return EXECUTIVE_TITLES[em];
+  if (EXECUTIVE_TITLES[nm]) return EXECUTIVE_TITLES[nm];
+  if (nm.includes("kolawole") || nm.includes("olanike")) return "Executive Director, Operations";
+  if (nm.includes("abdullahi") || nm.includes("aisha")) return "Executive Director, Credit & Portfolio Management";
+  if (nm.includes("nwagba") || nm.includes("uzoma")) return "Managing Director";
+  if (nm.includes("amusu") || nm.includes("ladi")) return "Chief of Staff";
+  return "Executive";
+}
+
 export function displayRoleLabel(user: SessionUser): string {
   if (user.role === "admin") {
     return user.activeRole
       ? `${roleLabel(user.activeRole)} (Admin)`
       : `${roleLabel("head_of_audit")} (Admin)`;
+  }
+  if (user.role === "executive") {
+    return getExecutiveTitle(user);
   }
   return roleLabel(user.role);
 }

@@ -416,6 +416,16 @@ export default function SidebarNav({ user, shell = "legacy" }: SidebarNavProps) 
                 </span>
                 Dashboard
               </Link>
+              <Link
+                href="/updates"
+                className={activeView === "updates" ? "active" : undefined}
+                data-view="updates"
+              >
+                <span className="ic">
+                  <HugeiconsIcon icon={TransactionHistoryIcon} size={ICON_SIZE} strokeWidth={1.75} />
+                </span>
+                Latest Updates
+              </Link>
             </div>
             <ExecutiveDepartmentsNav />
           </>

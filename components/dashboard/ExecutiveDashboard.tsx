@@ -4,9 +4,10 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useUser } from "@/components/chrome/UserContext";
-import { CritPill, Empty, Kpi, RowOpen, StatusPill } from "@/components/ui";
+import { CritPill, Empty, Kpi } from "@/components/ui";
 import { DEPARTMENTS } from "@/components/settings/staff";
 import { departmentToSlug, getDepartmentStats, type DepartmentStats } from "@/lib/dept-slugs";
+import { getExecutiveTitle } from "@/lib/permissions";
 import { hrefForView, isLegacyPath } from "@/lib/routes";
 import {
   allObs,
@@ -43,6 +44,14 @@ type UnifiedObservation = {
   rawInternal?: ObsWithContext;
   rawExternal?: ExtFinding;
 };
+
+function shortDeptName(name: string): string {
+  const clean = name.replace(/\s+Department$/i, "").trim();
+  if (clean.toLowerCase() === "risk management") return "Risk Mgt";
+  if (clean.toLowerCase() === "corporate communications") return "Corp Comms";
+  if (clean.toLowerCase() === "credit operations") return "Credit Ops";
+  return clean;
+}
 
 type ActivityItem = {
   id: string;
@@ -149,10 +158,6 @@ export default function ExecutiveDashboard() {
   const user = useUser();
   const router = useRouter();
 
-  const [activeTab, setActiveTab] = useState<"pending" | "done" | "all">("pending");
-  const [deptFilter, setDeptFilter] = useState<string>("All");
-  const [critFilter, setCritFilter] = useState<string>("All");
-  const [search, setSearch] = useState<string>("");
 
   // Compile stats across all departments
   const departmentSummaries: DepartmentStats[] = useMemo(() => {
@@ -392,32 +397,6 @@ export default function ExecutiveDashboard() {
     return recentActivities.filter((a) => a.kind === "update" || a.kind === "response");
   }, [recentActivities, activityFilter]);
 
-  // Filtered observations
-  const filteredObservations = useMemo(() => {
-    return allObservations.filter((item) => {
-      // Tab filter
-      if (activeTab === "pending" && item.status === "Closed") return false;
-      if (activeTab === "done" && item.status !== "Closed") return false;
-
-      // Department filter
-      if (deptFilter !== "All" && item.department !== deptFilter) return false;
-
-      // Criticality filter
-      if (critFilter !== "All" && item.criticality !== critFilter) return false;
-
-      // Search filter
-      if (search.trim()) {
-        const q = search.toLowerCase();
-        const matchTitle = item.title.toLowerCase().includes(q);
-        const matchRef = item.ref.toLowerCase().includes(q);
-        const matchOwner = item.ownerName.toLowerCase().includes(q);
-        const matchDept = item.department.toLowerCase().includes(q);
-        if (!matchTitle && !matchRef && !matchOwner && !matchDept) return false;
-      }
-
-      return true;
-    });
-  }, [allObservations, activeTab, deptFilter, critFilter, search]);
 
   // Criticality distribution counts
   const byC = useMemo(() => {
@@ -485,6 +464,9 @@ export default function ExecutiveDashboard() {
       <div className="dash-welcome anim-fade-in">
         <div className="dash-welcome-text">
           <h1>Welcome, {user.name}</h1>
+          <div style={{ fontSize: 13, color: "var(--muted)", fontWeight: 500, marginTop: 4 }}>
+            {getExecutiveTitle(user)}
+          </div>
         </div>
       </div>
 
@@ -800,9 +782,152 @@ export default function ExecutiveDashboard() {
           </div>
         </div>
 
-        {/* Right Column: Critical & High Priority Watch + Department Risk Exposure */}
+        {/* Right Column: Department Risk Exposure (Bar Chart) + Critical & High Priority Watch */}
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-          {/* Card 1: Critical & High Priority Watch */}
+          {/* Card 1: Department Risk Exposure & Workload (Bar Chart) */}
+          <div
+            className="card anim-fade-in"
+            style={{
+              padding: 0,
+              overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <div
+              className="row"
+              style={{
+                padding: "16px 20px 12px 20px",
+                borderBottom: "1px solid var(--line, #e2e8f0)",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+              }}
+            >
+              <div>
+                <div className="seclabel">Department Risk Exposure &amp; Workload</div>
+              </div>
+              <span className="hint" style={{ fontSize: 11 }}>
+                Pending observations by department
+              </span>
+            </div>
+
+            <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
+              {rankedDepartments.map((ds) => {
+                const cleanName = shortDeptName(ds.department);
+                const critCount =
+                  ds.internal.all.filter((o) => o.criticality === "Critical" && o.status !== "Closed").length +
+                  ds.external.all.filter((f) => f.severity === "Critical" && f.status !== "Closed").length;
+                const highCount =
+                  ds.internal.all.filter((o) => o.criticality === "High" && o.status !== "Closed").length +
+                  ds.external.all.filter((f) => f.severity === "High" && f.status !== "Closed").length;
+                const otherCount = Math.max(0, ds.totals.pending - critCount - highCount);
+                const maxPending = Math.max(...rankedDepartments.map((d) => d.totals.pending), 1);
+                const critWidth = (critCount / maxPending) * 100;
+                const highWidth = (highCount / maxPending) * 100;
+                const otherWidth = (otherCount / maxPending) * 100;
+
+                return (
+                  <Link
+                    key={ds.department}
+                    href={`/departments/${ds.slug}/internal`}
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 6,
+                      textDecoration: "none",
+                      color: "inherit",
+                      padding: "6px 8px",
+                      borderRadius: 8,
+                      transition: "background 0.15s ease",
+                    }}
+                    className="tracker-row"
+                    title={`View ${ds.department} observations`}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12.5 }}>
+                      <span style={{ fontWeight: 600, color: "var(--ink)" }}>{cleanName}</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        {critCount > 0 ? (
+                          <span className="pill c-Critical" style={{ fontSize: 9.5, padding: "1px 5px", whiteSpace: "nowrap" }}>
+                            {critCount} Crit
+                          </span>
+                        ) : null}
+                        {highCount > 0 ? (
+                          <span className="pill c-High" style={{ fontSize: 9.5, padding: "1px 5px", whiteSpace: "nowrap" }}>
+                            {highCount} High
+                          </span>
+                        ) : null}
+                        {ds.totals.overdue > 0 ? (
+                          <span className="pill c-Critical" style={{ fontSize: 9.5, padding: "1px 5px", fontWeight: 700, whiteSpace: "nowrap" }}>
+                            {ds.totals.overdue} Overdue
+                          </span>
+                        ) : null}
+                        <span
+                          style={{
+                            fontWeight: 700,
+                            fontSize: 13,
+                            color: ds.totals.pending > 0 ? "var(--brand-700, #0a4a3b)" : "var(--muted)",
+                            minWidth: 60,
+                            textAlign: "right",
+                          }}
+                        >
+                          {ds.totals.pending} <span style={{ fontSize: 10.5, fontWeight: 400, color: "var(--muted)" }}>pending</span>
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Horizontal Bar Chart Track */}
+                    <div
+                      style={{
+                        width: "100%",
+                        height: 8,
+                        background: "var(--surface-subtle, #edf2ef)",
+                        borderRadius: 4,
+                        overflow: "hidden",
+                        display: "flex",
+                      }}
+                    >
+                      {critCount > 0 ? (
+                        <div
+                          style={{
+                            width: `${critWidth}%`,
+                            background: "var(--high, #dc2626)",
+                            transition: "width 0.3s ease",
+                          }}
+                          title={`${critCount} Critical`}
+                        />
+                      ) : null}
+                      {highCount > 0 ? (
+                        <div
+                          style={{
+                            width: `${highWidth}%`,
+                            background: "#f59e0b",
+                            transition: "width 0.3s ease",
+                          }}
+                          title={`${highCount} High`}
+                        />
+                      ) : null}
+                      {otherCount > 0 ? (
+                        <div
+                          style={{
+                            width: `${otherWidth}%`,
+                            background: "var(--brand-500, #10b981)",
+                            transition: "width 0.3s ease",
+                          }}
+                          title={`${otherCount} Moderate/Low`}
+                        />
+                      ) : null}
+                      {ds.totals.pending === 0 ? (
+                        <div style={{ width: "100%", background: "#e2e8f0" }} />
+                      ) : null}
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Card 2: Critical & High Priority Watch (Interchanged under Department Risk Exposure) */}
           <div
             className="card anim-fade-in"
             style={{
@@ -864,12 +989,17 @@ export default function ExecutiveDashboard() {
                         <td>
                           <b style={{ fontSize: 12.5, color: "var(--ink)" }}>{item.title}</b>
                         </td>
-                        <td>
+                        <td style={{ whiteSpace: "nowrap" }}>
                           <span
                             className="pill"
-                            style={{ background: "#edf4f1", color: "#19302a", fontSize: 10.5 }}
+                            style={{
+                              background: "#edf4f1",
+                              color: "#19302a",
+                              fontSize: 10.5,
+                              whiteSpace: "nowrap",
+                            }}
                           >
-                            {item.department.replace(/\s+Department$/i, "")}
+                            {shortDeptName(item.department)}
                           </span>
                         </td>
                       </tr>
@@ -879,328 +1009,7 @@ export default function ExecutiveDashboard() {
               </div>
             )}
           </div>
-
-          {/* Card 2: Department Risk Exposure & Workload — Positioned under Critical & High Watch */}
-          <div className="card anim-fade-in">
-            <div
-              className="row"
-              style={{
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: 16,
-                flexWrap: "wrap",
-                gap: 10,
-              }}
-            >
-              <div>
-                <div className="seclabel">Department Risk Exposure &amp; Workload</div>
-                <div className="hint" style={{ marginTop: 2 }}>
-                  Workload distribution and risk severity breakdown per department.
-                </div>
-              </div>
-
-              <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                {rankedDepartments.length} departments
-              </div>
-            </div>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-                gap: 14,
-              }}
-            >
-              {rankedDepartments.map((ds) => {
-                const cleanName = ds.department.replace(/\s+Department$/i, "");
-                const critCount =
-                  ds.internal.all.filter((o) => o.criticality === "Critical").length +
-                  ds.external.all.filter((f) => f.severity === "Critical").length;
-                const highCount =
-                  ds.internal.all.filter((o) => o.criticality === "High").length +
-                  ds.external.all.filter((f) => f.severity === "High").length;
-
-                return (
-                  <div
-                    key={ds.department}
-                    style={{
-                      background: "#fff",
-                      border: "1px solid var(--line, #e2e8f0)",
-                      borderRadius: 10,
-                      padding: "14px 16px",
-                      display: "flex",
-                      flexDirection: "column",
-                      justifyContent: "space-between",
-                      boxShadow: "0 1px 3px rgba(10, 74, 59, 0.04)",
-                      transition: "transform 0.15s ease, box-shadow 0.15s ease",
-                    }}
-                  >
-                    <div>
-                      <div
-                        className="row"
-                        style={{
-                          alignItems: "flex-start",
-                          justifyContent: "space-between",
-                          gap: 8,
-                          marginBottom: 8,
-                        }}
-                      >
-                        <Link
-                          href={`/departments/${ds.slug}/internal`}
-                          style={{
-                            fontWeight: 700,
-                            fontSize: 13.5,
-                            color: "var(--brand-700, #0a4a3b)",
-                            textDecoration: "none",
-                            lineHeight: 1.3,
-                          }}
-                        >
-                          {cleanName}
-                        </Link>
-                        {ds.health === "good" ? (
-                          <span className="pill c-Low" style={{ fontSize: 10, padding: "2px 6px" }}>Good</span>
-                        ) : ds.health === "attention" ? (
-                          <span className="pill c-High" style={{ fontSize: 10, padding: "2px 6px" }}>Attention</span>
-                        ) : (
-                          <span className="pill sop-pending-pill" style={{ fontSize: 10, padding: "2px 6px" }}>In Progress</span>
-                        )}
-                      </div>
-
-                      <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 8 }}>
-                        <span style={{ fontSize: 20, fontWeight: 700, color: ds.totals.pending > 0 ? "var(--high)" : "var(--closed)" }}>
-                          {ds.totals.pending}
-                        </span>
-                        <span style={{ fontSize: 11.5, color: "var(--muted)" }}>
-                          pending / {ds.totals.total} total
-                        </span>
-                      </div>
-
-                      {/* Badges for Critical / High / Overdue */}
-                      <div className="row" style={{ gap: 4, flexWrap: "wrap" }}>
-                        {critCount > 0 ? (
-                          <span className="pill c-Critical" style={{ fontSize: 9.5, padding: "1px 5px" }}>
-                            {critCount} Critical
-                          </span>
-                        ) : null}
-                        {highCount > 0 ? (
-                          <span className="pill c-High" style={{ fontSize: 9.5, padding: "1px 5px" }}>
-                            {highCount} High
-                          </span>
-                        ) : null}
-                        {ds.totals.overdue > 0 ? (
-                          <span className="pill c-Critical" style={{ fontSize: 9.5, padding: "1px 5px", fontWeight: 700 }}>
-                            {ds.totals.overdue} Overdue
-                          </span>
-                        ) : null}
-                        {critCount === 0 && highCount === 0 && ds.totals.overdue === 0 ? (
-                          <span className="pill" style={{ background: "#edf4f1", color: "#2e7d32", fontSize: 9.5 }}>
-                            No Critical/High
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
         </div>
-      </div>
-
-      {/* Row 3: Full-width Cross-Department Observations Snapshot */}
-      <div className="card anim-fade-in">
-        <div
-          className="row"
-          style={{
-            alignItems: "center",
-            justifyContent: "space-between",
-            flexWrap: "wrap",
-            gap: 10,
-            marginBottom: 12,
-          }}
-        >
-          <div>
-            <div className="seclabel">Cross-Department Observations Snapshot</div>
-            <div className="hint" style={{ marginTop: 2 }}>
-              Inspect observations across all departments, review remediation dates, and track past closures.
-            </div>
-          </div>
-          {/* Tabs */}
-          <div className="seg" role="tablist">
-            <button
-              type="button"
-              className={activeTab === "pending" ? "active" : undefined}
-              onClick={() => setActiveTab("pending")}
-            >
-              What&rsquo;s Left ({overallTotals.pending})
-            </button>
-            <button
-              type="button"
-              className={activeTab === "done" ? "active" : undefined}
-              onClick={() => setActiveTab("done")}
-            >
-              What Has Been Done ({overallTotals.done})
-            </button>
-            <button
-              type="button"
-              className={activeTab === "all" ? "active" : undefined}
-              onClick={() => setActiveTab("all")}
-            >
-              All ({overallTotals.total})
-            </button>
-          </div>
-        </div>
-
-        {/* Filters */}
-        <div
-          className="row"
-          style={{ gap: 10, flexWrap: "wrap", marginBottom: 14, alignItems: "center" }}
-        >
-          <div className="filter-group">
-            <span className="filter-label">Department</span>
-            <select
-              className="field-select field-select-sm"
-              value={deptFilter}
-              onChange={(e) => setDeptFilter(e.target.value)}
-            >
-              <option value="All">All Departments</option>
-              {DEPARTMENTS.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="filter-group">
-            <span className="filter-label">Criticality</span>
-            <select
-              className="field-select field-select-sm"
-              value={critFilter}
-              onChange={(e) => setCritFilter(e.target.value)}
-            >
-              <option value="All">All Criticalities</option>
-              <option value="Critical">Critical</option>
-              <option value="High">High</option>
-              <option value="Moderate">Medium / Moderate</option>
-              <option value="Low">Low</option>
-            </select>
-          </div>
-
-          <div style={{ flex: 1, minWidth: 200 }}>
-            <input
-              type="text"
-              placeholder="Search observations, references, owners…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              style={{ width: "100%", padding: "6px 12px", fontSize: 12.5 }}
-            />
-          </div>
-        </div>
-
-        {/* Observations Table */}
-        {!filteredObservations.length ? (
-          <Empty big="✓">
-            No observations match the selected criteria.
-          </Empty>
-        ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Ref &amp; Criticality</th>
-                  <th scope="col">What Was Raised</th>
-                  <th scope="col">Department</th>
-                  <th scope="col">Progress</th>
-                  <th scope="col">Remediation Date</th>
-                  <th scope="col">Owner</th>
-                  <th scope="col"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredObservations.slice(0, 100).map((item) => (
-                  <tr
-                    key={`${item.type}-${item.id}`}
-                    className="tracker-row"
-                    onClick={() => openObservation(item)}
-                    title="Click to view details"
-                  >
-                    <td style={{ whiteSpace: "nowrap" }}>
-                      <div className="row" style={{ gap: 6, alignItems: "center" }}>
-                        <span style={{ fontWeight: 600, fontSize: 12 }}>{item.ref}</span>
-                        <CritPill crit={item.criticality} />
-                      </div>
-                      <div className="hint" style={{ fontSize: 10.5, marginTop: 2 }}>
-                        {item.type} finding
-                      </div>
-                    </td>
-                    <td style={{ maxWidth: 320 }}>
-                      <RowOpen onOpen={() => openObservation(item)} label={`Open ${item.title}`}>
-                        <b>{item.title}</b>
-                      </RowOpen>
-                      <div className="hint" style={{ fontSize: 11, marginTop: 2 }}>
-                        {item.source}
-                      </div>
-                    </td>
-                    <td>
-                      <span
-                        className="pill"
-                        style={{ background: "#edf4f1", color: "#19302a", fontSize: 11 }}
-                      >
-                        {item.department.replace(/\s+Department$/i, "")}
-                      </span>
-                    </td>
-                    <td>
-                      <StatusPill status={item.status} />
-                    </td>
-                    <td style={{ whiteSpace: "nowrap" }}>
-                      {item.targetDate ? (
-                        <div>
-                          <div style={{ fontSize: 12, fontWeight: 500 }}>{item.targetDate}</div>
-                          {item.status !== "Closed" && (
-                            item.isOverdue ? (
-                              <span
-                                className="pill c-Critical"
-                                style={{ fontSize: 10, padding: "1px 5px", marginTop: 2 }}
-                              >
-                                Overdue
-                              </span>
-                            ) : item.daysDiff != null && item.daysDiff <= 14 ? (
-                              <span
-                                className="pill c-High"
-                                style={{ fontSize: 10, padding: "1px 5px", marginTop: 2 }}
-                              >
-                                Due in {item.daysDiff}d
-                              </span>
-                            ) : null
-                          )}
-                        </div>
-                      ) : (
-                        <span className="hint">—</span>
-                      )}
-                    </td>
-                    <td>
-                      <div style={{ fontSize: 12 }}>{item.ownerName}</div>
-                    </td>
-                    <td className="ra-actions-cell">
-                      <button
-                        className="btn-icon-action"
-                        type="button"
-                        title="View details"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openObservation(item);
-                        }}
-                      >
-                        ↗
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
       </div>
     </>
   );

@@ -51,7 +51,8 @@ export default function DepartmentObservationsPage({
   const stats = useMemo(() => getDepartmentStats(db, deptName), [db, deptName]);
 
   const cleanDeptName = deptName.replace(/\s+Department$/i, "");
-  const pageTitle = `${cleanDeptName} — ${type === "external" ? "External" : "Internal"} Observations`;
+  const fullDeptName = deptName.endsWith("Department") ? deptName : `${deptName} Department`;
+  const pageTitle = `${fullDeptName} — ${type === "external" ? "External" : "Internal"} Observations`;
 
   usePageChrome({ title: pageTitle });
 
@@ -310,7 +311,7 @@ export default function DepartmentObservationsPage({
       {!filteredItems.length ? (
         <div className="card">
           <Empty big="✦">
-            No observations match this criteria for {cleanDeptName}.
+            No observations found
           </Empty>
         </div>
       ) : (
