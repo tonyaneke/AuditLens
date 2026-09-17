@@ -10,26 +10,26 @@ import { departmentToSlug, getDepartmentStats, type DepartmentStats } from "@/li
 import { getExecutiveTitle } from "@/lib/permissions";
 import { hrefForView, isLegacyPath } from "@/lib/routes";
 import {
-  allObs,
+  approvedObs,
+  closeBucketOf,
+  CLOSE_BUCKETS,
+  CRITS,
+  CRIT_HEX,
   daysToClose,
   effectiveClose,
-  extList,
-  extOverdue,
   fmtDate,
   isOverdueObs,
-  obsIsApproved,
   percentages,
   timeAgo,
   uid,
   type ObsWithContext,
 } from "@/lib/workspace/selectors";
-import type { ExtFinding } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 import { deptNameOf } from "@/lib/dept-scope";
 
 type UnifiedObservation = {
   id: string;
-  type: "Internal" | "External";
+  type: "Internal";
   ref: string;
   title: string;
   department: string;
@@ -41,8 +41,7 @@ type UnifiedObservation = {
   daysDiff: number | null;
   ownerName: string;
   source: string;
-  rawInternal?: ObsWithContext;
-  rawExternal?: ExtFinding;
+  rawInternal: ObsWithContext;
 };
 
 function shortDeptName(name: string): string {
@@ -55,7 +54,7 @@ function shortDeptName(name: string): string {
 
 type ActivityItem = {
   id: string;
-  kind: "closure" | "update" | "response";
+  kind: "closure" | "update";
   title: string;
   ref: string;
   department: string;
@@ -65,17 +64,6 @@ type ActivityItem = {
   dateISO: string;
   text: string;
   rawItem: UnifiedObservation;
-};
-
-const EXEC_CRITS = ["Critical", "High", "Moderate", "Low"] as const;
-
-const SEV_COLOR: Record<string, string> = {
-  Critical: "#7a0012",
-  High: "#b00020",
-  Moderate: "#e8590c",
-  Medium: "#e8590c",
-  Low: "#2e7d32",
-  "Process Improvement": "#2c5f8a",
 };
 
 function Donut({
@@ -164,52 +152,37 @@ export default function ExecutiveDashboard() {
     return DEPARTMENTS.map((dept) => getDepartmentStats(db, dept));
   }, [db]);
 
-  // Overall totals across all departments
+  // Approved internal observations (Head of Audit standard — exactly 125 unique items, no double-counting, no external add-in)
+  const approved = useMemo(() => approvedObs(db), [db]);
+
+  // Overall totals matching Head of Audit standard exactly
   const overallTotals = useMemo(() => {
-    let total = 0;
-    let done = 0;
-    let pending = 0;
-    let overdue = 0;
-    let internalTotal = 0;
-    let externalTotal = 0;
-    let critHighTotal = 0;
+    const total = approved.length;
+    const openObs = approved.filter((o) => o.status !== "Closed");
+    const pending = openObs.length;
+    const done = total - pending;
+    const overdue = openObs.filter((o) => isOverdueObs(o, o._r)).length;
+    // Open Critical & High exposures (matching Head of Audit standard: 26 active key exposures)
+    const critHighTotal = openObs.filter(
+      (o) => o.criticality === "Critical" || o.criticality === "High",
+    ).length;
+    const rate = total > 0 ? Math.round((done / total) * 100) : 0;
 
-    for (const d of departmentSummaries) {
-      total += d.totals.total;
-      done += d.totals.done;
-      pending += d.totals.pending;
-      overdue += d.totals.overdue;
-      internalTotal += d.internal.all.length;
-      externalTotal += d.external.all.length;
-
-      critHighTotal += d.internal.all.filter(
-        (o) => o.criticality === "Critical" || o.criticality === "High",
-      ).length;
-      critHighTotal += d.external.all.filter(
-        (f) => f.severity === "Critical" || f.severity === "High",
-      ).length;
-    }
-
-    const rate = total > 0 ? Math.round((done / total) * 100) : 100;
     return {
       total,
       done,
       pending,
       overdue,
-      internalTotal,
-      externalTotal,
       critHighTotal,
       rate,
     };
-  }, [departmentSummaries]);
+  }, [approved]);
 
-  // Unified list of all observations
+  // List of all approved internal observations
   const allObservations: UnifiedObservation[] = useMemo(() => {
     const list: UnifiedObservation[] = [];
 
-    // Internal observations
-    const approvedObs = allObs(db).filter(obsIsApproved);
-    for (const o of approvedObs) {
+    for (const o of approved) {
       const deptName = deptNameOf(db, o) || "Unassigned";
       const dt = effectiveClose(o, o._r);
       const days = daysToClose(o, o._r);
@@ -233,37 +206,13 @@ export default function ExecutiveDashboard() {
       });
     }
 
-    // External findings
-    const extFindings = extList(db);
-    for (const f of extFindings) {
-      const deptName = deptNameOf(db, f) || "Unassigned";
-      const isOver = extOverdue(f);
-
-      list.push({
-        id: f.id,
-        type: "External",
-        ref: f.ref || f.sourceRef || `EXT-${f.id.slice(-4)}`,
-        title: f.title || "Untitled finding",
-        department: deptName,
-        departmentSlug: departmentToSlug(deptName),
-        criticality: f.severity || "Medium",
-        status: f.status || "Open",
-        targetDate: f.targetDate ? fmtDate(f.targetDate) : undefined,
-        isOverdue: isOver,
-        daysDiff: null,
-        ownerName: f.owner || "Unassigned",
-        source: f.source ? `External · ${f.source}` : "External Finding",
-        rawExternal: f,
-      });
-    }
-
     // Sort: overdue first, then by criticality, then targetDate
     return list.sort((a, b) => {
       if (a.isOverdue && !b.isOverdue) return -1;
       if (!a.isOverdue && b.isOverdue) return 1;
       return a.title.localeCompare(b.title);
     });
-  }, [db]);
+  }, [approved, db]);
 
   // Open High & Critical observations needing executive oversight
   const highCritWatch = useMemo(() => {
@@ -283,87 +232,53 @@ export default function ExecutiveDashboard() {
       .slice(0, 6);
   }, [allObservations]);
 
-  // Ranked departments by pending observations
+  // Ranked departments by pending internal observations
   const rankedDepartments = useMemo(() => {
     return [...departmentSummaries]
-      .filter((d) => d.totals.total > 0)
+      .filter((d) => d.internal.all.length > 0)
       .sort(
         (a, b) =>
-          b.totals.pending - a.totals.pending ||
-          b.totals.overdue - a.totals.overdue ||
-          b.totals.total - a.totals.total,
+          b.internal.pending.length - a.internal.pending.length ||
+          b.internal.overdue.length - a.internal.overdue.length ||
+          b.internal.all.length - a.internal.all.length,
       )
       .slice(0, 6);
   }, [departmentSummaries]);
 
-  // Recent remediation updates and verified closures
+  // Recent remediation updates and verified closures (Internal only)
   const recentActivities: ActivityItem[] = useMemo(() => {
     const list: ActivityItem[] = [];
 
     for (const obs of allObservations) {
-      if (obs.type === "Internal" && obs.rawInternal) {
-        const raw = obs.rawInternal;
-        if (raw.status === "Closed" && raw.closedDateISO) {
+      const raw = obs.rawInternal;
+      if (raw.status === "Closed" && raw.closedDateISO) {
+        list.push({
+          id: `cl-${raw.id}`,
+          kind: "closure",
+          title: raw.title || "Untitled",
+          ref: obs.ref,
+          department: obs.department,
+          criticality: obs.criticality,
+          actor: raw.headVerifiedByName || raw.verifiedBy || "Internal Audit",
+          dateStr: fmtDate(raw.closedDateISO),
+          dateISO: raw.closedDateISO,
+          text: raw.closureNote || "Observation remediated and verified closed by Internal Audit.",
+          rawItem: obs,
+        });
+      }
+      if (raw.updates && raw.updates.length > 0) {
+        for (const u of raw.updates) {
           list.push({
-            id: `cl-${raw.id}`,
-            kind: "closure",
+            id: `up-${u.id || uid()}`,
+            kind: "update",
             title: raw.title || "Untitled",
             ref: obs.ref,
             department: obs.department,
             criticality: obs.criticality,
-            actor: raw.headVerifiedByName || raw.verifiedBy || "Internal Audit",
-            dateStr: fmtDate(raw.closedDateISO),
-            dateISO: raw.closedDateISO,
-            text: raw.closureNote || "Observation remediated and verified closed by Internal Audit.",
-            rawItem: obs,
-          });
-        }
-        if (raw.updates && raw.updates.length > 0) {
-          for (const u of raw.updates) {
-            list.push({
-              id: `up-${u.id || uid()}`,
-              kind: "update",
-              title: raw.title || "Untitled",
-              ref: obs.ref,
-              department: obs.department,
-              criticality: obs.criticality,
-              actor: u.byName || u.by || raw.owner || "Action Owner",
-              dateStr: u.at ? fmtDate(u.at) : "",
-              dateISO: u.at || "",
-              text: u.text || "Remediation progress update submitted.",
-              rawItem: obs,
-            });
-          }
-        }
-      } else if (obs.type === "External" && obs.rawExternal) {
-        const raw = obs.rawExternal;
-        if (raw.status === "Closed" && raw.closedDateISO) {
-          list.push({
-            id: `ext-cl-${raw.id}`,
-            kind: "closure",
-            title: raw.title || "Untitled Finding",
-            ref: obs.ref,
-            department: obs.department,
-            criticality: obs.criticality,
-            actor: raw.verifiedBy || "Compliance / External Audit",
-            dateStr: fmtDate(raw.closedDateISO),
-            dateISO: raw.closedDateISO,
-            text: raw.closureEvidence || "External audit finding remediated and closed.",
-            rawItem: obs,
-          });
-        }
-        if (raw.ownerResponse || raw.managementResponse) {
-          list.push({
-            id: `ext-resp-${raw.id}`,
-            kind: "response",
-            title: raw.title || "Untitled Finding",
-            ref: obs.ref,
-            department: obs.department,
-            criticality: obs.criticality,
-            actor: raw.owner || "Management",
-            dateStr: raw.targetDate ? fmtDate(raw.targetDate) : "",
-            dateISO: raw.targetDate || "",
-            text: raw.ownerResponse || raw.managementResponse || "Management response recorded.",
+            actor: u.byName || u.by || raw.owner || "Action Owner",
+            dateStr: u.at ? fmtDate(u.at) : "",
+            dateISO: u.at || "",
+            text: u.text || "Remediation progress update submitted.",
             rawItem: obs,
           });
         }
@@ -394,21 +309,15 @@ export default function ExecutiveDashboard() {
   const filteredActivities = useMemo(() => {
     if (activityFilter === "all") return recentActivities;
     if (activityFilter === "closure") return recentActivities.filter((a) => a.kind === "closure");
-    return recentActivities.filter((a) => a.kind === "update" || a.kind === "response");
+    return recentActivities.filter((a) => a.kind === "update");
   }, [recentActivities, activityFilter]);
 
-
-  // Criticality distribution counts
+  // Criticality distribution counts (all 5 standard criticalities)
   const byC = useMemo(() => {
-    const counts: Record<string, number> = {
-      Critical: 0,
-      High: 0,
-      Moderate: 0,
-      Low: 0,
-    };
+    const counts: Record<string, number> = {};
+    CRITS.forEach((c) => (counts[c] = 0));
     for (const o of allObservations) {
-      const c = o.criticality === "Medium" ? "Moderate" : o.criticality;
-      if (counts[c] !== undefined) counts[c]++;
+      if (counts[o.criticality] != null) counts[o.criticality]++;
       else counts.Moderate = (counts.Moderate || 0) + 1;
     }
     return counts;
@@ -416,43 +325,42 @@ export default function ExecutiveDashboard() {
 
   // Criticality percentages
   const critPercentages = useMemo(() => {
-    return percentages(EXEC_CRITS.map((c) => byC[c] || 0));
+    return percentages(CRITS.map((c) => byC[c] || 0));
   }, [byC]);
 
   // Donut chart segments
   const donutSegs = useMemo(() => {
-    return EXEC_CRITS.map((c) => ({
+    return CRITS.map((c) => ({
       value: byC[c] || 0,
-      color: SEV_COLOR[c],
+      color: CRIT_HEX[c] || "#64748b",
     }));
   }, [byC]);
 
-  // Due status counts for open items
+  // Due status counts for open items (matching Head of Audit close buckets)
   const dueStatusCounts = useMemo(() => {
-    let overdue = 0;
-    let watchlist = 0;
-    let onTrack = 0;
+    const closeB: Record<string, number> = {};
+    CLOSE_BUCKETS.forEach((b) => (closeB[b] = 0));
     for (const o of allObservations) {
       if (o.status === "Closed") continue;
-      if (o.isOverdue) overdue++;
-      else if (o.daysDiff != null && o.daysDiff <= 14) watchlist++;
-      else onTrack++;
+      const b = closeBucketOf(o.rawInternal, o.rawInternal._r);
+      if (b != null) closeB[b]++;
     }
-    return { overdue, watchlist, onTrack };
+    const onTrack = closeB["2–4 weeks"] + closeB["1–3 months"] + closeB["> 3 months"];
+    return {
+      overdue: closeB["Overdue"] || 0,
+      watchlist: closeB["≤ 2 weeks"] || 0,
+      onTrack,
+    };
   }, [allObservations]);
 
   function openObservation(item: UnifiedObservation) {
-    if (item.type === "Internal" && item.rawInternal) {
+    if (item.rawInternal) {
       const o = item.rawInternal;
       const href = hrefForView("observation", {
         audit: o._a.id,
         report: o._r.id,
         obs: o.id,
       });
-      if (isLegacyPath(href)) window.location.assign(href);
-      else router.push(href);
-    } else if (item.type === "External" && item.rawExternal) {
-      const href = hrefForView("extfinding", { ext: item.rawExternal.id });
       if (isLegacyPath(href)) window.location.assign(href);
       else router.push(href);
     }
@@ -484,7 +392,7 @@ export default function ExecutiveDashboard() {
           tone="base"
           label="Total Observations"
           value={overallTotals.total}
-          sub={`${overallTotals.internalTotal} internal · ${overallTotals.externalTotal} external`}
+          sub={`${overallTotals.pending} open · ${overallTotals.done} closed`}
           icon="audit"
         />
         <Kpi
@@ -512,7 +420,7 @@ export default function ExecutiveDashboard() {
           tone="warn"
           label="Critical & High"
           value={overallTotals.critHighTotal}
-          sub="High severity matters"
+          sub="Open key exposures"
           icon="alert"
         />
       </div>
@@ -527,9 +435,9 @@ export default function ExecutiveDashboard() {
             <div className="donutwrap" style={{ marginTop: 10, marginBottom: 16 }}>
               <Donut segs={donutSegs} total={overallTotals.total} label="total" />
               <div className="legend" style={{ flex: 1 }}>
-                {EXEC_CRITS.map((c, i) => (
+                {CRITS.map((c, i) => (
                   <div className="li" key={c}>
-                    <span className="dot" style={{ background: SEV_COLOR[c] }} />
+                    <span className="dot" style={{ background: CRIT_HEX[c] || "#64748b" }} />
                     <span className="lname">{c}</span>
                     <span className="lval">{byC[c] || 0}</span>
                     <span className="lpct">{critPercentages[i]}%</span>
@@ -837,23 +745,21 @@ export default function ExecutiveDashboard() {
               >
                 {rankedDepartments.map((ds, idx) => {
                   const cleanName = shortDeptName(ds.department);
-                  const critCount =
-                    ds.internal.all.filter((o) => o.criticality === "Critical" && o.status !== "Closed").length +
-                    ds.external.all.filter((f) => f.severity === "Critical" && f.status !== "Closed").length;
-                  const highCount =
-                    ds.internal.all.filter((o) => o.criticality === "High" && o.status !== "Closed").length +
-                    ds.external.all.filter((f) => f.severity === "High" && f.status !== "Closed").length;
-                  const otherCount = Math.max(0, ds.totals.pending - critCount - highCount);
-                  const maxPending = Math.max(...rankedDepartments.map((d) => d.totals.pending), 1);
+                  const pendingCount = ds.internal.pending.length;
+                  const overdueCount = ds.internal.overdue.length;
+                  const critCount = ds.internal.all.filter((o) => o.criticality === "Critical" && o.status !== "Closed").length;
+                  const highCount = ds.internal.all.filter((o) => o.criticality === "High" && o.status !== "Closed").length;
+                  const otherCount = Math.max(0, pendingCount - critCount - highCount);
+                  const maxPending = Math.max(...rankedDepartments.map((d) => d.internal.pending.length), 1);
                   const MAX_BAR_HEIGHT = 105;
                   const barHeight =
-                    ds.totals.pending > 0
-                      ? Math.max(12, Math.round((ds.totals.pending / maxPending) * MAX_BAR_HEIGHT))
+                    pendingCount > 0
+                      ? Math.max(12, Math.round((pendingCount / maxPending) * MAX_BAR_HEIGHT))
                       : 4;
 
-                  const critPct = ds.totals.pending > 0 ? (critCount / ds.totals.pending) * 100 : 0;
-                  const highPct = ds.totals.pending > 0 ? (highCount / ds.totals.pending) * 100 : 0;
-                  const otherPct = ds.totals.pending > 0 ? (otherCount / ds.totals.pending) * 100 : 0;
+                  const critPct = pendingCount > 0 ? (critCount / pendingCount) * 100 : 0;
+                  const highPct = pendingCount > 0 ? (highCount / pendingCount) * 100 : 0;
+                  const otherPct = pendingCount > 0 ? (otherCount / pendingCount) * 100 : 0;
 
                   return (
                     <Link
@@ -871,18 +777,18 @@ export default function ExecutiveDashboard() {
                         borderRadius: 6,
                       }}
                       className="dash-bar-column"
-                      title={`${cleanName}: ${ds.totals.pending} pending (${critCount} Critical, ${highCount} High, ${otherCount} Moderate/Low, ${ds.totals.overdue} overdue)`}
+                      title={`${cleanName}: ${pendingCount} pending (${critCount} Critical, ${highCount} High, ${otherCount} Moderate/Low, ${overdueCount} overdue)`}
                     >
                       {/* Top Pending Count */}
                       <span
                         style={{
                           fontSize: 12,
                           fontWeight: 700,
-                          color: ds.totals.pending > 0 ? "var(--ink)" : "var(--muted)",
+                          color: pendingCount > 0 ? "var(--ink)" : "var(--muted)",
                           marginBottom: 6,
                         }}
                       >
-                        {ds.totals.pending}
+                        {pendingCount}
                       </span>
 
                       {/* Stacked Vertical Bar */}
@@ -892,14 +798,14 @@ export default function ExecutiveDashboard() {
                           maxWidth: 36,
                           minWidth: 20,
                           height: barHeight,
-                          background: ds.totals.pending === 0 ? "#e2e8f0" : "transparent",
+                          background: pendingCount === 0 ? "#e2e8f0" : "transparent",
                           borderRadius: "5px 5px 0 0",
                           overflow: "hidden",
                           display: "flex",
                           flexDirection: "column",
                           transformOrigin: "bottom",
                           animation: `barRise 0.65s cubic-bezier(0.16, 1, 0.3, 1) ${idx * 65}ms both`,
-                          boxShadow: ds.totals.pending > 0 ? "0 2px 4px rgba(0,0,0,0.06)" : "none",
+                          boxShadow: pendingCount > 0 ? "0 2px 4px rgba(0,0,0,0.06)" : "none",
                         }}
                       >
                         {critCount > 0 ? (
@@ -952,6 +858,7 @@ export default function ExecutiveDashboard() {
               >
                 {rankedDepartments.map((ds) => {
                   const cleanName = shortDeptName(ds.department);
+                  const overdueCount = ds.internal.overdue.length;
                   return (
                     <Link
                       key={ds.department}
@@ -979,7 +886,7 @@ export default function ExecutiveDashboard() {
                       >
                         {cleanName}
                       </span>
-                      {ds.totals.overdue > 0 ? (
+                      {overdueCount > 0 ? (
                         <span
                           style={{
                             fontSize: 9.5,
@@ -989,7 +896,7 @@ export default function ExecutiveDashboard() {
                             marginTop: 1,
                           }}
                         >
-                          {ds.totals.overdue} overdue
+                          {overdueCount} overdue
                         </span>
                       ) : (
                         <span
