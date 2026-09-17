@@ -66,7 +66,6 @@ export default function UpdatesPage() {
   const [activeTab, setActiveTab] = useState<"all" | "closure" | "update" | "response">("all");
   const [deptFilter, setDeptFilter] = useState<string>("All");
   const [critFilter, setCritFilter] = useState<string>("All");
-  const [search, setSearch] = useState<string>("");
 
   // Extract all approved internal observations and external findings
   const allObservations: UnifiedObservation[] = useMemo(() => {
@@ -267,20 +266,9 @@ export default function UpdatesPage() {
       // Criticality filter
       if (critFilter !== "All" && item.criticality !== critFilter) return false;
 
-      // Search filter
-      if (search.trim()) {
-        const q = search.toLowerCase();
-        const matchTitle = item.title.toLowerCase().includes(q);
-        const matchRef = item.ref.toLowerCase().includes(q);
-        const matchText = item.text.toLowerCase().includes(q);
-        const matchActor = item.actor.toLowerCase().includes(q);
-        const matchDept = item.department.toLowerCase().includes(q);
-        if (!matchTitle && !matchRef && !matchText && !matchActor && !matchDept) return false;
-      }
-
       return true;
     });
-  }, [allActivities, activeTab, deptFilter, critFilter, search]);
+  }, [allActivities, activeTab, deptFilter, critFilter]);
 
   // Navigate to observation
   function openObservation(rawItem: UnifiedObservation) {
@@ -300,27 +288,23 @@ export default function UpdatesPage() {
     }
   }
 
-  const isFiltered = deptFilter !== "All" || critFilter !== "All" || search.trim().length > 0 || activeTab !== "all";
+  const isFiltered = deptFilter !== "All" || critFilter !== "All" || activeTab !== "all";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
-      {/* Toolbar: Workflow Tabs, Department, Criticality, and Search */}
+      {/* Toolbar: Workflow Tabs + Department/Criticality on right */}
       <div
         className="card"
         style={{
           padding: "12px 16px",
-          display: "flex",
-          flexDirection: "column",
-          gap: 12,
         }}
       >
         <div
-          className="row"
           style={{
+            display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            flexWrap: "wrap",
             gap: 12,
           }}
         >
@@ -333,7 +317,7 @@ export default function UpdatesPage() {
               borderRadius: 8,
               gap: 3,
               border: "1px solid var(--line, #e2e8f0)",
-              flexWrap: "wrap",
+              flexShrink: 0,
             }}
             role="tablist"
           >
@@ -411,72 +395,53 @@ export default function UpdatesPage() {
             </button>
           </div>
 
-          {/* Quick Clear Button */}
-          {isFiltered ? (
-            <button
-              type="button"
-              className="btn ghost sm"
-              onClick={() => {
-                setActiveTab("all");
-                setDeptFilter("All");
-                setCritFilter("All");
-                setSearch("");
-              }}
-              style={{ fontSize: 11.5 }}
-            >
-              Clear filters
-            </button>
-          ) : null}
-        </div>
+          {/* Right side: Department + Criticality dropdowns + clear */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div className="filter-group">
+              <span className="filter-label">Department</span>
+              <select
+                className="field-select field-select-sm"
+                value={deptFilter}
+                onChange={(e) => setDeptFilter(e.target.value)}
+              >
+                <option value="All">All Departments</option>
+                {DEPARTMENTS.map((d) => (
+                  <option key={d} value={d}>
+                    {d.replace(/\s+Department$/i, "")}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-        {/* Filters Row: Department, Criticality, and Search */}
-        <div
-          className="row"
-          style={{
-            alignItems: "center",
-            gap: 12,
-            flexWrap: "wrap",
-          }}
-        >
-          <div className="filter-group">
-            <span className="filter-label">Department</span>
-            <select
-              className="field-select field-select-sm"
-              value={deptFilter}
-              onChange={(e) => setDeptFilter(e.target.value)}
-            >
-              <option value="All">All Departments</option>
-              {DEPARTMENTS.map((d) => (
-                <option key={d} value={d}>
-                  {d.replace(/\s+Department$/i, "")}
-                </option>
-              ))}
-            </select>
-          </div>
+            <div className="filter-group">
+              <span className="filter-label">Criticality</span>
+              <select
+                className="field-select field-select-sm"
+                value={critFilter}
+                onChange={(e) => setCritFilter(e.target.value)}
+              >
+                <option value="All">All Criticalities</option>
+                <option value="Critical">Critical</option>
+                <option value="High">High</option>
+                <option value="Medium">Medium / Moderate</option>
+                <option value="Low">Low</option>
+              </select>
+            </div>
 
-          <div className="filter-group">
-            <span className="filter-label">Criticality</span>
-            <select
-              className="field-select field-select-sm"
-              value={critFilter}
-              onChange={(e) => setCritFilter(e.target.value)}
-            >
-              <option value="All">All Criticalities</option>
-              <option value="Critical">Critical</option>
-              <option value="High">High</option>
-              <option value="Medium">Medium / Moderate</option>
-              <option value="Low">Low</option>
-            </select>
-          </div>
-
-          <div style={{ flex: 1, minWidth: 240 }}>
-            <input
-              type="text"
-              placeholder="Search updates, notes, findings, actors, or departments…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              style={{ width: "100%", padding: "6px 12px", fontSize: 12.5 }}
-            />
+            {isFiltered ? (
+              <button
+                type="button"
+                className="btn ghost sm"
+                onClick={() => {
+                  setActiveTab("all");
+                  setDeptFilter("All");
+                  setCritFilter("All");
+                }}
+                style={{ fontSize: 11.5 }}
+              >
+                Clear filters
+              </button>
+            ) : null}
           </div>
         </div>
       </div>
