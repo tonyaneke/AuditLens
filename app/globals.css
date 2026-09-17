@@ -5205,3 +5205,23 @@ a.btn-back {
 }
 .manual-link-go { color: var(--muted); font-size: 14px; flex: none; }
 .manual-link:hover .manual-link-go { color: var(--accent); }
+
+/* Dashboard vertical bar chart animation */
+@keyframes barRise {
+  0% {
+    transform: scaleY(0);
+    opacity: 0.15;
+  }
+  100% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+.dash-bar-column {
+  transition: transform 0.18s ease, filter 0.18s ease;
+}
+.dash-bar-column:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.05);
+}

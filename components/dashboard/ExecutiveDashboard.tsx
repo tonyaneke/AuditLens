@@ -805,7 +805,7 @@ export default function ExecutiveDashboard() {
               }}
             >
               <div>
-                <div className="seclabel">Department Risk Exposure &amp; Workload</div>
+                <div className="seclabel">Departmental risk spread</div>
               </div>
               {/* Severity Legend */}
               <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 11, color: "var(--muted)" }}>
@@ -835,7 +835,7 @@ export default function ExecutiveDashboard() {
                   height: 145,
                 }}
               >
-                {rankedDepartments.map((ds) => {
+                {rankedDepartments.map((ds, idx) => {
                   const cleanName = shortDeptName(ds.department);
                   const critCount =
                     ds.internal.all.filter((o) => o.criticality === "Critical" && o.status !== "Closed").length +
@@ -869,9 +869,8 @@ export default function ExecutiveDashboard() {
                         height: "100%",
                         padding: "4px 2px",
                         borderRadius: 6,
-                        transition: "background 0.15s ease",
                       }}
-                      className="tracker-row"
+                      className="dash-bar-column"
                       title={`${cleanName}: ${ds.totals.pending} pending (${critCount} Critical, ${highCount} High, ${otherCount} Moderate/Low, ${ds.totals.overdue} overdue)`}
                     >
                       {/* Top Pending Count */}
@@ -898,6 +897,9 @@ export default function ExecutiveDashboard() {
                           overflow: "hidden",
                           display: "flex",
                           flexDirection: "column",
+                          transformOrigin: "bottom",
+                          animation: `barRise 0.65s cubic-bezier(0.16, 1, 0.3, 1) ${idx * 65}ms both`,
+                          boxShadow: ds.totals.pending > 0 ? "0 2px 4px rgba(0,0,0,0.06)" : "none",
                         }}
                       >
                         {critCount > 0 ? (

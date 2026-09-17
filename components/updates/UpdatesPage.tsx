@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { usePageChrome } from "@/components/chrome/PageChrome";
 import { CritPill, Empty, Kpi, StatusPill } from "@/components/ui";
@@ -305,22 +304,14 @@ export default function UpdatesPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* Top Controls */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "flex-end",
-          alignItems: "center",
-          gap: 12,
-        }}
-      >
-        <Link
-          href="/"
-          className="btn ghost sm"
-          style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-        >
-          <span>Return to Dashboard</span>
-        </Link>
+      {/* In-page Title & Subtext */}
+      <div>
+        <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "var(--ink)" }}>
+          Latest Updates
+        </h2>
+        <div className="hint" style={{ marginTop: 2, fontSize: 13 }}>
+          Chronological activity feed of verified closures, progress updates, and owner responses across all departments.
+        </div>
       </div>
 
       {/* Summary KPI Cards */}
