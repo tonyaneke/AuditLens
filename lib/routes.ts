@@ -32,7 +32,8 @@ export type ViewKey =
   | "auditlog"
   | "guide"
   | "newobs"
-  | "departments";
+  | "departments"
+  | "updates";
 
 export type ViewOpts = {
   audit?: string;
@@ -77,6 +78,7 @@ export const MIGRATED_VIEWS: ReadonlySet<ViewKey> = new Set<ViewKey>([
   "settings",
   "newobs",
   "departments",
+  "updates",
 ]);
 
 // Where the legacy shell lives. Stage B (dashboard takes "/") moved it to /legacy.
@@ -148,6 +150,8 @@ export function urlForView(view: ViewKey, opts: ViewOpts = {}): string {
       return opts.dept
         ? `/departments/${opts.dept}${opts.type ? `/${opts.type}` : ""}`
         : "/departments";
+    case "updates":
+      return "/updates";
   }
 }
 
@@ -212,6 +216,8 @@ export function viewForPathname(pathname: string): ViewKey | null {
       return "newobs";
     case "departments":
       return "departments";
+    case "updates":
+      return "updates";
     default:
       return null;
   }

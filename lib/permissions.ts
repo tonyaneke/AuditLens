@@ -35,6 +35,7 @@ export const DETAIL_VIEWS = [
   "newobs",
   "insights",
   "guide",
+  "updates",
 ] as const;
 
 // Views available to an executive / brief viewer (MD & EXCO).
@@ -44,6 +45,7 @@ export const EXECUTIVE_VIEWS = [
   "departments",
   "observation",
   "extfinding",
+  "updates",
 ] as const;
 
 export const ALL_VIEWS = [

@@ -763,6 +763,40 @@ export default function ExecutiveDashboard() {
                 ))}
               </div>
             )}
+
+            {/* View More Activity Button */}
+            <div
+              style={{
+                marginTop: 12,
+                paddingTop: 10,
+                borderTop: "1px solid var(--line, #e2e8f0)",
+                display: "flex",
+                justifyContent: "center",
+              }}
+            >
+              <Link
+                href="/updates"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                  width: "100%",
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: "var(--brand-700, #0a4a3b)",
+                  background: "var(--surface-subtle, #f0f5f2)",
+                  border: "1px solid var(--line, #e2e8f0)",
+                  textDecoration: "none",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                <span>View more updates &amp; remediation activity</span>
+                <span style={{ fontSize: 13 }}>&rarr;</span>
+              </Link>
+            </div>
           </div>
         </div>
 
