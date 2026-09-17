@@ -299,8 +299,8 @@ function ExecutiveDepartmentsNav() {
   }
 
   return (
-    <div className="nav-section">
-      <div className="nav-label">DEPARTMENTS</div>
+    <div className="nav-section" style={{ paddingTop: 20 }}>
+      <div className="nav-label" style={{ paddingTop: 4 }}>DEPARTMENTS</div>
       {DEPARTMENTS.map((dept) => {
         const slug = departmentToSlug(dept);
         const stats = getDepartmentStats(db, dept);
@@ -404,8 +404,8 @@ export default function SidebarNav({ user, shell = "legacy" }: SidebarNavProps) 
       <nav className="nav" id="nav">
         {isExecutive ? (
           <>
-            <div className="nav-section">
-              <div className="nav-label">MAIN</div>
+            <div className="nav-section" style={{ paddingTop: 14 }}>
+              <div className="nav-label" style={{ paddingTop: 4 }}>MAIN</div>
               <Link
                 href="/"
                 className={activeView === "dashboard" ? "active" : undefined}

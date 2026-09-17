@@ -46,19 +46,24 @@ type Snapshot = {
   total?: number;
   kpis?: { keyOpen: number; keyOverdue: number; overdue: number; unmit: number; extOpen: number; extOverdueN: number };
   matters?: string[];
-  criticalObs?: Array<{ title?: string } | string>;
+  criticalObs?: Array<{ title?: string; criticality?: string } | string>;
   keyIssues?: Array<{ title?: string; criticality?: string }>;
 };
 
 function briefEmailText(s: Snapshot, link: string) {
   const k = s.kpis || { keyOpen: 0, keyOverdue: 0, overdue: 0, unmit: 0, extOpen: 0, extOverdueN: 0 };
-  const rawCrit = Array.isArray(s.criticalObs)
-    ? s.criticalObs
-    : Array.isArray(s.keyIssues)
-      ? s.keyIssues.filter((x) => x && x.criticality === "Critical")
-      : [];
-  const critList = rawCrit
-    .map((item) => (typeof item === "string" ? item : item?.title || ""))
+  const rawKeyIssues = Array.isArray(s.keyIssues) ? s.keyIssues : [];
+  const critList = rawKeyIssues.length
+    ? rawKeyIssues
+        .filter((x) => x && x.criticality === "Critical")
+        .map((item) => item.title || "")
+        .filter(Boolean)
+    : (Array.isArray(s.criticalObs) ? s.criticalObs : [])
+        .map((item) => (typeof item === "string" ? item : item?.title || ""))
+        .filter(Boolean);
+  const highList = rawKeyIssues
+    .filter((x) => x && x.criticality === "High")
+    .map((item) => item.title || "")
     .filter(Boolean);
 
   const lines = [
@@ -82,6 +87,13 @@ function briefEmailText(s: Snapshot, link: string) {
       ``,
       `Critical Observations (${critList.length}):`,
       ...critList.map((title, i) => `${i + 1}. ${title}`),
+    );
+  }
+  if (highList.length) {
+    lines.push(
+      ``,
+      `High Priority Observations (${highList.length}):`,
+      ...highList.map((title, i) => `${i + 1}. ${title}`),
     );
   }
   lines.push(

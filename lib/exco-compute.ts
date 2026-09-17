@@ -128,7 +128,7 @@ export function computeExcoSnapshot(data: any, opts: { period?: string; headline
       owner: x.o.owner || "",
       overdue: isOverdueObs(x.o, x.r),
     })),
-    keyIssues: keySorted.slice(0, 15).map((x) => mapBriefIssueDetail(x.o as Observation, x.a, x.r, data)),
+    keyIssues: keySorted.map((x) => mapBriefIssueDetail(x.o as Observation, x.a, x.r, data)),
     themes: themes.slice(0, 8),
     fraud: unmit.slice(0, 12).map((f) => mapBriefFraudDetail(f)),
     ext: extSorted.slice(0, 10).map((f) => mapBriefExtDetail(f, data)),

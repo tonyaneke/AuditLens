@@ -59,13 +59,20 @@ function briefDate(b: ExcoBrief): Date | null {
 
 function buildExcoEmailText(s: Record<string, unknown>, org: string, link: string): string {
   const k = (s.kpis || {}) as Record<string, number>;
-  const rawCrit = Array.isArray(s.criticalObs)
-    ? s.criticalObs
-    : Array.isArray(s.keyIssues)
-      ? (s.keyIssues as Array<{ criticality?: string; title?: string }>).filter((x) => x && x.criticality === "Critical")
-      : [];
-  const critList = rawCrit
-    .map((item) => (typeof item === "string" ? item : (item as { title?: string })?.title || ""))
+  const rawKeyIssues = Array.isArray(s.keyIssues)
+    ? (s.keyIssues as Array<{ criticality?: string; title?: string }>)
+    : [];
+  const critList = rawKeyIssues.length
+    ? rawKeyIssues
+        .filter((x) => x && x.criticality === "Critical")
+        .map((item) => (typeof item === "string" ? item : item?.title || ""))
+        .filter(Boolean)
+    : (Array.isArray(s.criticalObs) ? s.criticalObs : [])
+        .map((item) => (typeof item === "string" ? item : (item as { title?: string })?.title || ""))
+        .filter(Boolean);
+  const highList = rawKeyIssues
+    .filter((x) => x && x.criticality === "High")
+    .map((item) => (typeof item === "string" ? item : item?.title || ""))
     .filter(Boolean);
 
   const lines = [
@@ -89,6 +96,13 @@ function buildExcoEmailText(s: Record<string, unknown>, org: string, link: strin
       ``,
       `Critical Observations (${critList.length}):`,
       ...critList.map((title, i) => `${i + 1}. ${title}`),
+    );
+  }
+  if (highList.length) {
+    lines.push(
+      ``,
+      `High Priority Observations (${highList.length}):`,
+      ...highList.map((title, i) => `${i + 1}. ${title}`),
     );
   }
   lines.push(

@@ -152,14 +152,15 @@ export function buildBriefEmailHtml(s: BriefSnapshot, link: string) {
     const [fg, bg] = tones[tone] || tones.neutral;
     return `<td width="20%" valign="top" style="padding:4px"><div style="background:${bg};border:1px solid #e1eae7;border-radius:10px;padding:11px 11px"><div style="font-size:11px;font-weight:700;color:#19302a">${escapeHtml(label)}</div><div style="font-size:21px;font-weight:800;color:${fg};line-height:1.1;margin-top:6px">${escapeHtml(String(num))}</div><div style="font-size:10px;color:#64807a;margin-top:3px">${escapeHtml(sub)}</div></div></td>`;
   };
-  const rawCrit = Array.isArray(s.criticalObs)
-    ? s.criticalObs
-    : Array.isArray((s as { keyIssues?: unknown[] }).keyIssues)
-      ? ((s as { keyIssues: Array<{ criticality?: string; title?: string }> }).keyIssues).filter((x) => x && x.criticality === "Critical")
-      : [];
-  const critList: string[] = rawCrit
-    .map((item) => (typeof item === "string" ? item : (item as { title?: string; name?: string })?.title || (item as { title?: string; name?: string })?.name || ""))
-    .filter(Boolean);
+  type BriefIssue = { title?: string; name?: string; criticality?: string; department?: string; audit?: string; owner?: string; overdue?: boolean };
+  const rawKeyIssues = Array.isArray((s as { keyIssues?: unknown[] }).keyIssues)
+    ? ((s as { keyIssues: BriefIssue[] }).keyIssues)
+    : [];
+  const rawCrit: BriefIssue[] = Array.isArray(s.criticalObs)
+    ? (s.criticalObs as BriefIssue[]).map((c) => ({ ...c, criticality: c.criticality || "Critical" }))
+    : rawKeyIssues.filter((x) => x && x.criticality === "Critical");
+  const critList = (rawKeyIssues.length ? rawKeyIssues : rawCrit).filter((x) => x && x.criticality === "Critical");
+  const highList = rawKeyIssues.filter((x) => x && x.criticality === "High");
 
   const remTone = (s.remRate || 0) >= 70 ? "good" : (s.remRate || 0) >= 40 ? "warn" : "bad";
   return `
@@ -188,10 +189,19 @@ export function buildBriefEmailHtml(s: BriefSnapshot, link: string) {
       <div style="background:#ffffff;border:1px solid #e1eae7;border-radius:12px;padding:16px 20px;margin-top:12px">
         <div style="font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#0d5a47;margin-bottom:8px">Matters requiring EXCO attention</div>
         <ol style="margin:0;padding-left:20px;color:#19302a;font-size:13.5px;line-height:1.55">${matters.map((t) => `<li style="margin:7px 0">${escapeHtml(t)}</li>`).join("")}</ol>
-      </div>${critList.length ? `
+      </div>${critList.length || highList.length ? `
       <div style="background:#ffffff;border:1px solid #e1eae7;border-radius:12px;padding:16px 20px;margin-top:12px">
-        <div style="font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#b00020;margin-bottom:8px">Critical Observations (${critList.length})</div>
-        <ul style="margin:0;padding-left:20px;color:#19302a;font-size:13.5px;line-height:1.55">${critList.map((name) => `<li style="margin:7px 0;font-weight:600">${escapeHtml(name)}</li>`).join("")}</ul>
+        <div style="font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#0d5a47;margin-bottom:12px">Open Critical &amp; High Priority Observations (${critList.length + highList.length})</div>
+        ${critList.length ? `
+        <div style="margin-bottom:${highList.length ? "14px" : "0"}">
+          <div style="font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#b00020;margin-bottom:6px">Critical (${critList.length})</div>
+          <ul style="margin:0;padding-left:18px;color:#19302a;font-size:13.5px;line-height:1.55">${critList.map((name) => `<li style="margin:5px 0;font-weight:600">${escapeHtml(name.title || name.name || "")}${name.department ? ` <span style="font-weight:normal;color:#64807a;font-size:12px">(${escapeHtml(name.department)})</span>` : ""}</li>`).join("")}</ul>
+        </div>` : ""}
+        ${highList.length ? `
+        <div>
+          <div style="font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#b45309;margin-bottom:6px">High Priority (${highList.length})</div>
+          <ul style="margin:0;padding-left:18px;color:#19302a;font-size:13.5px;line-height:1.55">${highList.map((name) => `<li style="margin:5px 0;font-weight:600">${escapeHtml(name.title || name.name || "")}${name.department ? ` <span style="font-weight:normal;color:#64807a;font-size:12px">(${escapeHtml(name.department)})</span>` : ""}</li>`).join("")}</ul>
+        </div>` : ""}
       </div>` : ""}
       <p style="font-size:13px;color:#334155;margin:16px 4px 4px">The full Executive Assurance Brief — critical &amp; high-risk issues, recurring risk themes, unmitigated fraud risks and regulatory exposure — is available at the link below. Open it in your web browser to view the complete brief.</p>
       <div style="margin:10px 4px 4px"><a href="${escapeHtml(link)}" style="display:inline-block;background:#1f8a5b;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600;font-size:14px">Open the Executive Assurance Brief</a></div>

@@ -25,7 +25,7 @@ export default function DashboardPage() {
   const isExecutive = role === "executive";
 
   usePageChrome({
-    title: "Dashboard",
+    title: isExecutive ? "" : "Dashboard",
     actions: isOwner || isExecutive ? undefined : (
       <button className="btn sec sm" type="button" onClick={() => modal.open(<CaeReportDialog />)}>
         ⤓ Quarterly BAC report

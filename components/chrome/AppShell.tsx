@@ -42,7 +42,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
             <div className="topbar-left">
               <div className="topbar-back">{chrome.back}</div>
               <div className="topbar-title-wrap">
-                <h2>{chrome.title}</h2>
+                {chrome.title ? <h2>{chrome.title}</h2> : null}
               </div>
             </div>
             <div className="topbar-center">{chrome.search}</div>

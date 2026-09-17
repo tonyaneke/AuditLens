@@ -60,7 +60,7 @@ type ActivityItem = {
 };
 
 export default function UpdatesPage() {
-  usePageChrome({ title: "Remediation Activity & Latest Updates" });
+  usePageChrome({ title: "Latest Updates" });
   const { db } = useWorkspace();
   const router = useRouter();
 
@@ -305,25 +305,15 @@ export default function UpdatesPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* Header Breadcrumb & Controls */}
+      {/* Top Controls */}
       <div
         style={{
           display: "flex",
-          justifyContent: "space-between",
+          justifyContent: "flex-end",
           alignItems: "center",
-          flexWrap: "wrap",
           gap: 12,
         }}
       >
-        <div>
-          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "var(--ink)" }}>
-            Remediation Activity &amp; Latest Updates
-          </h2>
-          <div className="hint" style={{ marginTop: 2, fontSize: 13 }}>
-            Full chronological activity feed of verified closures, progress updates, and owner responses across all departments.
-          </div>
-        </div>
-
         <Link
           href="/"
           className="btn ghost sm"
@@ -631,9 +621,25 @@ export default function UpdatesPage() {
                           fontWeight: 600,
                           fontSize: 11,
                           padding: "2px 8px",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 4,
                         }}
                       >
-                        💬 Management Response
+                        <svg
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                        </svg>
+                        Management Response
                       </span>
                     )}
 

@@ -807,123 +807,204 @@ export default function ExecutiveDashboard() {
               <div>
                 <div className="seclabel">Department Risk Exposure &amp; Workload</div>
               </div>
-              <span className="hint" style={{ fontSize: 11 }}>
-                Pending observations by department
-              </span>
+              {/* Severity Legend */}
+              <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 11, color: "var(--muted)" }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--high, #dc2626)" }} />
+                  Critical
+                </span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#f59e0b" }} />
+                  High
+                </span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--brand-500, #10b981)" }} />
+                  Moderate/Low
+                </span>
+              </div>
             </div>
 
-            <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
-              {rankedDepartments.map((ds) => {
-                const cleanName = shortDeptName(ds.department);
-                const critCount =
-                  ds.internal.all.filter((o) => o.criticality === "Critical" && o.status !== "Closed").length +
-                  ds.external.all.filter((f) => f.severity === "Critical" && f.status !== "Closed").length;
-                const highCount =
-                  ds.internal.all.filter((o) => o.criticality === "High" && o.status !== "Closed").length +
-                  ds.external.all.filter((f) => f.severity === "High" && f.status !== "Closed").length;
-                const otherCount = Math.max(0, ds.totals.pending - critCount - highCount);
-                const maxPending = Math.max(...rankedDepartments.map((d) => d.totals.pending), 1);
-                const critWidth = (critCount / maxPending) * 100;
-                const highWidth = (highCount / maxPending) * 100;
-                const otherWidth = (otherCount / maxPending) * 100;
+            {/* Vertical Bar Chart Container */}
+            <div style={{ padding: "18px 20px 16px 20px" }}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: `repeat(${rankedDepartments.length}, 1fr)`,
+                  gap: 12,
+                  alignItems: "end",
+                  height: 145,
+                }}
+              >
+                {rankedDepartments.map((ds) => {
+                  const cleanName = shortDeptName(ds.department);
+                  const critCount =
+                    ds.internal.all.filter((o) => o.criticality === "Critical" && o.status !== "Closed").length +
+                    ds.external.all.filter((f) => f.severity === "Critical" && f.status !== "Closed").length;
+                  const highCount =
+                    ds.internal.all.filter((o) => o.criticality === "High" && o.status !== "Closed").length +
+                    ds.external.all.filter((f) => f.severity === "High" && f.status !== "Closed").length;
+                  const otherCount = Math.max(0, ds.totals.pending - critCount - highCount);
+                  const maxPending = Math.max(...rankedDepartments.map((d) => d.totals.pending), 1);
+                  const MAX_BAR_HEIGHT = 105;
+                  const barHeight =
+                    ds.totals.pending > 0
+                      ? Math.max(12, Math.round((ds.totals.pending / maxPending) * MAX_BAR_HEIGHT))
+                      : 4;
 
-                return (
-                  <Link
-                    key={ds.department}
-                    href={`/departments/${ds.slug}/internal`}
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 6,
-                      textDecoration: "none",
-                      color: "inherit",
-                      padding: "6px 8px",
-                      borderRadius: 8,
-                      transition: "background 0.15s ease",
-                    }}
-                    className="tracker-row"
-                    title={`View ${ds.department} observations`}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12.5 }}>
-                      <span style={{ fontWeight: 600, color: "var(--ink)" }}>{cleanName}</span>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  const critPct = ds.totals.pending > 0 ? (critCount / ds.totals.pending) * 100 : 0;
+                  const highPct = ds.totals.pending > 0 ? (highCount / ds.totals.pending) * 100 : 0;
+                  const otherPct = ds.totals.pending > 0 ? (otherCount / ds.totals.pending) * 100 : 0;
+
+                  return (
+                    <Link
+                      key={ds.department}
+                      href={`/departments/${ds.slug}/internal`}
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        justifyContent: "flex-end",
+                        textDecoration: "none",
+                        color: "inherit",
+                        height: "100%",
+                        padding: "4px 2px",
+                        borderRadius: 6,
+                        transition: "background 0.15s ease",
+                      }}
+                      className="tracker-row"
+                      title={`${cleanName}: ${ds.totals.pending} pending (${critCount} Critical, ${highCount} High, ${otherCount} Moderate/Low, ${ds.totals.overdue} overdue)`}
+                    >
+                      {/* Top Pending Count */}
+                      <span
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: ds.totals.pending > 0 ? "var(--ink)" : "var(--muted)",
+                          marginBottom: 6,
+                        }}
+                      >
+                        {ds.totals.pending}
+                      </span>
+
+                      {/* Stacked Vertical Bar */}
+                      <div
+                        style={{
+                          width: "55%",
+                          maxWidth: 36,
+                          minWidth: 20,
+                          height: barHeight,
+                          background: ds.totals.pending === 0 ? "#e2e8f0" : "transparent",
+                          borderRadius: "5px 5px 0 0",
+                          overflow: "hidden",
+                          display: "flex",
+                          flexDirection: "column",
+                        }}
+                      >
                         {critCount > 0 ? (
-                          <span className="pill c-Critical" style={{ fontSize: 9.5, padding: "1px 5px", whiteSpace: "nowrap" }}>
-                            {critCount} Crit
-                          </span>
+                          <div
+                            style={{
+                              height: `${critPct}%`,
+                              background: "var(--high, #dc2626)",
+                              minHeight: 3,
+                            }}
+                            title={`${critCount} Critical`}
+                          />
                         ) : null}
                         {highCount > 0 ? (
-                          <span className="pill c-High" style={{ fontSize: 9.5, padding: "1px 5px", whiteSpace: "nowrap" }}>
-                            {highCount} High
-                          </span>
+                          <div
+                            style={{
+                              height: `${highPct}%`,
+                              background: "#f59e0b",
+                              minHeight: 3,
+                            }}
+                            title={`${highCount} High`}
+                          />
                         ) : null}
-                        {ds.totals.overdue > 0 ? (
-                          <span className="pill c-Critical" style={{ fontSize: 9.5, padding: "1px 5px", fontWeight: 700, whiteSpace: "nowrap" }}>
-                            {ds.totals.overdue} Overdue
-                          </span>
+                        {otherCount > 0 ? (
+                          <div
+                            style={{
+                              height: `${otherPct}%`,
+                              background: "var(--brand-500, #10b981)",
+                              minHeight: 3,
+                            }}
+                            title={`${otherCount} Moderate/Low`}
+                          />
                         ) : null}
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+
+              {/* Baseline axis line */}
+              <div style={{ height: 1, background: "var(--line, #e2e8f0)", width: "100%" }} />
+
+              {/* Department Names & Overdue sub-row */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: `repeat(${rankedDepartments.length}, 1fr)`,
+                  gap: 12,
+                  marginTop: 8,
+                }}
+              >
+                {rankedDepartments.map((ds) => {
+                  const cleanName = shortDeptName(ds.department);
+                  return (
+                    <Link
+                      key={ds.department}
+                      href={`/departments/${ds.slug}/internal`}
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        textDecoration: "none",
+                        color: "inherit",
+                        textAlign: "center",
+                      }}
+                      title={`Open ${cleanName}`}
+                    >
+                      <span
+                        style={{
+                          fontSize: 11.5,
+                          fontWeight: 600,
+                          color: "var(--ink)",
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          maxWidth: "100%",
+                        }}
+                      >
+                        {cleanName}
+                      </span>
+                      {ds.totals.overdue > 0 ? (
                         <span
                           style={{
+                            fontSize: 9.5,
                             fontWeight: 700,
-                            fontSize: 13,
-                            color: ds.totals.pending > 0 ? "var(--brand-700, #0a4a3b)" : "var(--muted)",
-                            minWidth: 60,
-                            textAlign: "right",
+                            color: "var(--high, #dc2626)",
+                            whiteSpace: "nowrap",
+                            marginTop: 1,
                           }}
                         >
-                          {ds.totals.pending} <span style={{ fontSize: 10.5, fontWeight: 400, color: "var(--muted)" }}>pending</span>
+                          {ds.totals.overdue} overdue
                         </span>
-                      </div>
-                    </div>
-
-                    {/* Horizontal Bar Chart Track */}
-                    <div
-                      style={{
-                        width: "100%",
-                        height: 8,
-                        background: "var(--surface-subtle, #edf2ef)",
-                        borderRadius: 4,
-                        overflow: "hidden",
-                        display: "flex",
-                      }}
-                    >
-                      {critCount > 0 ? (
-                        <div
+                      ) : (
+                        <span
                           style={{
-                            width: `${critWidth}%`,
-                            background: "var(--high, #dc2626)",
-                            transition: "width 0.3s ease",
+                            fontSize: 9.5,
+                            color: "var(--muted)",
+                            whiteSpace: "nowrap",
+                            marginTop: 1,
                           }}
-                          title={`${critCount} Critical`}
-                        />
-                      ) : null}
-                      {highCount > 0 ? (
-                        <div
-                          style={{
-                            width: `${highWidth}%`,
-                            background: "#f59e0b",
-                            transition: "width 0.3s ease",
-                          }}
-                          title={`${highCount} High`}
-                        />
-                      ) : null}
-                      {otherCount > 0 ? (
-                        <div
-                          style={{
-                            width: `${otherWidth}%`,
-                            background: "var(--brand-500, #10b981)",
-                            transition: "width 0.3s ease",
-                          }}
-                          title={`${otherCount} Moderate/Low`}
-                        />
-                      ) : null}
-                      {ds.totals.pending === 0 ? (
-                        <div style={{ width: "100%", background: "#e2e8f0" }} />
-                      ) : null}
-                    </div>
-                  </Link>
-                );
-              })}
+                        >
+                          on track
+                        </span>
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
