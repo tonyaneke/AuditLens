@@ -218,15 +218,14 @@ export default function ExecutiveDashboard() {
     });
   }, [approved, db]);
 
-  // Open High & Critical observations needing executive oversight
+  // Open Critical observations needing executive oversight
   const [watchTimelineFilter, setWatchTimelineFilter] = useState<"all" | "overdue" | "due_soon" | "on_track">("all");
-  const [watchCritOnly, setWatchCritOnly] = useState<boolean>(false);
+  const [watchPage, setWatchPage] = useState<number>(1);
+  const WATCH_PAGE_SIZE = 5;
 
-  const allHighCrit = useMemo(() => {
+  const allCriticalObs = useMemo(() => {
     return allObservations.filter(
-      (o) =>
-        (o.criticality === "Critical" || o.criticality === "High") &&
-        o.status !== "Closed",
+      (o) => o.criticality === "Critical" && o.status !== "Closed",
     );
   }, [allObservations]);
 
@@ -235,25 +234,19 @@ export default function ExecutiveDashboard() {
     let overdue = 0;
     let dueSoon = 0;
     let onTrack = 0;
-    let criticalCount = 0;
-    let highCount = 0;
 
-    for (const o of allHighCrit) {
-      if (watchCritOnly && o.criticality !== "Critical") continue;
+    for (const o of allCriticalObs) {
       all++;
       if (o.isOverdue) overdue++;
       else if (o.daysDiff != null && o.daysDiff >= 0 && o.daysDiff <= 14) dueSoon++;
       else onTrack++;
-      if (o.criticality === "Critical") criticalCount++;
-      else highCount++;
     }
-    return { all, overdue, dueSoon, onTrack, criticalCount, highCount };
-  }, [allHighCrit, watchCritOnly]);
+    return { all, overdue, dueSoon, onTrack };
+  }, [allCriticalObs]);
 
-  const highCritWatch = useMemo(() => {
-    return allHighCrit
+  const criticalWatch = useMemo(() => {
+    return allCriticalObs
       .filter((o) => {
-        if (watchCritOnly && o.criticality !== "Critical") return false;
         if (watchTimelineFilter === "overdue") return o.isOverdue;
         if (watchTimelineFilter === "due_soon")
           return !o.isOverdue && o.daysDiff != null && o.daysDiff >= 0 && o.daysDiff <= 14;
@@ -264,11 +257,17 @@ export default function ExecutiveDashboard() {
       .sort((a, b) => {
         if (a.isOverdue && !b.isOverdue) return -1;
         if (!a.isOverdue && b.isOverdue) return 1;
-        if (a.criticality === "Critical" && b.criticality !== "Critical") return -1;
-        if (a.criticality !== "Critical" && b.criticality === "Critical") return 1;
         return (a.daysDiff ?? 999) - (b.daysDiff ?? 999);
       });
-  }, [allHighCrit, watchCritOnly, watchTimelineFilter]);
+  }, [allCriticalObs, watchTimelineFilter]);
+
+  const totalWatchPages = Math.max(1, Math.ceil(criticalWatch.length / WATCH_PAGE_SIZE));
+  const currentWatchPage = Math.min(watchPage, totalWatchPages);
+
+  const paginatedWatch = useMemo(() => {
+    const start = (currentWatchPage - 1) * WATCH_PAGE_SIZE;
+    return criticalWatch.slice(start, start + WATCH_PAGE_SIZE);
+  }, [criticalWatch, currentWatchPage]);
 
   // Ranked departments by pending internal observations
   const rankedDepartments = useMemo(() => {
@@ -940,25 +939,17 @@ export default function ExecutiveDashboard() {
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <div className="seclabel" style={{ margin: 0 }}>
-                    {watchCritOnly ? "Critical Priority Watch" : "Critical & High Priority Watch"}
+                    Critical Priority Watch
                   </div>
                   {watchCounts.all > 0 && (
-                    <span className="pill c-High" style={{ fontSize: 10.5, fontWeight: 700 }}>
+                    <span className="pill c-Critical" style={{ fontSize: 10.5, fontWeight: 700 }}>
                       {watchCounts.all} Active
                     </span>
                   )}
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <button
-                    type="button"
-                    className={`btn ${watchCritOnly ? "pri" : "sec"} sm`}
-                    style={{ fontSize: "11px", padding: "3px 9px", height: "auto" }}
-                    onClick={() => setWatchCritOnly((prev) => !prev)}
-                  >
-                    {watchCritOnly ? "Critical Only ✓" : "Show Critical Only"}
-                  </button>
                   <Link
-                    href={`/observations${watchCritOnly ? "?crit=Critical" : "?crit=High"}`}
+                    href="/observations?crit=Critical"
                     className="btn sec sm"
                     style={{ fontSize: "11px", padding: "3px 9px", height: "auto", textDecoration: "none" }}
                   >
@@ -979,7 +970,10 @@ export default function ExecutiveDashboard() {
                     height: "auto",
                     fontWeight: 600,
                   }}
-                  onClick={() => setWatchTimelineFilter("all")}
+                  onClick={() => {
+                    setWatchTimelineFilter("all");
+                    setWatchPage(1);
+                  }}
                 >
                   All ({watchCounts.all})
                 </button>
@@ -996,7 +990,10 @@ export default function ExecutiveDashboard() {
                     color: watchTimelineFilter === "overdue" ? "#ffffff" : "#b00020",
                     border: "none",
                   }}
-                  onClick={() => setWatchTimelineFilter("overdue")}
+                  onClick={() => {
+                    setWatchTimelineFilter("overdue");
+                    setWatchPage(1);
+                  }}
                 >
                   Overdue ({watchCounts.overdue})
                 </button>
@@ -1013,7 +1010,10 @@ export default function ExecutiveDashboard() {
                     color: watchTimelineFilter === "due_soon" ? "#ffffff" : "#805b00",
                     border: "none",
                   }}
-                  onClick={() => setWatchTimelineFilter("due_soon")}
+                  onClick={() => {
+                    setWatchTimelineFilter("due_soon");
+                    setWatchPage(1);
+                  }}
                 >
                   Due Soon ≤ 2 wks ({watchCounts.dueSoon})
                 </button>
@@ -1030,17 +1030,20 @@ export default function ExecutiveDashboard() {
                     color: watchTimelineFilter === "on_track" ? "#ffffff" : "#2e7d32",
                     border: "none",
                   }}
-                  onClick={() => setWatchTimelineFilter("on_track")}
+                  onClick={() => {
+                    setWatchTimelineFilter("on_track");
+                    setWatchPage(1);
+                  }}
                 >
                   On Track ({watchCounts.onTrack})
                 </button>
               </div>
             </div>
 
-            {!highCritWatch.length ? (
+            {!criticalWatch.length ? (
               <div style={{ padding: 28, display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <Empty big="✓">
-                  No {watchCritOnly ? "Critical" : "Critical or High-risk"} observations matching{" "}
+                  No Critical observations matching{" "}
                   {watchTimelineFilter === "overdue"
                     ? "Overdue"
                     : watchTimelineFilter === "due_soon"
@@ -1052,75 +1055,127 @@ export default function ExecutiveDashboard() {
                 </Empty>
               </div>
             ) : (
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ margin: 0 }}>
-                  <thead>
-                    <tr>
-                      <th scope="col" style={{ width: 100 }}>Severity</th>
-                      <th scope="col">Observation</th>
-                      <th scope="col" style={{ width: 130 }}>Department</th>
-                      <th scope="col" style={{ width: 130 }}>Who (Owner)</th>
-                      <th scope="col" style={{ width: 110 }}>Timeline</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {highCritWatch.map((item) => (
-                      <tr
-                        key={`${item.type}-${item.id}`}
-                        className="tracker-row"
-                        onClick={() => openObservation(item)}
-                        title="Click to view full observation"
-                        style={{ cursor: "pointer" }}
-                      >
-                        <td style={{ whiteSpace: "nowrap" }}>
-                          <CritPill crit={item.criticality} />
-                        </td>
-                        <td>
-                          {item.ref ? (
-                            <span style={{ fontSize: 11.5, color: "var(--muted)", marginRight: 6 }}>
-                              {item.ref}
-                            </span>
-                          ) : null}
-                          <b style={{ fontSize: 12.5, color: "var(--ink)" }}>{item.title}</b>
-                        </td>
-                        <td style={{ whiteSpace: "nowrap" }}>
-                          <span
-                            className="pill"
-                            style={{
-                              background: "#edf4f1",
-                              color: "#19302a",
-                              fontSize: 10.5,
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {shortDeptName(item.department)}
-                          </span>
-                        </td>
-                        <td style={{ whiteSpace: "nowrap", fontSize: 12, color: "var(--ink)" }}>
-                          {item.ownerName || "—"}
-                        </td>
-                        <td style={{ whiteSpace: "nowrap" }}>
-                          {item.isOverdue ? (
-                            <span className="pill c-Critical" style={{ fontSize: 10, fontWeight: 700 }}>
-                              OVERDUE
-                            </span>
-                          ) : item.daysDiff != null && item.daysDiff >= 0 && item.daysDiff <= 14 ? (
-                            <span className="pill c-Moderate" style={{ fontSize: 10, fontWeight: 600 }}>
-                              {item.daysDiff === 0 ? "Due today" : `${item.daysDiff}d left`}
-                            </span>
-                          ) : item.targetDate ? (
-                            <span style={{ fontSize: 11.5, color: "var(--muted)" }}>
-                              {item.targetDate}
-                            </span>
-                          ) : (
-                            <span style={{ fontSize: 11.5, color: "var(--muted)" }}>—</span>
-                          )}
-                        </td>
+              <>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ margin: 0 }}>
+                    <thead>
+                      <tr>
+                        <th scope="col" style={{ width: 100 }}>Severity</th>
+                        <th scope="col">Observation</th>
+                        <th scope="col" style={{ width: 130 }}>Department</th>
+                        <th scope="col" style={{ width: 130 }}>Who (Owner)</th>
+                        <th scope="col" style={{ width: 110 }}>Timeline</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {paginatedWatch.map((item) => (
+                        <tr
+                          key={`${item.type}-${item.id}`}
+                          className="tracker-row"
+                          onClick={() => openObservation(item)}
+                          title="Click to view full observation"
+                          style={{ cursor: "pointer" }}
+                        >
+                          <td style={{ whiteSpace: "nowrap" }}>
+                            <CritPill crit={item.criticality} />
+                          </td>
+                          <td>
+                            {item.ref ? (
+                              <span style={{ fontSize: 11.5, color: "var(--muted)", marginRight: 6 }}>
+                                {item.ref}
+                              </span>
+                            ) : null}
+                            <b style={{ fontSize: 12.5, color: "var(--ink)" }}>{item.title}</b>
+                          </td>
+                          <td style={{ whiteSpace: "nowrap" }}>
+                            <span
+                              className="pill"
+                              style={{
+                                background: "#edf4f1",
+                                color: "#19302a",
+                                fontSize: 10.5,
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {shortDeptName(item.department)}
+                            </span>
+                          </td>
+                          <td style={{ whiteSpace: "nowrap", fontSize: 12, color: "var(--ink)" }}>
+                            {item.ownerName || "—"}
+                          </td>
+                          <td style={{ whiteSpace: "nowrap" }}>
+                            {item.isOverdue ? (
+                              <span className="pill c-Critical" style={{ fontSize: 10, fontWeight: 700 }}>
+                                OVERDUE
+                              </span>
+                            ) : item.daysDiff != null && item.daysDiff >= 0 && item.daysDiff <= 14 ? (
+                              <span className="pill c-Moderate" style={{ fontSize: 10, fontWeight: 600 }}>
+                                {item.daysDiff === 0 ? "Due today" : `${item.daysDiff}d left`}
+                              </span>
+                            ) : item.targetDate ? (
+                              <span style={{ fontSize: 11.5, color: "var(--muted)" }}>
+                                {item.targetDate}
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: 11.5, color: "var(--muted)" }}>—</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination footer */}
+                <div
+                  style={{
+                    padding: "10px 18px",
+                    borderTop: "1px solid var(--line, #e2e8f0)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    flexWrap: "wrap",
+                    gap: 10,
+                    background: "var(--card-sub, #fafbfc)",
+                    fontSize: 12,
+                    color: "var(--muted)",
+                  }}
+                >
+                  <div>
+                    Showing{" "}
+                    <b style={{ color: "var(--ink)" }}>
+                      {(currentWatchPage - 1) * WATCH_PAGE_SIZE + 1}–
+                      {Math.min(currentWatchPage * WATCH_PAGE_SIZE, criticalWatch.length)}
+                    </b>{" "}
+                    of <b style={{ color: "var(--ink)" }}>{criticalWatch.length}</b> critical observation{criticalWatch.length === 1 ? "" : "s"}
+                  </div>
+                  {totalWatchPages > 1 && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <button
+                        type="button"
+                        className="btn sec sm"
+                        disabled={currentWatchPage <= 1}
+                        onClick={() => setWatchPage((p) => Math.max(1, p - 1))}
+                        style={{ fontSize: 11, padding: "3px 9px", height: "auto" }}
+                      >
+                        ← Previous
+                      </button>
+                      <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--ink)", padding: "0 4px" }}>
+                        Page {currentWatchPage} of {totalWatchPages}
+                      </span>
+                      <button
+                        type="button"
+                        className="btn sec sm"
+                        disabled={currentWatchPage >= totalWatchPages}
+                        onClick={() => setWatchPage((p) => Math.min(totalWatchPages, p + 1))}
+                        style={{ fontSize: 11, padding: "3px 9px", height: "auto" }}
+                      >
+                        Next →
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </>
             )}
           </div>
         </div>
