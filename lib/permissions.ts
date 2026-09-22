@@ -1,4 +1,4 @@
-export const MAIN_VIEWS = ["dashboard", "audits", "allobs", "tracker"] as const;
+export const MAIN_VIEWS = ["dashboard", "audits", "tracker"] as const;
 
 export const ASSESSMENT_VIEWS = [
   "auditra",
@@ -199,6 +199,9 @@ export function normalizeSidebarAccess(raw: unknown): string[] {
 // portal + shared detail pages; the head gets everything; staff get the main sections, their
 // granted assessment sections, and detail pages — never settings/audit log.
 export function canAccessView(user: SessionUser, view: string): boolean {
+  if (view === "allobs") {
+    return effectiveRole(user) === "executive";
+  }
   const role = effectiveRole(user);
   if (role === "action_owner") {
     return (OWNER_VIEWS as readonly string[]).includes(view);
@@ -219,7 +222,7 @@ export function allowedViews(user: SessionUser): string[] {
   const role = effectiveRole(user);
   if (role === "action_owner") return [...OWNER_VIEWS];
   if (role === "executive") return [...EXECUTIVE_VIEWS];
-  if (role === "head_of_audit") return [...ALL_VIEWS];
+  if (role === "head_of_audit") return ALL_VIEWS.filter((v) => v !== "allobs");
   const views: string[] = [...MAIN_VIEWS, ...DETAIL_VIEWS];
   for (const v of user.sidebarAccess) {
     if ((ASSESSMENT_VIEWS as readonly string[]).includes(v)) views.push(v);

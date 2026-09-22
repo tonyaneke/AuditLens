@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useUser } from "@/components/chrome/UserContext";
@@ -8,6 +8,7 @@ import { Avatar, CritPill, Empty, Kpi, StatusPill } from "@/components/ui";
 import { deptLabel, deptNameOf } from "@/lib/dept-scope";
 import { esc, excelDoc, stamp } from "@/lib/client/exports";
 import { hrefForView, isLegacyPath } from "@/lib/routes";
+import { effectiveRole } from "@/lib/permissions";
 import {
   allObs,
   ck,
@@ -33,6 +34,14 @@ export default function AllObservationsPage() {
   const user = useUser();
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  const isExecutive = effectiveRole(user) === "executive";
+
+  useEffect(() => {
+    if (!isExecutive) {
+      router.replace("/");
+    }
+  }, [isExecutive, router]);
 
   // Read initial filter from URL if passed (e.g. ?crit=Critical or ?timeline=overdue)
   const initialCrit = searchParams.get("crit") || "All";
@@ -283,6 +292,10 @@ export default function AllObservationsPage() {
     setDeptFilter("All");
     setOwnerFilter("All");
     setSearchQuery("");
+  }
+
+  if (!isExecutive) {
+    return null;
   }
 
   return (

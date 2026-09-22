@@ -60,7 +60,6 @@ const SECTIONS: { label: string; items: NavItem[] }[] = [
     items: [
       { view: "dashboard", label: "Dashboard", icon: DashboardSquare01Icon },
       { view: "audits", label: "Audits & Reports", icon: File01Icon },
-      { view: "allobs", label: "Observations", icon: Folder01Icon },
       { view: "tracker", label: "Remediation Tracker", icon: TaskDaily01Icon },
     ],
   },
@@ -416,6 +415,16 @@ export default function SidebarNav({ user, shell = "legacy" }: SidebarNavProps) 
                   <HugeiconsIcon icon={DashboardSquare01Icon} size={ICON_SIZE} strokeWidth={1.75} />
                 </span>
                 Dashboard
+              </Link>
+              <Link
+                href="/observations"
+                className={activeView === "allobs" ? "active" : undefined}
+                data-view="allobs"
+              >
+                <span className="ic">
+                  <HugeiconsIcon icon={Folder01Icon} size={ICON_SIZE} strokeWidth={1.75} />
+                </span>
+                Observations
               </Link>
               <Link
                 href="/updates"
