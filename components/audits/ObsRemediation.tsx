@@ -360,12 +360,40 @@ export default function ObsRemediation({
                         : "Awaiting Head of Audit closure.";
 
   /* ---- closure package ----
-     The action owner's closure response is deliberately NOT repeated here: obsThread() already
-     puts it in the conversation as a "closure" entry, so the comments page is its one home.
-     Reviewers still see it where they need it — inside the View-remediation and Head-close
-     modals, which is the point at which they are judging it. */
+     Display the owner's closure response whenever present (pending verification, returned for rework,
+     or closed), alongside the auditor verification and head comments when closed. */
   const pkg: React.ReactNode[] = [];
   const auditorClosureFiles = closureFilesOf(o);
+  if (o.ownerResponse) {
+    const prev = o.closureRejection?.prevOwnerRectified;
+    const author = o.ownerRectifiedByName || prev?.byName || o.owner || "Action owner";
+    const dateStr = o.ownerRectifiedAt || prev?.at || o.closureRejection?.at;
+    const isReturned = !o.ownerRectifiedAt && rej?.target === "owner";
+    pkg.push(
+      <div className="obs-field" key="owner-closure">
+        <div className="ttl">
+          Action owner&apos;s closure response
+          {isReturned ? (
+            <span className="pill c-Critical" style={{ marginLeft: 8, fontSize: "11px" }}>
+              Returned for rework
+            </span>
+          ) : !closed ? (
+            <span className="pill" style={{ marginLeft: 8, fontSize: "11px", background: "#eaf5eb", color: "#2e7d32" }}>
+              Pending verification
+            </span>
+          ) : null}
+        </div>
+        <div className="txt">
+          <RichText text={o.ownerResponse} />
+          <Evidence files={o.ownerResponseEvidence} />
+          <div className="hint" style={{ marginTop: 4 }}>
+            Submitted by {author}
+            {dateStr ? " · " + fmtDateTime(dateStr) : ""}
+          </div>
+        </div>
+      </div>,
+    );
+  }
   if (o.reportVerifiedAt && closed)
     pkg.push(
       <div className="obs-field" key="aud">

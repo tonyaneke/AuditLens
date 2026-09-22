@@ -117,15 +117,27 @@ export function obsThread(o: Observation, ownerViewer: boolean): ThreadEntry[] {
   const closed = o.status === "Closed";
   const entries: ThreadEntry[] = [...obsUpdates(o)];
 
-  // Owners always see their own closure response; everyone sees it once closed.
-  if (o.ownerResponse && (closed || ownerViewer)) {
+  // Action owner closure response: visible to everyone once submitted, including across rejections
+  if (o.ownerResponse) {
+    const prev = o.closureRejection?.prevOwnerRectified;
     entries.push({
       text: o.ownerResponse,
-      byName: o.ownerRectifiedByName || "",
+      byName: o.ownerRectifiedByName || prev?.byName || o.owner || "",
       role: "action_owner",
-      at: o.ownerRectifiedAt || "",
+      at: o.ownerRectifiedAt || prev?.at || o.closureRejection?.at || "",
       tag: "closure",
       evidence: o.ownerResponseEvidence || [],
+    });
+  }
+  if (o.closureRejection?.note) {
+    const rej = o.closureRejection;
+    entries.push({
+      text: rej.note,
+      byName: rej.byName || (rej.byRole === "audit_staff" ? "Internal Audit" : "Head of Audit"),
+      role: rej.byRole || "head_of_audit",
+      at: rej.at || "",
+      tag: "feedback",
+      audience: rej.target === "auditor" ? "ia_only" : undefined,
     });
   }
   if (o.closureNote && closed) {
