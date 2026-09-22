@@ -110,20 +110,7 @@ export default function AllObservationsPage() {
       // 2. Status filter
       if (statusFilter !== "All" && (o.status || "Open") !== statusFilter) return false;
 
-      // 3. Department filter
-      if (deptFilter !== "All") {
-        const d = deptLabel(deptNameOf(db, o));
-        if (d !== deptFilter) return false;
-      }
-
-      // 4. Owner filter ("who")
-      if (ownerFilter !== "All") {
-        const primary = String(o.owner || "").trim();
-        const secondary = String(o.secondaryOwner || "").trim();
-        if (primary !== ownerFilter && secondary !== ownerFilter) return false;
-      }
-
-      // 5. Timeline filter
+      // 3. Timeline filter
       if (timelineFilter !== "All") {
         const isOver = isOverdueObs(o, o._r);
         const days = daysToClose(o, o._r);
@@ -141,7 +128,7 @@ export default function AllObservationsPage() {
         }
       }
 
-      // 6. Search query
+      // 4. Search query
       if (query) {
         const matchTitle = (o.title || "").toLowerCase().includes(query);
         const matchRef = (o.ref || "").toLowerCase().includes(query);
@@ -153,7 +140,7 @@ export default function AllObservationsPage() {
 
       return true;
     });
-  }, [allList, critFilter, statusFilter, deptFilter, ownerFilter, timelineFilter, searchQuery, db]);
+  }, [allList, critFilter, statusFilter, timelineFilter, searchQuery, db]);
 
   // Sorted list
   const sorted = useMemo(() => {
@@ -256,31 +243,38 @@ export default function AllObservationsPage() {
     excelDoc("AuditLens-Observations-Register-" + stamp(), table);
   }
 
-  usePageChrome({
-    title: "Observations",
-    actions: (
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <button className="btn sec sm" type="button" onClick={exportExcel} disabled={!sorted.length}>
-          ⤓ Export to Excel
-        </button>
-      </div>
-    ),
-  });
+  usePageChrome(
+    {
+      title: "Observations",
+      search: (
+        <input
+          className="topbar-search"
+          placeholder="Search by title, ref, owner, department, description…"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
+      ),
+      actions: (
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button className="btn sec sm" type="button" onClick={exportExcel} disabled={!sorted.length}>
+            ⤓ Export to Excel
+          </button>
+        </div>
+      ),
+    },
+    [searchQuery, sorted.length],
+  );
 
   const isFiltered =
     critFilter !== "All" ||
     timelineFilter !== "All" ||
     statusFilter !== "All" ||
-    deptFilter !== "All" ||
-    ownerFilter !== "All" ||
     searchQuery.trim().length > 0;
 
   function clearFilters() {
     setCritFilter("All");
     setTimelineFilter("All");
     setStatusFilter("All");
-    setDeptFilter("All");
-    setOwnerFilter("All");
     setSearchQuery("");
   }
 
@@ -439,129 +433,55 @@ export default function AllObservationsPage() {
             </button>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span className="hint" style={{ fontSize: 12.5 }}>
-              Showing <b>{sorted.length}</b> of <b>{allList.length}</b>
-            </span>
+          {/* Right: Timeline & Status Dropdowns + Clear Filters */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            {/* Timeline Dropdown */}
+            <div className="filter-group" style={{ margin: 0 }}>
+              <span className="filter-label" id="flt-timeline">Timeline</span>
+              <select
+                className="field-select field-select-sm"
+                aria-labelledby="flt-timeline"
+                value={timelineFilter}
+                onChange={(e) => setTimelineFilter(e.target.value)}
+              >
+                <option value="All">All Timelines</option>
+                <option value="overdue">Overdue</option>
+                <option value="due_soon">Due Soon (≤ 2 weeks)</option>
+                <option value="on_track">On Track (&gt; 2 weeks)</option>
+                <option value="closed">Closed</option>
+                {CLOSE_BUCKETS.map((b) => (
+                  <option key={b} value={b}>{b}</option>
+                ))}
+                <option value="No date">No date</option>
+              </select>
+            </div>
+
+            {/* Status Dropdown */}
+            <div className="filter-group" style={{ margin: 0 }}>
+              <span className="filter-label" id="flt-status">Status</span>
+              <select
+                className="field-select field-select-sm"
+                aria-labelledby="flt-status"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+              >
+                <option value="All">All Statuses</option>
+                {STATUSES.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+
             {isFiltered && (
               <button
                 type="button"
                 className="btn ghost sm"
-                style={{ fontSize: 11.5, height: "auto", padding: "2px 8px" }}
+                style={{ fontSize: 11.5, height: "auto", padding: "4px 8px" }}
                 onClick={clearFilters}
               >
                 Clear Filters
               </button>
             )}
-          </div>
-        </div>
-
-        {/* Filter Controls Bar */}
-        <div
-          style={{
-            padding: "12px 20px",
-            borderBottom: "1px solid var(--line, #e2e8f0)",
-            display: "flex",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: 12,
-          }}
-        >
-          {/* Search box */}
-          <div style={{ flex: 1, minWidth: 220 }}>
-            <input
-              type="text"
-              className="field"
-              placeholder="Search by title, ref, owner, department, description…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              style={{ fontSize: 12.5, height: 32, margin: 0 }}
-            />
-          </div>
-
-          {/* Timeline Dropdown */}
-          <div className="filter-group" style={{ margin: 0 }}>
-            <span className="filter-label" id="flt-timeline">Timeline</span>
-            <select
-              className="field-select field-select-sm"
-              aria-labelledby="flt-timeline"
-              value={timelineFilter}
-              onChange={(e) => setTimelineFilter(e.target.value)}
-            >
-              <option value="All">All Timelines</option>
-              <option value="overdue">Overdue</option>
-              <option value="due_soon">Due Soon (≤ 2 weeks)</option>
-              <option value="on_track">On Track (&gt; 2 weeks)</option>
-              <option value="closed">Closed</option>
-              {CLOSE_BUCKETS.map((b) => (
-                <option key={b} value={b}>{b}</option>
-              ))}
-              <option value="No date">No date</option>
-            </select>
-          </div>
-
-          {/* Status Dropdown */}
-          <div className="filter-group" style={{ margin: 0 }}>
-            <span className="filter-label" id="flt-status">Status</span>
-            <select
-              className="field-select field-select-sm"
-              aria-labelledby="flt-status"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-            >
-              <option value="All">All Statuses</option>
-              {STATUSES.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Department Dropdown */}
-          <div className="filter-group" style={{ margin: 0 }}>
-            <span className="filter-label" id="flt-dept">Department</span>
-            <select
-              className="field-select field-select-sm"
-              aria-labelledby="flt-dept"
-              value={deptFilter}
-              onChange={(e) => setDeptFilter(e.target.value)}
-            >
-              <option value="All">All Departments</option>
-              {departments.map((d) => (
-                <option key={d} value={d}>{d}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Owner / Who Dropdown */}
-          <div className="filter-group" style={{ margin: 0 }}>
-            <span className="filter-label" id="flt-owner">Who (Owner)</span>
-            <select
-              className="field-select field-select-sm"
-              aria-labelledby="flt-owner"
-              value={ownerFilter}
-              onChange={(e) => setOwnerFilter(e.target.value)}
-            >
-              <option value="All">All Owners</option>
-              {owners.map((ow) => (
-                <option key={ow} value={ow}>{ow}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Sort By Dropdown */}
-          <div className="filter-group" style={{ margin: 0 }}>
-            <span className="filter-label" id="flt-sort">Sort</span>
-            <select
-              className="field-select field-select-sm"
-              aria-labelledby="flt-sort"
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as any)}
-            >
-              <option value="severity">Severity (High to Low)</option>
-              <option value="due">Target Date</option>
-              <option value="age">Age</option>
-              <option value="title">Title</option>
-            </select>
           </div>
         </div>
 
@@ -584,13 +504,10 @@ export default function AllObservationsPage() {
             <table style={{ margin: 0 }}>
               <thead>
                 <tr>
-                  <th scope="col" style={{ width: 80 }}>Ref</th>
                   <th scope="col" style={{ width: 110 }}>Severity</th>
-                  <th scope="col">Observation Title &amp; Audit</th>
+                  <th scope="col">Title</th>
                   <th scope="col" style={{ width: 140 }}>Department</th>
-                  <th scope="col" style={{ width: 160 }}>Who (Action Owner)</th>
                   <th scope="col" style={{ width: 130 }}>Expected Close</th>
-                  <th scope="col" style={{ width: 80 }}>Age</th>
                   <th scope="col" style={{ width: 110 }}>Status</th>
                 </tr>
               </thead>
@@ -599,9 +516,7 @@ export default function AllObservationsPage() {
                   const ec = effectiveClose(o, o._r);
                   const isOver = isOverdueObs(o, o._r);
                   const days = daysToClose(o, o._r);
-                  const age = obsAge(o, o._r);
                   const dept = deptLabel(deptNameOf(db, o)) || "—";
-                  const primaryOwner = o.owner || "Unassigned";
 
                   return (
                     <tr
@@ -611,19 +526,11 @@ export default function AllObservationsPage() {
                       title="Click to view full observation detail"
                       style={{ cursor: "pointer" }}
                     >
-                      <td style={{ whiteSpace: "nowrap", fontFamily: "var(--font-mono, monospace)", fontSize: 12 }}>
-                        {o.ref || "—"}
-                      </td>
                       <td style={{ whiteSpace: "nowrap" }}>
                         <CritPill crit={o.criticality} />
                       </td>
                       <td>
-                        <div>
-                          <b style={{ fontSize: 13, color: "var(--ink)", display: "block" }}>{o.title}</b>
-                          <span style={{ fontSize: 11.5, color: "var(--muted)" }}>
-                            {o._a?.name} · {o._r?.title}
-                          </span>
-                        </div>
+                        <b style={{ fontSize: 13, color: "var(--ink)", display: "block" }}>{o.title}</b>
                       </td>
                       <td style={{ whiteSpace: "nowrap" }}>
                         <span
@@ -637,21 +544,6 @@ export default function AllObservationsPage() {
                         >
                           {dept}
                         </span>
-                      </td>
-                      <td>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <Avatar user={{ name: primaryOwner }} size={20} />
-                          <div>
-                            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ink)", display: "block" }}>
-                              {primaryOwner}
-                            </span>
-                            {o.secondaryOwner ? (
-                              <span style={{ fontSize: 10.5, color: "var(--muted)" }}>
-                                Co: {String(o.secondaryOwner)}
-                              </span>
-                            ) : null}
-                          </div>
-                        </div>
                       </td>
                       <td style={{ whiteSpace: "nowrap" }}>
                         {o.status === "Closed" ? (
@@ -671,9 +563,6 @@ export default function AllObservationsPage() {
                         ) : (
                           <span style={{ fontSize: 12, color: "var(--muted)" }}>—</span>
                         )}
-                      </td>
-                      <td style={{ whiteSpace: "nowrap", fontSize: 12, color: "var(--muted)" }}>
-                        {age != null ? `${age}d` : "—"}
                       </td>
                       <td style={{ whiteSpace: "nowrap" }}>
                         <StatusPill status={o.status} />

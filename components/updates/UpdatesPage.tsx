@@ -58,6 +58,27 @@ type ActivityItem = {
   rawItem: UnifiedObservation;
 };
 
+function formatActivityDate(dateISO?: string, dateStr?: string): string {
+  if (!dateISO) return dateStr || "";
+  const d = new Date(dateISO);
+  if (isNaN(d.getTime())) return dateStr || "";
+  const s = (Date.now() - d.getTime()) / 1000;
+  if (s < 0) return dateStr || fmtDate(d);
+
+  // If dateISO has no time component (e.g. "2026-09-22"), just show formatted date
+  const hasTime = dateISO.includes("T") || dateISO.includes(":");
+  if (!hasTime) return dateStr || fmtDate(d);
+
+  if (s < 60) return "just now";
+  const m = s / 60;
+  if (m < 60) return `${Math.floor(m)}m ago · ${dateStr || fmtDate(d)}`;
+  const h = m / 60;
+  if (h < 24) return `${Math.floor(h)}h ago · ${dateStr || fmtDate(d)}`;
+  const dd = h / 24;
+  if (dd < 7) return `${Math.floor(dd)}d ago · ${dateStr || fmtDate(d)}`;
+  return dateStr || fmtDate(d);
+}
+
 export default function UpdatesPage() {
   usePageChrome({ title: "Latest Updates" });
   const { db } = useWorkspace();
@@ -174,7 +195,15 @@ export default function UpdatesPage() {
 
         // Initial Owner Response
         if (raw.ownerResponse) {
-          const dt = effectiveClose(raw, raw._r);
+          const rawDate =
+            raw.ownerRectifiedAt ||
+            raw.createdAt ||
+            raw.raisedAt ||
+            raw._r?.reportDateISO ||
+            raw._r?.reportDate ||
+            raw._r?.createdAt;
+          const dateISO = rawDate ? (typeof rawDate === "string" ? rawDate : new Date(rawDate).toISOString()) : "";
+          const dateStr = rawDate ? fmtDate(rawDate) : "";
           list.push({
             id: `resp-${raw.id}`,
             kind: "response",
@@ -183,9 +212,9 @@ export default function UpdatesPage() {
             department: obs.department,
             criticality: obs.criticality,
             status: obs.status,
-            actor: raw.owner || "Action Owner",
-            dateStr: dt ? fmtDate(dt) : "",
-            dateISO: dt ? dt.toISOString() : "",
+            actor: raw.ownerRectifiedByName || raw.owner || "Action Owner",
+            dateStr,
+            dateISO,
             text: raw.ownerResponse,
             source: obs.source,
             rawItem: obs,
@@ -215,6 +244,9 @@ export default function UpdatesPage() {
 
         // External management responses
         if (raw.ownerResponse || raw.managementResponse) {
+          const rawDate = raw.raisedAt || raw.createdAt || raw.year;
+          const dateISO = rawDate ? (typeof rawDate === "string" ? rawDate : new Date(rawDate).toISOString()) : "";
+          const dateStr = rawDate ? fmtDate(rawDate) : "";
           list.push({
             id: `ext-resp-${raw.id}`,
             kind: "response",
@@ -224,8 +256,8 @@ export default function UpdatesPage() {
             criticality: obs.criticality,
             status: obs.status,
             actor: raw.owner || "Management",
-            dateStr: raw.targetDate ? fmtDate(raw.targetDate) : "",
-            dateISO: raw.targetDate || "",
+            dateStr,
+            dateISO,
             text: raw.ownerResponse || raw.managementResponse || "Management response recorded.",
             source: obs.source,
             rawItem: obs,
@@ -586,25 +618,13 @@ export default function UpdatesPage() {
                       </span>
                     )}
 
-                    <span
-                      className="tag"
-                      style={{
-                        fontFamily: "var(--font-mono, monospace)",
-                        fontSize: 11,
-                        fontWeight: 700,
-                        color: "var(--navy2)",
-                      }}
-                    >
-                      {act.ref}
-                    </span>
-
                     <CritPill crit={act.criticality} />
                     <span className="tag">{cleanDept}</span>
                     <StatusPill status={act.status} />
                   </div>
 
                   <span className="hint" style={{ fontSize: 12 }}>
-                    {act.dateISO ? `${timeAgo(act.dateISO)} · ${act.dateStr}` : act.dateStr}
+                    {formatActivityDate(act.dateISO, act.dateStr)}
                   </span>
                 </div>
 

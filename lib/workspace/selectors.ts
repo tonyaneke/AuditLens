@@ -160,6 +160,7 @@ export function timeAgo(iso: string | undefined): string {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return "";
   const s = (Date.now() - d.getTime()) / 1000;
+  if (s < 0) return fmtDate(d);
   if (s < 60) return "just now";
   const m = s / 60;
   if (m < 60) return Math.floor(m) + "m ago";
