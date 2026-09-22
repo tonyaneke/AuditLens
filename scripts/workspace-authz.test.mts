@@ -202,6 +202,37 @@ console.log("\n== Staff LEGITIMATE actions pass through ==");
   ok(!r.violations.some((v) => v.startsWith("obs_field") || v.startsWith("section")), "no field/section violations for legit save");
 }
 
+console.log("\n== Staff may reassign observation owners, but action owners cannot ==");
+{
+  const cur = baseWorkspace();
+  const inc = clone(slimForClient(cur, { id: STAFF.id, role: "audit_staff" }));
+  const obs = inc.audits[0].reports[0].observations[0];
+  obs.owner = "New Head";
+  obs.ownerUserId = "userNew";
+  obs.departmentId = "deptNew";
+  obs.secondaryOwner = "New CoHead";
+  obs.secondaryOwnerUserId = "userCoNew";
+  obs.dueDate = "2026-12-31";
+  const rStaff = authorizeWorkspaceWrite(STAFF.role, STAFF.id, cur, inc);
+  const outObs = findObs(rStaff.data, "o1");
+  ok(outObs.owner === "New Head", "staff may reassign owner name");
+  ok(outObs.ownerUserId === "userNew", "staff may reassign ownerUserId");
+  ok(outObs.departmentId === "deptNew", "staff may reassign departmentId");
+  ok(outObs.secondaryOwner === "New CoHead", "staff may reassign secondaryOwner");
+  ok(outObs.secondaryOwnerUserId === "userCoNew", "staff may reassign secondaryOwnerUserId");
+  ok(outObs.dueDate === "2026-12-31", "staff may update dueDate on reassignment");
+  ok(!rStaff.violations.some((v) => v.startsWith("obs_field:o1")), "no field violations for staff reassignment");
+
+  // An action owner's reassignment is reverted
+  const incOwner = clone(cur);
+  const obsOwner = incOwner.audits[0].reports[0].observations[0];
+  obsOwner.ownerUserId = "rogueOwner";
+  obsOwner.owner = "Rogue";
+  const rOwner = authorizeWorkspaceWrite(OWNER.role, OWNER.id, cur, incOwner);
+  ok(findObs(rOwner.data, "o1").ownerUserId !== "rogueOwner", "owner cannot reassign ownerUserId");
+  ok(rOwner.violations.includes("obs_field:o1:ownerUserId"), "owner reassignment violation recorded");
+}
+
 console.log("\n== Staff may raise a NEW observation but it is forced to pending ==");
 {
   const cur = baseWorkspace(); const inc = clone(cur);

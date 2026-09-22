@@ -17,11 +17,14 @@ import { useModal } from "@/components/modals/ModalProvider";
 import { BackButton, CritPill, StatusPill } from "@/components/ui";
 import { logAudit } from "@/lib/client/audit-log";
 import { deptLabel, deptNameOf } from "@/lib/dept-scope";
+import { effectiveRole } from "@/lib/permissions";
 import {
   canVerifyItem,
   cancelPendingDelete,
   cancelPendingStatusChange,
+  isActionOwner,
   isHead,
+  isInternalAudit,
   isRecentlyCreated,
   notifyHeadsApproval,
   obsWithdrawStage,
@@ -75,8 +78,17 @@ export default function ObsDetailPage({
   const o = r && (r.observations || []).find((x) => x.id === obsId);
 
   const head = isHead(user);
+  const internalAudit = isInternalAudit(user);
+  const isOwner = isActionOwner(user);
+  const isExec = effectiveRole(user) === "executive";
   const canEdit = head || canVerifyItem(user, o, a);
-  const backHref = a && r ? `/audits/${a.id}/reports/${r.id}` : "/audits";
+  const backHref = isOwner
+    ? "/portal/myobs"
+    : isExec
+      ? "/"
+      : a && r
+        ? `/audits/${a.id}/reports/${r.id}`
+        : "/audits";
   const changePending = !head && !!o && (!!pendingUpdate(db, o.id) || !!pendingDelete(db, o.id));
 
   /* Port of delObs. Non-head deletion is a request, not an act — an `observation_delete`
@@ -149,14 +161,24 @@ export default function ObsDetailPage({
     });
   }
 
-  /* Topbar carries only what legacy put there: Reassign / Edit / Delete + the pending pill.
-     The closure actions belong to the remediation block, not up here. */
+  /* Topbar carries only actions: Back button on the left, Reassign / Edit / Delete + pending pill on the right.
+     The title is rendered in the hero section below to prevent topbar overlap. */
   usePageChrome({
-    title: o ? `${o.ref ? o.ref + " — " : ""}${o.title}` : "Observation",
-    back: <BackButton href={backHref} />,
+    title: "",
+    back: (
+      <BackButton
+        onClick={() => {
+          if (typeof window !== "undefined" && window.history.length > 1) {
+            router.back();
+          } else {
+            router.push(backHref);
+          }
+        }}
+      />
+    ),
     actions: canEdit && a && r && o ? (
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        {head ? (
+        {internalAudit ? (
           <button className="btn sm" type="button"
             onClick={() => modal.open(<ModalReassignObsDialog auditId={a.id} reportId={r.id} obsId={o.id} />)}>
             Reassign owner

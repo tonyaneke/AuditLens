@@ -114,6 +114,10 @@ const AUDITOR_ONLY_OBS_FIELDS = [
   "reportVerifiedAt", "reportVerifiedByName", "closureNote", "closureEvidence", "closureFile", "closureFiles",
   "updateRequestedAt", "updateRequestedBy", "progressReport", "attachments",
 ];
+// Controlled fields that audit staff may update directly to reassign an observation.
+const STAFF_REASSIGN_FIELDS = new Set([
+  "owner", "ownerUserId", "departmentId", "secondaryOwner", "secondaryOwnerUserId", "dueDate",
+]);
 const WITHDRAWAL_HEAD_FIELDS = ["headBy", "headByName", "headAt", "headReason"];
 const WITHDRAWAL_FINAL_STAGES = ["withdrawn", "rejected"];
 
@@ -474,6 +478,11 @@ function reconcileOneObs(
   const verifying = justVerified(cur, inc, role, auditor);
   for (const f of CONTROLLED_OBS_FIELDS) {
     const excused = verifying && f === "closedDateISO";
+    const staffReassign = role === STAFF_ROLE && STAFF_REASSIGN_FIELDS.has(f);
+    if (staffReassign) {
+      forceField(next, f, inc[f]);
+      continue;
+    }
     if (!excused && !jsonEq(inc[f], cur[f])) violations.push(`obs_field:${cur.id}:${f}`);
     forceField(next, f, cur[f]);
   }
