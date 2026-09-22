@@ -9,6 +9,7 @@ const o: Observation = {
   id: "mtskntafq1osy",
   ref: "101.1",
   title: "IT Assets not identified and tagged",
+  criticality: "Critical",
   status: "Open",
   owner: "Solomon Aladegolu",
   ownerUserId: "u_solomon",
@@ -18,8 +19,6 @@ const o: Observation = {
       itemId: "ev_1",
       name: "IT-Asset-Register-2026.xlsx",
       size: 45000,
-      mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      at: "2026-09-18T10:00:00Z",
     },
   ],
   ownerRectifiedAt: "", // Wiped by writeRejection

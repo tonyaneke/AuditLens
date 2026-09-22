@@ -60,6 +60,7 @@ export type Observation = {
   managementResponse?: string;
   owner?: string;
   ownerUserId?: string;
+  secondaryOwner?: string;
   secondaryOwnerUserId?: string;
   departmentId?: string;
   timeline?: Timeline | string;

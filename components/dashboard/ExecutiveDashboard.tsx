@@ -219,22 +219,56 @@ export default function ExecutiveDashboard() {
   }, [approved, db]);
 
   // Open High & Critical observations needing executive oversight
+  const [watchTimelineFilter, setWatchTimelineFilter] = useState<"all" | "overdue" | "due_soon" | "on_track">("all");
+  const [watchCritOnly, setWatchCritOnly] = useState<boolean>(false);
+
+  const allHighCrit = useMemo(() => {
+    return allObservations.filter(
+      (o) =>
+        (o.criticality === "Critical" || o.criticality === "High") &&
+        o.status !== "Closed",
+    );
+  }, [allObservations]);
+
+  const watchCounts = useMemo(() => {
+    let all = 0;
+    let overdue = 0;
+    let dueSoon = 0;
+    let onTrack = 0;
+    let criticalCount = 0;
+    let highCount = 0;
+
+    for (const o of allHighCrit) {
+      if (watchCritOnly && o.criticality !== "Critical") continue;
+      all++;
+      if (o.isOverdue) overdue++;
+      else if (o.daysDiff != null && o.daysDiff >= 0 && o.daysDiff <= 14) dueSoon++;
+      else onTrack++;
+      if (o.criticality === "Critical") criticalCount++;
+      else highCount++;
+    }
+    return { all, overdue, dueSoon, onTrack, criticalCount, highCount };
+  }, [allHighCrit, watchCritOnly]);
+
   const highCritWatch = useMemo(() => {
-    return allObservations
-      .filter(
-        (o) =>
-          (o.criticality === "Critical" || o.criticality === "High") &&
-          o.status !== "Closed",
-      )
+    return allHighCrit
+      .filter((o) => {
+        if (watchCritOnly && o.criticality !== "Critical") return false;
+        if (watchTimelineFilter === "overdue") return o.isOverdue;
+        if (watchTimelineFilter === "due_soon")
+          return !o.isOverdue && o.daysDiff != null && o.daysDiff >= 0 && o.daysDiff <= 14;
+        if (watchTimelineFilter === "on_track")
+          return !o.isOverdue && (o.daysDiff == null || o.daysDiff > 14);
+        return true;
+      })
       .sort((a, b) => {
         if (a.isOverdue && !b.isOverdue) return -1;
         if (!a.isOverdue && b.isOverdue) return 1;
         if (a.criticality === "Critical" && b.criticality !== "Critical") return -1;
         if (a.criticality !== "Critical" && b.criticality === "Critical") return 1;
         return (a.daysDiff ?? 999) - (b.daysDiff ?? 999);
-      })
-      .slice(0, 6);
-  }, [allObservations]);
+      });
+  }, [allHighCrit, watchCritOnly, watchTimelineFilter]);
 
   // Ranked departments by pending internal observations
   const rankedDepartments = useMemo(() => {
@@ -885,31 +919,136 @@ export default function ExecutiveDashboard() {
               flexDirection: "column",
             }}
           >
-            {/* Header section (without subtext) */}
+            {/* Header section with sub-filter buttons */}
             <div
-              className="row"
               style={{
-                padding: "16px 20px 12px 20px",
+                padding: "16px 20px 14px 20px",
                 borderBottom: "1px solid var(--line, #e2e8f0)",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 8,
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
               }}
             >
-              <div>
-                <div className="seclabel">Critical &amp; High Priority Watch</div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  flexWrap: "wrap",
+                  gap: 8,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div className="seclabel" style={{ margin: 0 }}>
+                    {watchCritOnly ? "Critical Priority Watch" : "Critical & High Priority Watch"}
+                  </div>
+                  {watchCounts.all > 0 && (
+                    <span className="pill c-High" style={{ fontSize: 10.5, fontWeight: 700 }}>
+                      {watchCounts.all} Active
+                    </span>
+                  )}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <button
+                    type="button"
+                    className={`btn ${watchCritOnly ? "pri" : "sec"} sm`}
+                    style={{ fontSize: "11px", padding: "3px 9px", height: "auto" }}
+                    onClick={() => setWatchCritOnly((prev) => !prev)}
+                  >
+                    {watchCritOnly ? "Critical Only ✓" : "Show Critical Only"}
+                  </button>
+                  <Link
+                    href={`/observations${watchCritOnly ? "?crit=Critical" : "?crit=High"}`}
+                    className="btn sec sm"
+                    style={{ fontSize: "11px", padding: "3px 9px", height: "auto", textDecoration: "none" }}
+                  >
+                    View in register →
+                  </Link>
+                </div>
               </div>
-              {highCritWatch.length > 0 && (
-                <span className="pill c-High" style={{ fontSize: 10.5, fontWeight: 700 }}>
-                  {highCritWatch.length} Active
-                </span>
-              )}
+
+              {/* Sub-filter timeline buttons */}
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                <button
+                  type="button"
+                  className={`btn ${watchTimelineFilter === "all" ? "pri" : "ghost"} sm`}
+                  style={{
+                    fontSize: "11.5px",
+                    padding: "3px 10px",
+                    borderRadius: "16px",
+                    height: "auto",
+                    fontWeight: 600,
+                  }}
+                  onClick={() => setWatchTimelineFilter("all")}
+                >
+                  All ({watchCounts.all})
+                </button>
+                <button
+                  type="button"
+                  className="btn sm"
+                  style={{
+                    fontSize: "11.5px",
+                    padding: "3px 10px",
+                    borderRadius: "16px",
+                    height: "auto",
+                    fontWeight: 600,
+                    background: watchTimelineFilter === "overdue" ? "#b00020" : "#fdecef",
+                    color: watchTimelineFilter === "overdue" ? "#ffffff" : "#b00020",
+                    border: "none",
+                  }}
+                  onClick={() => setWatchTimelineFilter("overdue")}
+                >
+                  Overdue ({watchCounts.overdue})
+                </button>
+                <button
+                  type="button"
+                  className="btn sm"
+                  style={{
+                    fontSize: "11.5px",
+                    padding: "3px 10px",
+                    borderRadius: "16px",
+                    height: "auto",
+                    fontWeight: 600,
+                    background: watchTimelineFilter === "due_soon" ? "#c98a00" : "#fbf3dd",
+                    color: watchTimelineFilter === "due_soon" ? "#ffffff" : "#805b00",
+                    border: "none",
+                  }}
+                  onClick={() => setWatchTimelineFilter("due_soon")}
+                >
+                  Due Soon ≤ 2 wks ({watchCounts.dueSoon})
+                </button>
+                <button
+                  type="button"
+                  className="btn sm"
+                  style={{
+                    fontSize: "11.5px",
+                    padding: "3px 10px",
+                    borderRadius: "16px",
+                    height: "auto",
+                    fontWeight: 600,
+                    background: watchTimelineFilter === "on_track" ? "#2e7d32" : "#eaf5eb",
+                    color: watchTimelineFilter === "on_track" ? "#ffffff" : "#2e7d32",
+                    border: "none",
+                  }}
+                  onClick={() => setWatchTimelineFilter("on_track")}
+                >
+                  On Track ({watchCounts.onTrack})
+                </button>
+              </div>
             </div>
 
             {!highCritWatch.length ? (
-              <div style={{ padding: 24, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ padding: 28, display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <Empty big="✓">
-                  No open Critical or High-risk observations across any department.
+                  No {watchCritOnly ? "Critical" : "Critical or High-risk"} observations matching{" "}
+                  {watchTimelineFilter === "overdue"
+                    ? "Overdue"
+                    : watchTimelineFilter === "due_soon"
+                      ? "Due Soon (≤ 2 wks)"
+                      : watchTimelineFilter === "on_track"
+                        ? "On Track"
+                        : "the active filter"}
+                  .
                 </Empty>
               </div>
             ) : (
@@ -917,9 +1056,11 @@ export default function ExecutiveDashboard() {
                 <table style={{ margin: 0 }}>
                   <thead>
                     <tr>
-                      <th scope="col" style={{ width: 110 }}>Severity</th>
+                      <th scope="col" style={{ width: 100 }}>Severity</th>
                       <th scope="col">Observation</th>
-                      <th scope="col">Department</th>
+                      <th scope="col" style={{ width: 130 }}>Department</th>
+                      <th scope="col" style={{ width: 130 }}>Who (Owner)</th>
+                      <th scope="col" style={{ width: 110 }}>Timeline</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -928,13 +1069,18 @@ export default function ExecutiveDashboard() {
                         key={`${item.type}-${item.id}`}
                         className="tracker-row"
                         onClick={() => openObservation(item)}
-                        title="Click to view details"
+                        title="Click to view full observation"
                         style={{ cursor: "pointer" }}
                       >
                         <td style={{ whiteSpace: "nowrap" }}>
                           <CritPill crit={item.criticality} />
                         </td>
                         <td>
+                          {item.ref ? (
+                            <span style={{ fontSize: 11.5, color: "var(--muted)", marginRight: 6 }}>
+                              {item.ref}
+                            </span>
+                          ) : null}
                           <b style={{ fontSize: 12.5, color: "var(--ink)" }}>{item.title}</b>
                         </td>
                         <td style={{ whiteSpace: "nowrap" }}>
@@ -949,6 +1095,26 @@ export default function ExecutiveDashboard() {
                           >
                             {shortDeptName(item.department)}
                           </span>
+                        </td>
+                        <td style={{ whiteSpace: "nowrap", fontSize: 12, color: "var(--ink)" }}>
+                          {item.ownerName || "—"}
+                        </td>
+                        <td style={{ whiteSpace: "nowrap" }}>
+                          {item.isOverdue ? (
+                            <span className="pill c-Critical" style={{ fontSize: 10, fontWeight: 700 }}>
+                              OVERDUE
+                            </span>
+                          ) : item.daysDiff != null && item.daysDiff >= 0 && item.daysDiff <= 14 ? (
+                            <span className="pill c-Moderate" style={{ fontSize: 10, fontWeight: 600 }}>
+                              {item.daysDiff === 0 ? "Due today" : `${item.daysDiff}d left`}
+                            </span>
+                          ) : item.targetDate ? (
+                            <span style={{ fontSize: 11.5, color: "var(--muted)" }}>
+                              {item.targetDate}
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: 11.5, color: "var(--muted)" }}>—</span>
+                          )}
                         </td>
                       </tr>
                     ))}

@@ -33,7 +33,8 @@ export type ViewKey =
   | "guide"
   | "newobs"
   | "departments"
-  | "updates";
+  | "updates"
+  | "allobs";
 
 export type ViewOpts = {
   audit?: string;
@@ -48,6 +49,9 @@ export type ViewOpts = {
   comments?: boolean;
   dept?: string;
   type?: string;
+  crit?: string;
+  timeline?: string;
+  status?: string;
 };
 
 // Views served by the new React shell. Grown per migration phase.
@@ -79,6 +83,7 @@ export const MIGRATED_VIEWS: ReadonlySet<ViewKey> = new Set<ViewKey>([
   "newobs",
   "departments",
   "updates",
+  "allobs",
 ]);
 
 // Where the legacy shell lives. Stage B (dashboard takes "/") moved it to /legacy.
@@ -152,6 +157,8 @@ export function urlForView(view: ViewKey, opts: ViewOpts = {}): string {
         : "/departments";
     case "updates":
       return "/updates";
+    case "allobs":
+      return `/observations${q({ crit: opts.crit, status: opts.status, timeline: opts.timeline, dept: opts.dept })}`;
   }
 }
 
@@ -213,7 +220,7 @@ export function viewForPathname(pathname: string): ViewKey | null {
     case "guide":
       return "guide";
     case "observations":
-      return "newobs";
+      return seg[1] === "new" ? "newobs" : "allobs";
     case "departments":
       return "departments";
     case "updates":

@@ -1,4 +1,4 @@
-export const MAIN_VIEWS = ["dashboard", "audits", "tracker"] as const;
+export const MAIN_VIEWS = ["dashboard", "audits", "allobs", "tracker"] as const;
 
 export const ASSESSMENT_VIEWS = [
   "auditra",
@@ -41,6 +41,7 @@ export const DETAIL_VIEWS = [
 // Views available to an executive / brief viewer (MD & EXCO).
 export const EXECUTIVE_VIEWS = [
   "dashboard",
+  "allobs",
   "exco",
   "departments",
   "observation",
@@ -230,7 +231,7 @@ export function allowedViews(user: SessionUser): string[] {
 export function visibleViews(user: SessionUser): string[] {
   const role = effectiveRole(user);
   if (role === "action_owner") return ["dashboard", "myobs", "myext", "myfraud"];
-  if (role === "executive") return ["dashboard", "exco", "departments"];
+  if (role === "executive") return ["dashboard", "allobs", "exco", "departments"];
   if (role === "head_of_audit") {
     return [...MAIN_VIEWS, ...ASSESSMENT_VIEWS, ...OVERSIGHT_VIEWS];
   }
