@@ -484,18 +484,33 @@ export default function ExecutiveDashboard() {
             </div>
 
             <div className="tline">
-              <div className="tcell tcell-overdue">
+              <Link
+                href="/observations?timeline=overdue"
+                className="tcell tcell-overdue"
+                style={{ textDecoration: "none", cursor: "pointer" }}
+                title="View overdue observations in full register"
+              >
                 <div className="tn">{dueStatusCounts.overdue}</div>
                 <div className="tl">Overdue</div>
-              </div>
-              <div className="tcell tcell-watch">
+              </Link>
+              <Link
+                href="/observations?timeline=due_soon"
+                className="tcell tcell-watch"
+                style={{ textDecoration: "none", cursor: "pointer" }}
+                title="View watchlist (≤2wks) observations in full register"
+              >
                 <div className="tn">{dueStatusCounts.watchlist}</div>
                 <div className="tl">Watchlist · ≤2wks</div>
-              </div>
-              <div className="tcell tcell-track">
+              </Link>
+              <Link
+                href="/observations?timeline=on_track"
+                className="tcell tcell-track"
+                style={{ textDecoration: "none", cursor: "pointer" }}
+                title="View on track observations in full register"
+              >
                 <div className="tn">{dueStatusCounts.onTrack}</div>
                 <div className="tl">On track</div>
-              </div>
+              </Link>
             </div>
           </div>
 
@@ -1062,9 +1077,8 @@ export default function ExecutiveDashboard() {
                       <tr>
                         <th scope="col" style={{ width: 100 }}>Severity</th>
                         <th scope="col">Observation</th>
-                        <th scope="col" style={{ width: 130 }}>Department</th>
-                        <th scope="col" style={{ width: 130 }}>Who (Owner)</th>
-                        <th scope="col" style={{ width: 110 }}>Timeline</th>
+                        <th scope="col" style={{ width: 140 }}>Department</th>
+                        <th scope="col" style={{ width: 120 }}>Timeline</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1099,9 +1113,6 @@ export default function ExecutiveDashboard() {
                             >
                               {shortDeptName(item.department)}
                             </span>
-                          </td>
-                          <td style={{ whiteSpace: "nowrap", fontSize: 12, color: "var(--ink)" }}>
-                            {item.ownerName || "—"}
                           </td>
                           <td style={{ whiteSpace: "nowrap" }}>
                             {item.isOverdue ? (

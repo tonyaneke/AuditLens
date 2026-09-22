@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useUser } from "@/components/chrome/UserContext";
-import { Avatar, CritPill, Empty, Kpi, StatusPill } from "@/components/ui";
+import { CritPill, Empty, Kpi, StatusPill } from "@/components/ui";
 import { deptLabel, deptNameOf } from "@/lib/dept-scope";
 import { esc, excelDoc, stamp } from "@/lib/client/exports";
 import { hrefForView, isLegacyPath } from "@/lib/routes";
@@ -50,32 +50,22 @@ export default function AllObservationsPage() {
   const [critFilter, setCritFilter] = useState<string>(initialCrit);
   const [timelineFilter, setTimelineFilter] = useState<string>(initialTimeline);
   const [statusFilter, setStatusFilter] = useState<string>("All");
-  const [deptFilter, setDeptFilter] = useState<string>("All");
-  const [ownerFilter, setOwnerFilter] = useState<string>("All");
   const [searchQuery, setSearchQuery] = useState<string>("");
-  const [sortBy, setSortBy] = useState<"severity" | "due" | "age" | "title">("severity");
-  const [sortDesc, setSortDesc] = useState<boolean>(true);
+  const sortBy = "severity";
+  const sortDesc = true;
+
+  // Sync state if navigation occurs with new search params
+  useEffect(() => {
+    const c = searchParams.get("crit");
+    if (c) setCritFilter(c);
+    const t = searchParams.get("timeline");
+    if (t) setTimelineFilter(t);
+  }, [searchParams]);
 
   // All approved observations across audits
   const allList: ObsWithContext[] = useMemo(() => {
     return allObs(db).filter(obsIsApproved);
   }, [db]);
-
-  // Unique departments and owners for dropdowns
-  const { departments, owners } = useMemo(() => {
-    const depts = new Set<string>();
-    const ownrs = new Set<string>();
-    for (const o of allList) {
-      const d = deptLabel(deptNameOf(db, o));
-      if (d) depts.add(d);
-      if (o.owner) ownrs.add(String(o.owner).trim());
-      if (o.secondaryOwner) ownrs.add(String(o.secondaryOwner).trim());
-    }
-    return {
-      departments: [...depts].sort(),
-      owners: [...ownrs].sort(),
-    };
-  }, [allList, db]);
 
   // Overall totals for KPI strip
   const totals = useMemo(() => {
