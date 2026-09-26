@@ -10,6 +10,9 @@ import {
   MATURITY,
   STD_ACT_STATUS,
   allPrinc,
+  conclusionSections,
+  iasaStats,
+  overallOpinion,
   princItem,
   qaipStats,
   rollupPrinc,
@@ -18,33 +21,34 @@ import {
 } from "@/lib/workspace/iasa";
 import type { IaSaRecord, WorkspaceDb } from "@/lib/workspace/types";
 
+/** The conclusion as Word HTML: headed paragraphs when generated, else the old plain text. */
+function conclusionHtml(sa: IaSaRecord): string {
+  const c = sa.conclusion;
+  if (!c) {
+    return sa.commentary
+      ? `<h2>Overall Conclusion</h2><div>${esc(sa.commentary).replace(/\n/g, "<br>")}</div>`
+      : "";
+  }
+  const rich = (s: string) => esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+  return (
+    `<h2>Overall Conclusion</h2>` +
+    conclusionSections(c)
+      .map((s) => (s.heading ? `<h3>${esc(s.heading)}</h3>` : "") + `<p>${rich(s.text)}</p>`)
+      .join("")
+  );
+}
+
 export function exportIASA(db: WorkspaceDb, sa: IaSaRecord): void {
-  const principles = allPrinc();
-  const conf: Record<string, number> = {
-    Conforms: 0,
-    "Partially Conforms": 0,
-    "Does Not Conform": 0,
-  };
-  principles.forEach((p) => {
-    const c = princItem(sa, p.n).conformance;
-    if (c && conf[c] != null) conf[c]++;
-  });
-  const matVals = principles
-    .map((p) => Number(princItem(sa, p.n).maturity))
-    .filter((v) => v >= 1);
-  const avgMat = matVals.length ? matVals.reduce((a, b) => a + b, 0) / matVals.length : 0;
-  const overall = conf["Does Not Conform"]
-    ? "Partially Conforms (with areas of non-conformance)"
-    : conf["Partially Conforms"]
-      ? "Partially Conforms"
-      : conf.Conforms
-        ? "Generally Conforms"
-        : "Not yet assessed";
+  /* The headline is the same rollup the Assessment tab shows. It used to count each principle's
+     legacy `conformance` field, which current assessments never set, so the document said "Not
+     yet assessed" over a fully rated assessment. */
+  const st = iasaStats(sa);
+  const overall = overallOpinion(sa);
 
   let inner = `<h1>Internal Audit Quality Self-Assessment</h1>
     <div class="meta">${esc(db.org)} — Internal Audit · against the IIA Global Internal Audit Standards (2024)${sa.period ? " · " + esc(sa.period) : ""}${sa.assessor ? " · Assessor: " + esc(sa.assessor) : ""}</div>
-    <div class="note">Overall conformance: <b>${overall}</b> · Average maturity: <b>${avgMat ? avgMat.toFixed(1) + " / 5" : "—"}</b> (${conf.Conforms} conform, ${conf["Partially Conforms"]} partial, ${conf["Does Not Conform"]} non-conform of 15 principles).</div>
-    ${sa.commentary ? `<h2>Overall Conclusion</h2><div>${esc(sa.commentary).replace(/\n/g, "<br>")}</div>` : ""}
+    <div class="note">Overall conformance: <b>${esc(overall)}</b> · Average maturity: <b>${st.avgMat ? st.avgMat.toFixed(1) + " / 5" : "—"}</b> · Standards: ${st.rated} of ${st.total} rated (${st.cnt["Conforms"]} conform, ${st.cnt["Partially Conforms"]} partially conform, ${st.cnt["Does Not Conform"]} do not conform) · Principles: ${st.prc["Generally Conforms"]} of ${allPrinc().length} generally conform.</div>
+    ${conclusionHtml(sa)}
     <h2>Assessment by Principle</h2>`;
 
   GIAS.forEach((g) => {

@@ -16,6 +16,8 @@ import { logAudit } from "@/lib/client/audit-log";
 import { isAuditStaff } from "@/lib/workspace/observations";
 import {
   CONF_HEX,
+  canDeleteIaSa,
+  canReopenIaSa,
   currentIaSa,
   ensureIaSaList,
   iaSaVisibleList,
@@ -103,7 +105,6 @@ function NewAssessmentDialog() {
   const router = useRouter();
   const [ctx, setCtx] = useState("");
   const [err, setErr] = useState("");
-  const personal = isAuditStaff(user);
 
   function createRecord(context: string): string {
     let id = "";
@@ -117,7 +118,7 @@ function NewAssessmentDialog() {
 
   return (
     <ModalFrame
-      title={personal ? "New personal self-assessment" : "New self-assessment"}
+      title="New self-assessment"
       footer={
         <>
           <button className="btn sec" type="button" onClick={modal.close}>
@@ -177,7 +178,6 @@ export default function SelfAssessmentPage() {
   const modal = useModal();
   const router = useRouter();
   const search = useSearchParams();
-  const personal = isAuditStaff(user);
   const raw = search.get("tab");
   const tab: Tab =
     raw === "assessment" ? "assessment" : raw === "tracker" ? "tracker" : raw === "insights" ? "insights" : "overview";
@@ -244,6 +244,7 @@ export default function SelfAssessmentPage() {
     });
   }
   function remove(s: IaSaRecord) {
+    if (!canDeleteIaSa(s, user)) return;
     void modal.confirm({
       message: "Delete this self-assessment? This cannot be undone.",
       danger: true,
@@ -267,7 +268,7 @@ export default function SelfAssessmentPage() {
 
   usePageChrome(
     {
-      title: personal ? "My IA Self-Assessment" : "IA Self-Assessment",
+      title: "IA Self-Assessment",
       actions:
         tab === "overview" ? (
           <button className="btn sm" type="button" onClick={startNew}>
@@ -298,7 +299,7 @@ export default function SelfAssessmentPage() {
                   ✓ Mark complete
                 </button>
               </>
-            ) : cur ? (
+            ) : cur && canReopenIaSa(user) ? (
               <button className="btn sec sm" type="button" onClick={() => reopen(cur)}>
                 Reopen
               </button>
@@ -319,32 +320,26 @@ export default function SelfAssessmentPage() {
     return (
       <>
         <div className="dash-kpis anim-fade-in" style={{ gridTemplateColumns: "repeat(3,1fr)" }}>
-          <IasaKpi tone="accent" label="Completed" value={done.length} sub={personal ? "assessments on your record" : "self-assessments on record"} />
+          <IasaKpi tone="accent" label="Completed" value={done.length} sub="self-assessments on record" />
           <IasaKpi tone="base" label="In progress" value={inprog.length} sub="awaiting completion" />
           <IasaKpi
             tone={nd.overdue ? "bad" : "good"}
             label="Next assessment"
             value={nd.overdue ? "Due now" : nd.due ? fmtDate(nd.due) : "Due now"}
-            sub="6-monthly cadence"
+            sub="Annual cadence"
           />
         </div>
 
         <div className="seclabel" style={{ margin: "16px 0 8px" }}>
-          {personal ? "My assessments" : "Assessments"}
+          Assessments
         </div>
 
         {!all.length ? (
           <div className="card">
             <Empty big="⚖">
-              {personal ? "No personal self-assessments yet." : "No self-assessments yet."}
+              No self-assessments yet.
               <br />
-              Run one every 6 months to track conformance with the Global Internal Audit Standards.
-              {personal ? (
-                <>
-                  <br />
-                  Your assessments are private to you — other team members cannot see them.
-                </>
-              ) : null}
+              Run one every year to track conformance with the Global Internal Audit Standards.
               <br />
               <br />
               <button className="btn dark" type="button" onClick={startNew}>
@@ -357,9 +352,10 @@ export default function SelfAssessmentPage() {
             {all.map((s) => {
               const sum = iasaSummary(s);
               const when =
-                s.status === "completed"
+                (s.status === "completed"
                   ? "Completed " + (s.completedAt ? fmtDate(new Date(s.completedAt)) : "—")
-                  : "Started " + (s.startedAt ? fmtDate(new Date(s.startedAt)) : "—");
+                  : "Started " + (s.startedAt ? fmtDate(new Date(s.startedAt)) : "—")) +
+                (s.createdByName ? " · by " + s.createdByName : "");
               return (
                 <div className="card iasa-assess-card anim-fade-in" key={s.id}>
                   <div className="row" style={{ alignItems: "flex-start", gap: 8 }}>
@@ -398,9 +394,11 @@ export default function SelfAssessmentPage() {
                       {s.status === "completed" ? "View" : "Continue"}
                     </button>
                     <div className="spacer" style={{ flex: 1 }} />
-                    <button className="btn ghost sm danger" type="button" onClick={() => remove(s)}>
-                      Delete
-                    </button>
+                    {canDeleteIaSa(s, user) ? (
+                      <button className="btn ghost sm danger" type="button" onClick={() => remove(s)}>
+                        Delete
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               );

@@ -37,7 +37,7 @@ const HEAD_ROLE = "head_of_audit";
 const STAFF_ROLE = "audit_staff";
 
 // Top-level sections a non-head user may modify. Everything else (auditUniverse,
-// processReviews, iaSA/iaSAList, planYear, org, signOff*, logo, branding, departments, exco*, …) is
+// processReviews, the legacy single iaSA, planYear, org, signOff*, logo, branding, departments, exco*, …) is
 // locked to the stored value — the default-deny that closes head-only content to non-head writes.
 // fraudRisks/extFindings/notifications are in the set because they are reconciled below: action
 // owners may write ONLY their own remediation surface, never the registers themselves.
@@ -842,19 +842,25 @@ function reconcileApprovals(
   return out;
 }
 
-function iaSaOwnerId(rec: Obj): string {
-  return String(rec.userId || "");
+/* Who started a self-assessment. Legacy per-person records carry it as `userId`. Mirrors
+   iaSaCreatorId() in lib/workspace/iasa.ts. */
+const IA_SA_CREATOR_FIELDS = ["createdBy", "createdByName", "userId"];
+function iaSaCreatorId(rec: Obj): string {
+  return String(rec.createdBy || rec.userId || "");
+}
+// Same reading as normOneIASA(): an old record may have completedAt but no status.
+function isCompletedIaSa(rec: Obj): boolean {
+  return rec.status === "completed" || (!rec.status && !!rec.completedAt);
 }
 
-function isOrgIaSa(rec: Obj): boolean {
-  return !iaSaOwnerId(rec);
-}
-
-function isStaffOwnedIaSa(rec: Obj, userId: string): boolean {
-  return iaSaOwnerId(rec) === userId;
-}
-
-/** Audit staff may create and edit only their own self-assessments; org-wide records stay Head-only. */
+/** The self-assessment is the Internal Audit function's, not a person's: audit staff work on every
+ *  record alongside the Head — rate standards, record evidence, generate, mark complete, and keep
+ *  the QAIP tracker current (which happens AFTER completion, so completed records stay editable).
+ *  What stays controlled, matching canDeleteIaSa()/canReopenIaSa() in lib/workspace/iasa.ts:
+ *    - a completed assessment is never deleted, and only the Head reopens one — otherwise
+ *      reopen-then-delete would get round the first rule;
+ *    - an in-progress one may be deleted only by the person who started it (or the Head);
+ *    - who started it is not rewritable, since it carries that delete right. */
 function reconcileIaSaList(
   curList: Obj[],
   incList: Obj[],
@@ -870,41 +876,33 @@ function reconcileIaSaList(
     seen.add(id);
     const inc = incById.get(id);
 
-    if (isOrgIaSa(cur)) {
-      if (inc && !jsonEq(inc, cur)) violations.push(`iaSa_org_locked:${id}`);
-      out.push(cur);
-      continue;
-    }
-
-    if (!isStaffOwnedIaSa(cur, userId)) {
-      if (inc && !jsonEq(inc, cur)) violations.push(`iaSa_other_user:${id}`);
-      out.push(cur);
-      continue;
-    }
-
     if (!inc) {
+      if (!isCompletedIaSa(cur) && iaSaCreatorId(cur) === userId) continue; // own draft
       violations.push(`iaSa_delete_blocked:${id}`);
       out.push(cur);
       continue;
     }
 
-    if (!isStaffOwnedIaSa(inc, userId)) {
-      violations.push(`iaSa_userId_change:${id}`);
-      out.push(cur);
-      continue;
+    const next: Obj = { ...inc };
+    if (IA_SA_CREATOR_FIELDS.some((f) => !jsonEq(next[f], cur[f]))) {
+      violations.push(`iaSa_creator_change:${id}`);
+      for (const f of IA_SA_CREATOR_FIELDS) forceField(next, f, cur[f]);
     }
-
-    out.push(inc);
+    if (isCompletedIaSa(cur) && next.status !== "completed") {
+      violations.push(`iaSa_reopen_blocked:${id}`);
+      next.status = "completed";
+      forceField(next, "completedAt", cur.completedAt);
+    }
+    out.push(next);
   }
 
   for (const inc of incList) {
     const id = inc.id as string;
     if (seen.has(id)) continue;
-    if (isOrgIaSa(inc)) {
-      violations.push(`iaSa_create_org_blocked:${id}`);
-      continue;
-    }
-    if (!isStaffOwnedIaSa(inc, userId)) {
+    // A new record must name its creator, and only as the caller — both the current field and the
+    // legacy one, so neither can plant a record deletable by (or attributed to) somebody else.
+    const claimed = [inc.createdBy, inc.userId].filter(Boolean).map(String);
+    if (!claimed.length || claimed.some((c) => c !== userId)) {
       violations.push(`iaSa_create_other_blocked:${id}`);
       continue;
     }

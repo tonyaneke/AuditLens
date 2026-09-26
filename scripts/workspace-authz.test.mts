@@ -159,29 +159,83 @@ console.log("\n== Staff cannot touch head-only sections ==");
   // the implementation; corrected here to assert the behaviour the code actually specifies.
   inc.fraudRisks[0].status = "Mitigated";
   inc.auditUniverse.push({ id: "u2", name: "New", factors: {} });
-  inc.iaSAList[0].period = "H2 2026";
   inc.departments.push({ id: "d2", name: "Legal" });
   const r = authorizeWorkspaceWrite(STAFF.role, STAFF.id, cur, inc);
   ok(r.data.fraudRisks[0].status === "Mitigated", "staff may maintain the fraud register");
   ok(r.data.auditUniverse.length === 1, "audit universe addition reverted");
-  ok(r.data.iaSAList[0].period === "H1 2026", "org IA self-assessment change reverted");
   ok(r.data.departments.length === 1, "departments change reverted");
   ok(["section:auditUniverse", "section:departments"].every((s) => r.violations.includes(s)), "locked-section violations recorded");
-  ok(r.violations.includes("iaSa_org_locked:ia1"), "org self-assessment locked for staff");
 }
 
-console.log("\n== Staff may maintain their own self-assessment ==");
+console.log("\n== The IA self-assessment is shared by the whole Internal Audit function ==");
 {
-  const cur = baseWorkspace();
-  cur.iaSAList.push({ id: "iaStaff", period: "H1 2026", userId: "staff1", std: {}, items: {} });
-  cur.iaSAUserCurrent = { staff1: "iaStaff" };
-  const inc = clone(slimForClient(cur, { id: STAFF.id, role: "audit_staff" }));
-  inc.iaSAList[0].period = "H2 2026";
-  inc.iaSAUserCurrent.staff1 = "iaStaff";
+  const sa = () => {
+    const cur = baseWorkspace();
+    cur.iaSAList = [
+      { id: "ia1", period: "H1 2026", std: {}, items: {} },                                   // Head's, pre-sharing
+      { id: "iaOld", period: "H1 2026", userId: "staff2", std: {}, items: {} },               // legacy "personal"
+      { id: "iaDraft", period: "FY 2026", createdBy: "staff1", status: "in_progress", std: {}, items: {} },
+      { id: "iaDone", period: "FY 2025", createdBy: "staff1", status: "completed", completedAt: "2025-12-01T00:00:00Z", std: {}, items: {} },
+    ];
+    cur.iaSAUserCurrent = { staff1: "iaDraft", staff2: "iaOld" };
+    return cur;
+  };
+  const ids = (w: any) => (w.iaSAList || []).map((s: any) => s.id).join(",");
+
+  const cur = sa();
+  const toStaff = clone(slimForClient(cur, { id: STAFF.id, role: "audit_staff" }));
+  const toHead = clone(slimForClient(cur, { id: HEAD.id, role: "head_of_audit" }));
+  ok(ids(toStaff) === "ia1,iaOld,iaDraft,iaDone", "audit staff receive every assessment, including colleagues'");
+  ok(ids(toHead) === "ia1,iaOld,iaDraft,iaDone", "the Head receives every assessment, including staff-started ones");
+  ok(JSON.stringify(toStaff.iaSAUserCurrent) === JSON.stringify({ staff1: "iaDraft" }), "staff get only their own open-record pointer");
+
+  // Rating a standard on the Head's record and on a colleague's legacy record both persist.
+  const inc = clone(toStaff);
+  inc.iaSAList[0].std["1.1"] = { conf: "Conforms", evidence: "Code of ethics signed" };
+  inc.iaSAList[1].std["2.1"] = { conf: "Partially Conforms" };
+  inc.iaSAList[3].std["3.1"] = { conf: "Conforms", action: "CPD plan", status: "Implemented" }; // QAIP after completion
   const r = authorizeWorkspaceWrite(STAFF.role, STAFF.id, cur, inc);
-  ok(r.data.iaSAList.some((s: any) => s.id === "iaStaff" && s.period === "H2 2026"), "staff self-assessment update passes");
-  ok(r.data.iaSAList[0].period === "H1 2026", "org self-assessment untouched in storage merge");
-  ok(!r.violations.some((v) => v.startsWith("iaSa_")), "no iaSa violations for legit staff save");
+  ok(r.violations.length === 0, `staff editing shared assessments logs no violations (got ${JSON.stringify(r.violations)})`);
+  ok(r.data.iaSAList[0].std["1.1"]?.evidence === "Code of ethics signed", "staff edit to the Head-started assessment persists");
+  ok(r.data.iaSAList[1].std["2.1"]?.conf === "Partially Conforms", "staff edit to a colleague's assessment persists");
+  ok(r.data.iaSAList[3].std["3.1"]?.status === "Implemented", "QAIP tracking on a completed assessment persists");
+
+  // A new assessment started by the caller is accepted; one claiming another creator is not.
+  const incNew = clone(toStaff);
+  incNew.iaSAList.unshift({ id: "iaNew", period: "FY 2026", createdBy: "staff1", std: {}, items: {} });
+  incNew.iaSAList.unshift({ id: "iaForged", period: "FY 2026", createdBy: "staff2", std: {}, items: {} });
+  incNew.iaSAList.unshift({ id: "iaAnon", period: "FY 2026", std: {}, items: {} });
+  const rNew = authorizeWorkspaceWrite(STAFF.role, STAFF.id, cur, incNew);
+  ok(rNew.data.iaSAList.some((s: any) => s.id === "iaNew"), "staff may start a new assessment");
+  ok(!rNew.data.iaSAList.some((s: any) => s.id === "iaForged" || s.id === "iaAnon"), "a new assessment must be started as the caller");
+  ok(rNew.violations.includes("iaSa_create_other_blocked:iaForged") && rNew.violations.includes("iaSa_create_other_blocked:iaAnon"), "forged creator recorded");
+
+  // Delete: own in-progress draft only. Never a completed one, never a colleague's.
+  const incDel = clone(toStaff);
+  incDel.iaSAList = incDel.iaSAList.filter((s: any) => !["iaDraft", "iaDone", "iaOld", "ia1"].includes(s.id));
+  const rDel = authorizeWorkspaceWrite(STAFF.role, STAFF.id, cur, incDel);
+  ok(ids(rDel.data) === "ia1,iaOld,iaDone", "only the caller's own in-progress draft is deleted");
+  ok(["iaSa_delete_blocked:iaDone", "iaSa_delete_blocked:iaOld", "iaSa_delete_blocked:ia1"].every((v) => rDel.violations.includes(v)), "blocked deletes recorded");
+  ok(!rDel.violations.includes("iaSa_delete_blocked:iaDraft"), "own draft delete is not a violation");
+
+  // Reopening a completed assessment, and rewriting who started one, stay out of reach.
+  const incRe = clone(toStaff);
+  incRe.iaSAList[3].status = "in_progress";
+  incRe.iaSAList[3].completedAt = "";
+  incRe.iaSAList[1].createdBy = "staff1";
+  const rRe = authorizeWorkspaceWrite(STAFF.role, STAFF.id, cur, incRe);
+  ok(rRe.data.iaSAList[3].status === "completed" && rRe.data.iaSAList[3].completedAt === "2025-12-01T00:00:00Z", "staff cannot reopen a completed assessment");
+  ok(rRe.data.iaSAList[1].createdBy === undefined && rRe.data.iaSAList[1].userId === "staff2", "the creator cannot be rewritten");
+  ok(rRe.violations.includes("iaSa_reopen_blocked:iaDone") && rRe.violations.includes("iaSa_creator_change:iaOld"), "reopen and creator violations recorded");
+
+  // Regression: graftServerHeld() used to re-add every stored assessment missing from the save,
+  // so a Head's delete was silently undone.
+  const incHead = clone(toHead);
+  incHead.iaSAList = incHead.iaSAList.filter((s: any) => s.id !== "iaDraft");
+  const rHead = authorizeWorkspaceWrite(HEAD.role, HEAD.id, cur, incHead);
+  const savedHead = graftServerHeld(cur, rHead.data, HEAD.id) as any;
+  ok(ids(savedHead) === "ia1,iaOld,iaDone", "a Head delete survives the graft");
+  ok(savedHead.iaSAUserCurrent?.staff2 === "iaOld", "staff open-record pointers survive a Head save");
 }
 
 console.log("\n== Staff LEGITIMATE actions pass through ==");

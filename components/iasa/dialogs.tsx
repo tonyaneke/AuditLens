@@ -6,7 +6,7 @@
 import { useState } from "react";
 import BusyButton from "@/components/feedback/BusyButton";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
-import { runAiText } from "@/lib/client/ai";
+import { runAiJson } from "@/lib/client/ai";
 import {
   MATURITY,
   STD_ACT_STATUS,
@@ -14,13 +14,19 @@ import {
   allPrinc,
   allStandards,
   applyStdStatus,
+  conclusionBasis,
+  conclusionToText,
   ensureIaSaList,
+  eqaDue,
   findPrinc,
+  iasaStats,
+  overallOpinion,
   princItem,
+  princMaturity,
   rollupPrinc,
   stdItem,
 } from "@/lib/workspace/iasa";
-import type { IaSaRecord, WorkspaceDb } from "@/lib/workspace/types";
+import type { IaSaConclusion, IaSaRecord, WorkspaceDb } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 
 /** Locate the record being edited inside a mutate() callback. */
@@ -186,17 +192,75 @@ export function PrincipleDialog({ rec, pn }: { rec: IaSaRecord; pn: number }) {
   );
 }
 
+/* The conclusion has to be drawn from what the team actually recorded. This prompt used to send
+   only each principle's legacy `conformance` field — superseded by the rollup from standard-level
+   ratings, so it read "Not rated" on every current assessment — plus maturity, and nothing else:
+   no standard ratings, evidence, gaps, actions or EQA history. The AI was writing a conclusion
+   for an assessment it had never been shown. It now gets the same figures the Assessment tab
+   displays, and every note entered against every standard and principle. */
 function buildCommentaryPrompt(db: WorkspaceDb, rec: IaSaRecord): string {
-  const lines = allPrinc()
+  const st = iasaStats(rec);
+  const eq = eqaDue(rec, db);
+  const detail = allPrinc()
     .map((p) => {
       const it = princItem(rec, p.n);
-      return `P${p.n} ${p.t}: ${it.conformance || "Not rated"}, maturity ${it.maturity || "—"}`;
+      const mat = princMaturity(rec, p.n);
+      const out = [
+        `P${p.n} ${p.t} (Domain ${p.d} · ${p.dt}) — conformance: ${rollupPrinc(rec, p.n)}; maturity: ${mat ? MATURITY[mat] : "not rated"}`,
+      ];
+      if (it.notes) out.push(`  Principle commentary: ${it.notes}`);
+      if (it.action) out.push(`  Key improvement action: ${it.action}`);
+      for (const [num, title] of p.s) {
+        const s = stdItem(rec, num);
+        const parts = [`  Std ${num} ${title}: ${s.conf || "Not rated"}`];
+        if (s.evidence) parts.push(`evidence: ${s.evidence}`);
+        if (s.gap) parts.push(`gap: ${s.gap}`);
+        if (s.action) parts.push(`improvement action: ${s.action} (status: ${s.status || "Not started"})`);
+        out.push(parts.join(" | "));
+      }
+      return out.join("\n");
     })
-    .join("\n");
-  return `Act as an internal audit quality assessor for ${db.org}. Based on the self-assessment results below against the IIA Global Internal Audit Standards (2024), draft a concise overall conclusion (3–4 short paragraphs) covering: the overall conformance statement, the function's maturity, key strengths, priority improvement areas, and whether an external quality assessment (EQA) is due. Return plain text only (no JSON).
+    .join("\n\n");
 
-Results:
-${lines}`;
+  return `Act as an internal audit quality assessor for ${db.org || "the organisation"}. Draft the overall conclusion of the Internal Audit function's self-assessment against the IIA Global Internal Audit Standards (2024)${rec.period ? " for " + rec.period : ""}.
+
+Ground every statement in the recorded results below. Draw strengths from the evidence recorded and priorities from the gaps and improvement actions recorded, and do not invent evidence, ratings or facts that are not shown. State the overall opinion exactly as given. If standards are still "Not rated", say the assessment is incomplete and qualify the conclusion accordingly.
+
+Write it as flowing prose — one paragraph per field, no lists or bullet points — and return ONLY a JSON object (no commentary, no markdown fences) with these four string fields:
+{
+  "overview": "The overall conformance statement: the overall opinion, how many standards conform / partially conform / do not conform, how many principles generally conform, and what the average maturity says about the function (3–4 sentences).",
+  "strengths": "The key strengths, drawn from the evidence recorded (3–5 sentences).",
+  "priorities": "The priority improvement areas, most serious first — every standard rated Does Not Conform must be named — with the improvement actions recorded (3–6 sentences).",
+  "eqa": "Whether an external quality assessment is due and when (1–3 sentences)."
+}
+Cite the standards and principles each point rests on inline, e.g. "(Std 7.1, 7.2)" or "(Principle 11, Std 11.4)". In each paragraph you may wrap one or two key phrases in **double asterisks** for emphasis; use no other formatting.
+
+IA function context: ${String(rec.aiContext || "not provided")}
+
+Summary:
+- Overall opinion: ${overallOpinion(rec)}
+- Standards rated: ${st.rated} of ${st.total} — Conforms ${st.cnt["Conforms"]}, Partially Conforms ${st.cnt["Partially Conforms"]}, Does Not Conform ${st.cnt["Does Not Conform"]}
+- Principles (rolled up from their standards): ${st.prc["Generally Conforms"]} Generally Conform, ${st.prc["Partially Conforms"]} Partially Conform, ${st.prc["Does Not Conform"]} Do Not Conform, ${allPrinc().length - st.pRated} not rated
+- Average maturity: ${st.avgMat ? st.avgMat.toFixed(1) + " / 5" : "not rated"}
+- External quality assessment: last EQA ${rec.lastEQA || "not on record"}; ${eq.txt} (${eq.sub})
+
+Recorded results by principle and standard:
+${detail}`;
+}
+
+/* The AI's JSON, made safe to store: four trimmed strings. Null when there is nothing usable. */
+function normConclusion(raw: unknown, basis: IaSaConclusion["basis"]): IaSaConclusion | null {
+  const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  const c: IaSaConclusion = {
+    generatedAt: new Date().toISOString(),
+    basis,
+    overview: str(o.overview),
+    strengths: str(o.strengths),
+    priorities: str(o.priorities),
+    eqa: str(o.eqa),
+  };
+  return c.overview || c.strengths || c.priorities ? c : null;
 }
 
 export function CommentaryDialog({ rec }: { rec: IaSaRecord }) {
@@ -206,16 +270,26 @@ export function CommentaryDialog({ rec }: { rec: IaSaRecord }) {
 
   async function generate() {
     setErr("");
-    let text: string;
+    // Read the record from the live workspace, not the copy captured when the dialog opened.
+    const live = (db.iaSAList || []).find((x) => x.id === rec.id) || rec;
+    const basis = conclusionBasis(live);
+    let conclusion: IaSaConclusion | null;
     try {
-      text = await runAiText(buildCommentaryPrompt(db, rec));
+      conclusion = normConclusion(await runAiJson(buildCommentaryPrompt(db, live)), basis);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "AI request failed.");
       return;
     }
+    if (!conclusion) {
+      setErr("The AI returned no usable conclusion. Please try again.");
+      return;
+    }
+    const c = conclusion;
     mutate((d) => {
       const r = recordIn(d, rec.id);
-      if (r) r.commentary = text.trim();
+      if (!r) return;
+      r.conclusion = c;
+      r.commentary = conclusionToText(c);
     });
     modal.close();
   }
@@ -235,8 +309,9 @@ export function CommentaryDialog({ rec }: { rec: IaSaRecord }) {
       }
     >
       <p className="hint" style={{ margin: 0 }}>
-        Drafts the EQA-style opinion statement from the ratings and maturity recorded on this
-        assessment.
+        The AI drafts the EQA-style conclusion — the overall position, key strengths, priority
+        improvement areas and the EQA position — from the ratings, evidence, gaps, improvement
+        actions and maturity recorded on this assessment. It replaces the current conclusion.
       </p>
       {err ? <div className="ai-err">{err}</div> : null}
     </ModalFrame>

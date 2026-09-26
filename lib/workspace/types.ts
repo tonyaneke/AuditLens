@@ -369,16 +369,47 @@ export type IaSaPrinciple = {
   action?: string;
 };
 
+/** The overall conclusion — AI-generated, read-only prose. One paragraph per section; the
+ *  AI may mark a key phrase **like this**. */
+export type IaSaConclusion = {
+  generatedAt: string;
+  /** The figures it was drawn from — compared with the live ratings to flag it as out of date. */
+  basis: IaSaConclusionBasis;
+  overview: string;
+  strengths: string;
+  priorities: string;
+  eqa: string;
+};
+
+export type IaSaConclusionBasis = {
+  opinion: string;
+  rated: number;
+  total: number;
+  conforms: number;
+  partial: number;
+  dnc: number;
+  principlesGC: number;
+  principlesTotal: number;
+  avgMat: number;
+};
+
 export type IaSaRecord = {
   id: string;
-  /** When set, this assessment belongs to one audit staff member; unset = org-wide (Head). */
+  /** Legacy: set on assessments created while they were per-person. Assessments are now shared
+   *  across Internal Audit, so this is read only as a fallback for `createdBy`. */
   userId?: string;
+  /** Who started the assessment — decides who besides the Head may delete it while in progress. */
+  createdBy?: string;
+  createdByName?: string;
   period?: string;
   assessor?: string;
   scope?: string;
   approach?: string;
   lastEQA?: string;
+  /** Plain-text overall conclusion. Kept in step with `conclusion` (its text rendering); on
+   *  assessments concluded before the structured view it is the only copy. */
   commentary?: string;
+  conclusion?: IaSaConclusion;
   items: Record<string, IaSaPrinciple>;
   std: Record<string, IaSaStandard>;
   /** Quality Improvement Programme (Improvement Tracker tab) reporting metadata. */
@@ -488,7 +519,8 @@ export type WorkspaceDb = {
   extCommentary?: string;
   iaSAList?: IaSaRecord[];
   iaSACurrentId?: string;
-  /** Per audit-staff pointer to their current self-assessment (Head uses iaSACurrentId). */
+  /** Per audit-staff pointer to the self-assessment they have open (Head uses iaSACurrentId). The
+   *  list itself is shared; only which record each person is looking at is per-user. */
   iaSAUserCurrent?: Record<string, string>;
   /** Plan years opened from "New audit plan" (planYear is the one currently in view). */
   planYears?: (string | number)[];

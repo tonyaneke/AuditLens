@@ -1,5 +1,4 @@
 import type { WorkspaceDb } from "./db-data";
-import type { IaSaRecord } from "./workspace/types";
 import { isHead, scopeWorkspace, type Viewer } from "./workspace-scope";
 
 type AnyRec = Record<string, unknown>;
@@ -66,25 +65,19 @@ export function slimForClient(data: WorkspaceDb, viewer: Viewer): WorkspaceDb {
     } as WorkspaceDb;
   }
 
-  /* IA self-assessment: Head sees org-wide records only; each audit staff member sees only their
-     own assessments. Other users' rows stay server-side and are grafted back on PUT. */
-  const iaList = out.iaSAList as IaSaRecord[] | undefined;
-  if (Array.isArray(iaList) && iaList.length) {
-    if (viewer.role === "audit_staff") {
-      const cur = (out.iaSAUserCurrent as Record<string, string> | undefined)?.[viewer.id];
-      out = {
-        ...out,
-        iaSAList: iaList.filter((s) => s.userId === viewer.id),
-        iaSACurrentId: undefined,
-        iaSAUserCurrent: cur ? { [viewer.id]: cur } : {},
-      } as WorkspaceDb;
-    } else if (isHead(viewer)) {
-      out = {
-        ...out,
-        iaSAList: iaList.filter((s) => !s.userId),
-        iaSAUserCurrent: undefined,
-      } as WorkspaceDb;
-    }
+  /* IA self-assessment: the list is the Internal Audit function's, shared by the Head and every
+     audit staff member, so it is sent whole. Only the per-person "which one is open" pointers are
+     trimmed — each staff member gets their own key, the Head (who uses iaSACurrentId) none — and
+     graftServerHeld() restores the rest on PUT. */
+  if (viewer.role === "audit_staff") {
+    const cur = (out.iaSAUserCurrent as Record<string, string> | undefined)?.[viewer.id];
+    out = {
+      ...out,
+      iaSACurrentId: undefined,
+      iaSAUserCurrent: cur ? { [viewer.id]: cur } : {},
+    } as WorkspaceDb;
+  } else if (isHead(viewer) && out.iaSAUserCurrent !== undefined) {
+    out = { ...out, iaSAUserCurrent: undefined } as WorkspaceDb;
   }
 
   return out;
@@ -167,18 +160,10 @@ export function graftServerHeld(current: WorkspaceDb, next: WorkspaceDb, userId:
     } as WorkspaceDb;
   }
 
-  /* Self-assessments: the client only receives its own rows (or org rows for Head), so every
-     other iaSAList entry and iaSAUserCurrent key is server-held. */
-  const nextIa = (out.iaSAList as IaSaRecord[] | undefined) || [];
-  const curIa = (current.iaSAList as IaSaRecord[] | undefined) || [];
-  if (curIa.length) {
-    const incIds = new Set(nextIa.map((s) => s.id));
-    const merged = [...nextIa];
-    for (const s of curIa) {
-      if (!incIds.has(s.id)) merged.push(s);
-    }
-    out = { ...out, iaSAList: merged } as WorkspaceDb;
-  }
+  /* Self-assessments: the list is served whole to everyone who can write it, so nothing in it is
+     server-held. (It used to be split per person, and the graft that restored the unseen rows
+     also restored every row the Head deleted — Delete never stuck.) Only the other users'
+     iaSAUserCurrent pointers are withheld. */
   const curUserCur = (current.iaSAUserCurrent as Record<string, string> | undefined) || {};
   const nextUserCur = (out.iaSAUserCurrent as Record<string, string> | undefined) || {};
   if (Object.keys(curUserCur).length || Object.keys(nextUserCur).length) {

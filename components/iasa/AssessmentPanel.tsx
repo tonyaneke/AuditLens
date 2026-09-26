@@ -4,7 +4,7 @@
 // domain & principle, the principle rollup table, and the overall-conclusion card.
 
 import { useModal } from "@/components/modals/ModalProvider";
-import { CommitTextarea, RowOpen } from "@/components/ui";
+import { RowOpen } from "@/components/ui";
 import {
   CONF_HEX,
   GIAS,
@@ -23,6 +23,7 @@ import {
 } from "@/lib/workspace/iasa";
 import type { IaSaRecord } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
+import Conclusion from "./Conclusion";
 import IasaKpi from "./IasaKpi";
 import { CommentaryDialog, PrincipleDialog, StandardDialog } from "./dialogs";
 
@@ -264,15 +265,10 @@ export default function AssessmentPanel({ rec }: { rec: IaSaRecord }) {
             type="button"
             onClick={() => modal.open(<CommentaryDialog rec={rec} />)}
           >
-            Generate conclusion
+            {rec.conclusion || rec.commentary ? "Regenerate conclusion" : "Generate conclusion"}
           </button>
         </div>
-        <CommitTextarea
-          className="iasa-conclusion-input"
-          placeholder="EQA opinion statement…"
-          value={rec.commentary || ""}
-          onCommit={(v) => edit((r) => void (r.commentary = v))}
-        />
+        <Conclusion rec={rec} />
       </div>
     </>
   );
