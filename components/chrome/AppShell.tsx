@@ -38,6 +38,15 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
       <main className="main">
         <div className="main-shell">
+          {user.authMethod === "dev" ? (
+            /* The developer sign-in acts on real data as a real person (.env points at production).
+               Everything done here is recorded under the developer's name as well as theirs — say
+               so for as long as the session lasts, so nobody forgets whose account this is. */
+            <div className="dev-session-banner" role="status">
+              <b>Developer sign-in</b> — you are acting as {user.name}. Everything you change is
+              recorded as done by {user.operator || "a developer"}, on {user.name}&apos;s behalf.
+            </div>
+          ) : null}
           <div className={`topbar${chrome.search ? "" : " no-search"}`}>
             <div className="topbar-left">
               {chrome.back ? <div className="topbar-back">{chrome.back}</div> : null}

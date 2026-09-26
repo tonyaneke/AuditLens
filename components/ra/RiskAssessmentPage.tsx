@@ -10,7 +10,6 @@ import { useUser } from "@/components/chrome/UserContext";
 import { toast } from "@/components/feedback/ToastHost";
 import { useModal } from "@/components/modals/ModalProvider";
 import { Empty, Kpi, RowOpen } from "@/components/ui";
-import { logAudit } from "@/lib/client/audit-log";
 import { effectiveRole } from "@/lib/permissions";
 import { urlForView } from "@/lib/routes";
 import {
@@ -140,7 +139,6 @@ export default function RiskAssessmentPage() {
         mutate((d) => {
           d.auditUniverse = ensureUniverse(d).filter((x) => x.id !== e.id);
         });
-        logAudit("plan.unit_deleted", "Deleted auditable unit: " + (e.name || ""), { unitId: e.id });
       },
     });
   }

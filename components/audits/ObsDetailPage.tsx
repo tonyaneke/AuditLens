@@ -15,7 +15,6 @@ import { useUser } from "@/components/chrome/UserContext";
 import { toast } from "@/components/feedback/ToastHost";
 import { useModal } from "@/components/modals/ModalProvider";
 import { BackButton, CritPill, StatusPill } from "@/components/ui";
-import { logAudit } from "@/lib/client/audit-log";
 import { deptLabel, deptNameOf } from "@/lib/dept-scope";
 import { canAccessView, effectiveRole } from "@/lib/permissions";
 import {
@@ -127,11 +126,6 @@ export default function ObsDetailPage({
             });
             notifyHeadsApproval(d, title + " (deletion request)");
           });
-          logAudit("obs.delete_requested", "Requested deletion of observation: " + title, {
-            auditId,
-            reportId,
-            observationId: obsId,
-          });
           toast("Deletion request submitted to the Head of Audit.", "success");
         },
       });
@@ -156,7 +150,6 @@ export default function ObsDetailPage({
           cancelPendingStatusChange(d, obsId, user);
           cancelPendingDelete(d, obsId, user);
         });
-        logAudit("obs.deleted", "Deleted observation: " + title, { auditId, reportId, observationId: obsId });
         router.push(backHref);
       },
     });

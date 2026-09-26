@@ -171,6 +171,16 @@ export type SessionUser = {
   photo?: string | null;
   // For admin users: the role they are currently viewing as (head_of_audit, audit_staff, action_owner)
   activeRole?: string;
+  /* Facts about the SESSION rather than the user, carried in the JWT and stamped on every audit
+     entry the session writes. They are what separates a person from someone signed in as them:
+     the developer sign-in (app/api/auth/dev-login) issues a session for another user's account,
+     and without these every action taken in it was recorded as that user's own. */
+  /** Random id minted at sign-in; every audit entry the session writes carries it. */
+  sessionId?: string;
+  /** How the session was established: "sso" (Microsoft) or "dev" (the developer sign-in). */
+  authMethod?: string;
+  /** For a developer sign-in: who was actually operating it. */
+  operator?: string;
 };
 
 /** Additional departments, cleaned for storage and for the JWT. Deduplicated and trimmed; the

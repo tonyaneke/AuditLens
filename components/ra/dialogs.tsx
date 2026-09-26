@@ -309,11 +309,6 @@ export function NewPlanDialog() {
       if (!d.planYears.map(String).includes(year)) d.planYears.push(year);
       d.planYear = year;
     });
-    logAudit(
-      "plan.year_created",
-      "Opened annual plan for " + year + " (" + picked.size + " unit(s))",
-      { year },
-    );
     modal.close();
   }
 

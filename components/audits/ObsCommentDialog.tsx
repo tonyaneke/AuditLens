@@ -18,7 +18,6 @@ import { useUser } from "@/components/chrome/UserContext";
 import BusyButton from "@/components/feedback/BusyButton";
 import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
-import { logAudit } from "@/lib/client/audit-log";
 import { ownerEmailFor } from "@/lib/client/directory";
 import { emailNotify } from "@/lib/client/notify";
 import { effectiveRole } from "@/lib/permissions";
@@ -98,7 +97,6 @@ export default function AuditorCommentDialog({
         `Internal Audit${user.name ? " (" + user.name + ")" : ""} posted a comment on the observation "${cur.title}" raised against your department.${snippet ? " Comment:" + snippet + "." : ""}${attachNote} Sign in to AuditLens to respond.`,
       );
     });
-    logAudit("obs.update", "Comment posted", { observationId: obsId, attachments: evidence.length });
     modal.close();
     toast(evidence.length ? "Comment and attachment(s) posted." : "Comment sent.", "success");
   }

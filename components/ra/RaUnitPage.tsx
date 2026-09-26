@@ -11,7 +11,6 @@ import { useUser } from "@/components/chrome/UserContext";
 import { toast } from "@/components/feedback/ToastHost";
 import { useModal } from "@/components/modals/ModalProvider";
 import { BackButton } from "@/components/ui";
-import { logAudit } from "@/lib/client/audit-log";
 import { effectiveRole } from "@/lib/permissions";
 import { urlForView } from "@/lib/routes";
 import {
@@ -110,7 +109,6 @@ export default function RaUnitPage({ unitId }: { unitId: string }) {
   function requestComplete() {
     if (isHead) {
       markComplete();
-      logAudit("plan.completed", "Marked engagement complete: " + e!.name, { unitId });
       return;
     }
     if (pendingCompletion(db, unitId)) {
@@ -130,7 +128,6 @@ export default function RaUnitPage({ unitId }: { unitId: string }) {
         status: "pending",
       });
     });
-    logAudit("plan.completion_requested", "Requested completion approval: " + e!.name, { unitId });
     toast("Sent to the Head of Audit for approval.", "success");
   }
   function decideCompletion(approvalId: string, approve: boolean) {
@@ -138,11 +135,9 @@ export default function RaUnitPage({ unitId }: { unitId: string }) {
       toast(`Only the Head of Audit can ${approve ? "approve" : "reject"}.`, "error");
       return;
     }
-    let unitName = "";
     mutate((d) => {
       const a = (d.approvals || []).find((x) => x.id === approvalId);
       if (!a || a.status !== "pending") return;
-      unitName = String(a.unitName || "");
       a.status = approve ? "approved" : "rejected";
       a.decidedBy = user.id;
       a.decidedByName = user.name;
@@ -155,11 +150,6 @@ export default function RaUnitPage({ unitId }: { unitId: string }) {
         }
       }
     });
-    logAudit(
-      approve ? "plan.completion_approved" : "plan.completion_rejected",
-      (approve ? "Approved" : "Rejected") + " completion: " + unitName,
-      { unitId },
-    );
   }
 
   const statusBody = complete ? (

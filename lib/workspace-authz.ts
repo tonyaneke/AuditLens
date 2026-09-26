@@ -139,9 +139,8 @@ const AUDIT_GOVERNANCE_FIELDS = [
 type Obj = Record<string, unknown>;
 
 /** `violations` are changes that were REVERTED. `notices` are changes that were ALLOWED but are
- *  worth attributing — the workspace document's own audit trail is written by the client
- *  (logAudit), so it is advisory: a crafted client simply omits it. Anything the server must be
- *  able to prove after the fact belongs here. Both are recorded by app/api/data/route.ts. */
+ *  worth flagging for the security trail on top of the ordinary change entry that
+ *  lib/workspace-changes.ts derives from every save. Both are recorded by app/api/data/route.ts. */
 export type AuthzResult = { data: WorkspaceDb; violations: string[]; notices: string[] };
 
 function jsonEq(a: unknown, b: unknown): boolean {
@@ -325,7 +324,7 @@ function reconcileAudits(
 }
 
 /** Record a non-head change to an audit's governance metadata. The change is ALLOWED — this only
- *  makes it attributable server-side, where the client's own logAudit call cannot be relied on.
+ *  flags it for the security trail; the edit itself is recorded like any other (audit.updated).
  *  Reassigning the lead auditor is called out separately because it is a grant, not just an edit:
  *  it is half of canVerifyItem(), so it hands the sign-off right on that engagement to someone. */
 function noteGovernanceChanges(curA: Obj, incA: Obj, notices: string[]): void {

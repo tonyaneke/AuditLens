@@ -9,7 +9,6 @@ import { usePageChrome } from "@/components/chrome/PageChrome";
 import { toast } from "@/components/feedback/ToastHost";
 import RichText from "@/components/ui/RichText";
 import { runAiText } from "@/lib/client/ai";
-import { logAudit } from "@/lib/client/audit-log";
 import { ck } from "@/lib/workspace/selectors";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 
@@ -73,7 +72,6 @@ export default function SopUpdatePage({
         curO.sopUpdate = sopText.trim();
       }
     });
-    logAudit("sop.updated", "Updated SOP for observation: " + (o?.title || ""));
     toast("Proposed SOP update saved", "success");
   }
 

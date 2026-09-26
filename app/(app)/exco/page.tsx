@@ -11,7 +11,6 @@ import BusyButton from "@/components/feedback/BusyButton";
 import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import { Empty } from "@/components/ui";
-import { logAudit } from "@/lib/client/audit-log";
 import { headUsers, loadDirectory } from "@/lib/client/directory";
 import { emailNotify } from "@/lib/client/notify";
 import { computeExcoSnapshot } from "@/lib/exco-compute";
@@ -196,7 +195,6 @@ export default function ExcoPage() {
       snapshot: snapshot as unknown as Record<string, unknown>,
     };
     mutate((d) => excoBriefs(d).unshift(rec));
-    logAudit("exco.generated", "Generated Executive Assurance Brief for " + period, { period });
     await saveNow();
     modal.success(
       <>
@@ -261,6 +259,8 @@ export default function ExcoPage() {
           if (rec) {
             rec.sentAt = new Date().toISOString();
             rec.sentTo = to.length;
+            // The outcome, so the audit trail can tell a failed send from a delivered one.
+            rec.delivered = sent;
           }
           const e = excoMeta(d) as ExcoMeta & { lastSentAt?: string };
           e.lastSentAt = new Date().toISOString();
@@ -276,10 +276,6 @@ export default function ExcoPage() {
               at: new Date().toISOString(),
             }),
           );
-        });
-        logAudit("exco.sent", `Executive Assurance Brief sent to MD & EXCO (${to.length} recipient(s))`, {
-          period: b.period,
-          sent,
         });
         const headEmails = heads.map((h) => h.email).filter(Boolean) as string[];
         if (headEmails.length) {
@@ -330,11 +326,6 @@ export default function ExcoPage() {
           const e = excoMeta(d);
           e.briefs = (e.briefs || []).filter((x) => x.id !== b.id);
         });
-        logAudit(
-          "exco.brief_deleted",
-          "Deleted Executive Assurance Brief" + (b.period ? " for " + b.period : ""),
-          { briefId: b.id },
-        );
       },
     });
   }

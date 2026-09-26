@@ -13,7 +13,6 @@ import BusyButton from "@/components/feedback/BusyButton";
 import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal, useModalClose, useModalGuard } from "@/components/modals/ModalProvider";
 import { runAiJson } from "@/lib/client/ai";
-import { logAudit } from "@/lib/client/audit-log";
 import { directory, loadDirectory } from "@/lib/client/directory";
 import { clearModalDraft, loadModalDraft, raiseDraftKey, saveModalDraft } from "@/lib/client/modal-drafts";
 import { urlForView } from "@/lib/routes";
@@ -302,11 +301,6 @@ export default function RaiseFlow({
         notifyHeadsApproval(d, finalObs.title);
       }
     });
-    logAudit(
-      head ? "obs.raised" : "obs.raise_requested",
-      (head ? "Raised observation: " : "Submitted observation for approval: ") + finalObs.title,
-      { auditId, reportId, observationId: finalObs.id },
-    );
     clearModalDraft(raiseDraftKey(auditId, reportId)).catch(() => {});
     modal.closeAll();
     router.push(urlForView("report", { audit: auditId, report: reportId }));

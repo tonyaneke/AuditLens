@@ -10,7 +10,6 @@ import { usePageChrome } from "@/components/chrome/PageChrome";
 import { toast } from "@/components/feedback/ToastHost";
 import { useModal } from "@/components/modals/ModalProvider";
 import { BackButton } from "@/components/ui";
-import { logAudit } from "@/lib/client/audit-log";
 import { dl } from "@/lib/client/exports";
 import { urlForView } from "@/lib/routes";
 import {
@@ -110,8 +109,6 @@ export default function ProcessDetailPage({ procId }: { procId: string }) {
   }
 
   function delStep(sid: string) {
-    // Legacy delProcStep — the audit-log label reads p.name||p.title verbatim (blank here).
-    const label = p ? String((p.name as string) || (p.title as string) || "") : "";
     void modal.confirm({
       message: "Delete this step?",
       danger: true,
@@ -123,11 +120,6 @@ export default function ProcessDetailPage({ procId }: { procId: string }) {
           if (!cur) return;
           cur.proposedSteps = (cur.proposedSteps || []).filter((y) => y.id !== sid);
         });
-        logAudit(
-          "process.step_deleted",
-          "Deleted a proposed step in process review: " + label,
-          { processReviewId: procId, stepId: sid },
-        );
       },
     });
   }

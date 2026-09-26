@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   createSession,
   requireHeadOfAudit,
+  sessionFacts,
   userToSession,
 } from "@/lib/auth";
 import { writeAuditLog } from "@/lib/audit-log";
@@ -97,7 +98,8 @@ export async function PUT(request: Request, { params }: Params) {
   });
 
   if (user.id === session.id) {
-    await createSession(userToSession(user));
+    // Same sign-in, updated details: keep the session's identity (id, how it signed in, operator).
+    await createSession({ ...userToSession(user), ...sessionFacts(session) });
   }
 
   return NextResponse.json({ user: userToSession(user) });

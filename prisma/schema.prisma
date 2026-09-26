@@ -50,6 +50,7 @@ model WorkspaceData {
 model AuditLog {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
+  // The account the action was taken under. See actorName for when that is not who took it.
   userId    String?
   userName  String
   userEmail String
@@ -58,10 +59,29 @@ model AuditLog {
   summary   String
   metadata  Json?
 
+  // Provenance — who was really at the keyboard, and how they got there. Added 2026-09-26 by
+  // scripts/add-audit-provenance.mts; all nullable, so rows written before it simply have none.
+  //
+  // The role the action was taken under: "action_owner", "head_of_audit", … — or
+  // "admin:<role>" for an admin, who acts as whichever view they switched to.
+  userRole   String?
+  // How the session was established: "sso" (Microsoft), "dev" (the developer sign-in),
+  // "system" (a scheduled job) or "script" (a maintenance script run from a terminal).
+  authMethod String?
+  // Who operated the session when it was NOT the account holder: the developer behind a
+  // developer sign-in, or whoever ran a script. Null means the account holder acted in person.
+  actorName  String?
+  // Minted at sign-in and carried in the session cookie, so every entry one sign-in wrote shares it.
+  sessionId  String?
+  ip         String?
+  userAgent  String?
+
   @@index([createdAt])
   @@index([action])
   @@index([userId])
   @@index([category])
+  @@index([sessionId])
+  @@index([authMethod])
 }
 
 // Per-user form drafts (observation raise wizard, etc.) — server-side, not browser storage.

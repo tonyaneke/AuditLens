@@ -28,6 +28,19 @@ function authSecret() {
   return new TextEncoder().encode(secret);
 }
 
+/** A fresh id for a new sign-in. Every audit entry the session writes carries it, which is what
+ *  lets the log show everything one sign-in did — and tell two sessions on one account apart. */
+export function newSessionId(): string {
+  return crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+}
+
+/** The facts that belong to a session rather than to its user. Re-signing the cookie for a changed
+ *  user (switching view, editing your own account) must keep them: dropping them would make a
+ *  developer sign-in look like the real person's own from that request on. */
+export function sessionFacts(s: SessionUser): Pick<SessionUser, "sessionId" | "authMethod" | "operator"> {
+  return { sessionId: s.sessionId, authMethod: s.authMethod, operator: s.operator };
+}
+
 // Signs a session JWT for the user. Use this when you need to set the cookie yourself
 // (e.g. on a NextResponse redirect from the SSO callback); createSession sets it via next/headers.
 export async function signSessionToken(user: SessionUser): Promise<string> {
@@ -40,6 +53,9 @@ export async function signSessionToken(user: SessionUser): Promise<string> {
     role: user.role,
     sidebarAccess: user.sidebarAccess,
     activeRole: user.activeRole || "",
+    sid: user.sessionId || "",
+    amr: user.authMethod || "",
+    op: user.operator || "",
   })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
@@ -79,6 +95,19 @@ export async function getSession(): Promise<SessionUser | null> {
     const { payload } = await jwtVerify(token, authSecret());
     const id = payload.sub;
     if (!id || typeof id !== "string") return null;
+    const amr = String(payload.amr || "");
+    if (process.env.NODE_ENV === "production") {
+      /* Production never honours a developer sign-in. The route is disabled here, but a token
+         minted by a local dev server is signed with AUTH_SECRET — and if that secret matches
+         production's, the cookie would work against the live site as anyone. */
+      if (amr === "dev") return null;
+    } else if (!amr) {
+      /* Outside production every session comes from the developer sign-in — and one issued before
+         sessions recorded how they began carries no mark, so it would act as someone else while
+         the trail credited them. Make it sign in again. Production sessions without the claim
+         are left alone: an SSO cookie without it is still its owner's. */
+      return null;
+    }
 
     return {
       id,
@@ -89,6 +118,11 @@ export async function getSession(): Promise<SessionUser | null> {
       role: String(payload.role || "audit_staff"),
       sidebarAccess: normalizeSidebarAccess(payload.sidebarAccess),
       activeRole: String(payload.activeRole || "") || undefined,
+      // Absent on cookies issued before these claims existed; such a session simply has no
+      // recorded provenance until it signs in again.
+      sessionId: String(payload.sid || "") || undefined,
+      authMethod: String(payload.amr || "") || undefined,
+      operator: String(payload.op || "") || undefined,
     };
   } catch {
     return null;
@@ -105,7 +139,7 @@ export async function getSessionWithFlags(): Promise<SessionUser | null> {
 
   // activeRole lives only in the JWT (it's a per-session view state, not a DB fact) — carry it
   // over from the token, but only while the DB still says the user is an admin.
-  const fresh = userToSession(user);
+  const fresh: SessionUser = { ...userToSession(user), ...sessionFacts(session) };
   if (user.role === "admin" && session.activeRole) fresh.activeRole = session.activeRole;
   return fresh;
 }

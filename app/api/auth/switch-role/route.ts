@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionWithFlags, createSession } from "@/lib/auth";
-import { type SessionUser } from "@/lib/permissions";
+import { writeAuditLog } from "@/lib/audit-log";
+import { effectiveRole, roleLabel, type SessionUser } from "@/lib/permissions";
 
 const SWITCHABLE_ROLES = ["head_of_audit", "audit_staff", "action_owner", "executive"] as const;
 
@@ -38,6 +39,16 @@ export async function POST(request: Request) {
 
     // Re-sign the session with the activeRole
     await createSession(updatedUser);
+
+    /* Recorded because the switch changes what this person may do: every entry until the next
+       switch is taken under the new role (the entries' userRole says "admin:<role>"). */
+    await writeAuditLog({
+      user: updatedUser,
+      action: "auth.role_switched",
+      category: "auth",
+      summary: `${session.name} switched from the ${roleLabel(effectiveRole(session))} view to ${roleLabel(role)}`,
+      metadata: { from: effectiveRole(session), to: role },
+    }).catch(() => {});
 
     return NextResponse.json({
       success: true,

@@ -11,7 +11,6 @@ import { useRouter } from "next/navigation";
 import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useModal } from "@/components/modals/ModalProvider";
 import { BackButton } from "@/components/ui";
-import { logAudit } from "@/lib/client/audit-log";
 import {
   obsRaisedFromTest,
   testControl,
@@ -51,7 +50,6 @@ export default function TestDetailPage({ auditId, testId }: { auditId: string; t
           if (!p || !p.tests) return;
           p.tests = p.tests.filter((x) => x.id !== testId);
         });
-        logAudit("workspace.test_deleted", "Deleted test: " + testTitle(t) + " in " + a.name, { auditId, testId });
         router.push(auditHref);
       },
     });

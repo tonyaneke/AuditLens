@@ -19,7 +19,6 @@ import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import { StatusPill } from "@/components/ui";
 import RichText from "@/components/ui/RichText";
-import { logAudit } from "@/lib/client/audit-log";
 import { dirUser, headUsers, ownerEmailFor } from "@/lib/client/directory";
 import { emailNotify } from "@/lib/client/notify";
 import { runAiText } from "@/lib/client/ai";
@@ -349,7 +348,6 @@ export function ReadyForClosureDialog({ auditId, reportId, obsId }: Ids) {
         `The action owner marked "${cur.title}" as Ready for Closure. Sign in to AuditLens to review the response and verify.`,
       );
     });
-    logAudit("obs.ready_for_closure", "Owner marked Ready for Closure: " + o!.title, { observationId: obsId });
     setBusy(false);
     modal.close();
     modal.success("Marked Ready for Closure and sent back to the auditor who raised it for verification.");
@@ -513,11 +511,6 @@ Evidence attached: ${ev || "none listed"}`;
     }
     editObs((cur) => writeRejection(cur, "owner", rejNote, user, head));
     notifyIn((d, cur) => notifyRejection(d, cur, "owner"));
-    logAudit(
-      "obs.closure_rejected",
-      `${head ? "Head" : "Auditor"} rejected remediation to owner: ` + o!.title,
-      { observationId: obsId },
-    );
     modal.close();
     toast("Rejected and sent back to the action owner for more work.", "success");
   }
@@ -556,7 +549,6 @@ Evidence attached: ${ev || "none listed"}`;
       for (const h of headUsers())
         notify(d, h.id, "verify", cur.title + " verified — ready for Head closure", "observation", cur.id);
     });
-    logAudit("obs.report_verified", "Auditor verified & sent to Head: " + o!.title, { observationId: obsId });
     setBusy(false);
     modal.close();
     toast("Verified and sent to the Head of Internal Audit for closure sign-off.", "success");
@@ -715,7 +707,6 @@ export function HeadCloseDialog({ auditId, reportId, obsId }: Ids) {
       // sees that Internal Audit has signed it off.
       notifyDeptOfObs(d, cur, "closed", closedText);
     });
-    logAudit("obs.closed", "Head verified & closed: " + o!.title, { observationId: obsId });
     modal.close();
     toast("Observation verified and closed.", "success");
   }
@@ -789,9 +780,6 @@ export function ClosureRejectDialog({ auditId, reportId, obsId, target }: Ids & 
     }
     editObs((cur) => writeRejection(cur, target, note, user, head));
     notifyIn((d, cur) => notifyRejection(d, cur, target));
-    logAudit("obs.closure_rejected", `Head returned to ${target}: ` + o!.title, {
-      observationId: obsId,
-    });
     modal.close();
     toast(
       toAuditor ? "Returned to Internal Audit." : "Escalated to the action owner.",
@@ -849,7 +837,6 @@ export function RequestReviewDialog({ auditId, reportId, obsId }: Ids) {
     notifyIn((d, cur) => {
       notify(d, cur.raisedBy, "review", "Review requested on: " + cur.title, "observation", cur.id);
     });
-    logAudit("obs.review_requested", "Owner requested review: " + o!.title, { observationId: obsId });
     modal.close();
     toast("Review requested — Internal Audit will consider it.", "success");
   }
@@ -898,7 +885,6 @@ export function ForwardWithdrawalDialog({ auditId, reportId, obsId }: Ids) {
       for (const h of headUsers())
         notify(d, h.id, "review", "Withdrawal awaiting your sign-off: " + cur.title, "observation", cur.id);
     });
-    logAudit("obs.withdraw_forwarded", "Forwarded for withdrawal: " + o!.title, { observationId: obsId });
     modal.close();
     toast("Forwarded to the Head of Audit for withdrawal sign-off.", "success");
   }
@@ -951,7 +937,6 @@ export function DeclineReviewDialog({ auditId, reportId, obsId }: Ids) {
       notify(d, cur.ownerUserId, "review", "Review request declined: " + cur.title, "myobs", cur.id);
       notify(d, cur.secondaryOwnerUserId, "review", "Review request declined: " + cur.title, "myobs", cur.id);
     });
-    logAudit("obs.review_declined", "Declined review request: " + o!.title, { observationId: obsId });
     modal.close();
     toast("Request declined — the observation remains active.", "success");
   }
@@ -1006,7 +991,6 @@ export function requestOwnerUpdateAction(
         `The audit team requested an update on "${cur.title}". Sign in to AuditLens to respond.`,
       );
   });
-  logAudit("obs.update_requested", "Requested owner update: " + o.title, { observationId: o.id });
   toast("Update requested from the action owner.", "success");
   return true;
 }
@@ -1048,7 +1032,6 @@ export function useOwnerRequests(auditId: string, reportId: string, o: Observati
       );
       notify(d, cur.secondaryOwnerUserId, "update_req", "Progress report requested: " + cur.title, "myobs", cur.id);
     });
-    logAudit("obs.progress_requested", "Requested progress report: " + o.title, { observationId: o.id });
     mark("prog");
     toast("Progress report requested.", "success");
   }
@@ -1095,7 +1078,6 @@ export function StatusEditDialog({ auditId, reportId, obsId }: Ids) {
             cur.id,
           );
       });
-      logAudit("obs.status_changed", "Status → " + v + ": " + o.title, { observationId: obsId });
       toast("Status updated.", "success");
       return;
     }
@@ -1120,7 +1102,6 @@ export function StatusEditDialog({ auditId, reportId, obsId }: Ids) {
       });
       notifyHeadsApproval(d, o.title + " (status → " + v + ")");
     });
-    logAudit("obs.status_change_requested", "Requested status → " + v + ": " + o.title, { observationId: obsId });
     toast("Status change submitted to the Head of Audit for approval.", "success");
   }
 

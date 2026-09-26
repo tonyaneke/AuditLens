@@ -124,7 +124,6 @@ export function ModalAuditDialog({ auditId }: { auditId?: string }) {
         d.audits.push(newAudit);
       }
     });
-    logAudit(a ? "audit.updated" : "audit.created", (a ? "Updated" : "Created") + " audit: " + name);
     toast(a ? "Audit updated" : "Audit created", "success");
     modal.close();
     if (!a && newId) {
@@ -275,7 +274,6 @@ export function ModalReportDialog({ auditId, reportId }: { auditId: string; repo
         targetAudit.reports.push(newReport);
       }
     });
-    logAudit(r ? "report.updated" : "report.created", (r ? "Updated" : "Created") + " report: " + title);
     toast(r ? "Report updated" : "Report created", "success");
     modal.close();
     // Legacy saveReport parity: open the (new) report's page, where the head-only
@@ -370,7 +368,6 @@ export function ModalTORDialog({ auditId }: { auditId: string }) {
         };
       }
     });
-    logAudit("tor.updated", "Updated TOR for audit: " + a?.name);
     toast("Terms of Reference saved", "success");
     modal.close();
   }
@@ -1770,7 +1767,6 @@ export function ModalReassignObsDialog({
           cur.id,
         );
     });
-    logAudit("obs.reassigned", "Reassigned owner: " + (o?.title || ""), { observationId: obsId });
     modal.close();
     modal.success("Owner reassigned. The action owner has been notified.");
   }
@@ -2001,11 +1997,6 @@ Management's current draft response: ${mgmt || "(none provided — draft an appr
           status: "pending",
         });
         notifyHeadsApproval(d, title.trim() + " (edit request)");
-      });
-      logAudit("obs.update_requested", "Requested edit to observation: " + title.trim(), {
-        auditId,
-        reportId,
-        observationId: obsId,
       });
       modal.close();
       toast("Edit submitted to the Head of Audit for approval.", "success");

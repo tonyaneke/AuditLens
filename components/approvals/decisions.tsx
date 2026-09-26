@@ -3,8 +3,9 @@
 // Approval decision actions — React port of approveAny/rejectAny and the per-kind legacy
 // decision functions in audit-bot.js (approveObservation/rejectObservation, approveStatusChange/
 // rejectStatusChange, approveUpdate/rejectUpdate, approveDelete/rejectDelete, approveCompletion/
-// rejectCompletion, modalDecideWithdraw/finalizeWithdraw) including their notification, email
-// and audit-log side effects. Decisions are Head-of-Audit-only — mirrored server-side by the
+// rejectCompletion, modalDecideWithdraw/finalizeWithdraw) including their notification and email
+// side effects. The audit trail of each decision is recorded by the save itself
+// (lib/workspace-changes.ts). Decisions are Head-of-Audit-only — mirrored server-side by the
 // reconciler (lib/workspace-authz.ts).
 
 import { useState } from "react";
@@ -12,7 +13,6 @@ import { useUser } from "@/components/chrome/UserContext";
 import BusyButton from "@/components/feedback/BusyButton";
 import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
-import { logAudit } from "@/lib/client/audit-log";
 import { loadDirectory } from "@/lib/client/directory";
 import { applyStatusChange, findApprovalObs } from "@/lib/workspace/approvals";
 import {
@@ -29,7 +29,6 @@ import { approvals } from "@/lib/workspace/selectors";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 import { effectiveRole } from "@/lib/permissions";
 
-type LogEntry = { action: string; summary: string; metadata?: Record<string, unknown> };
 
 export function useApprovalDecisions() {
   const { db, mutate } = useWorkspace();
@@ -46,7 +45,6 @@ export function useApprovalDecisions() {
     // Warm the directory cache (emails resolve through it) BEFORE touching the workspace —
     // never read db across an await.
     await loadDirectory();
-    const logs: LogEntry[] = [];
     mutate((d) => {
       const ap = approvals(d).find((x) => x.id === aid);
       if (!ap || ap.status !== "pending") return;
@@ -77,11 +75,6 @@ export function useApprovalDecisions() {
                   o.id,
                 );
             }
-            logs.push({
-              action: "obs.approved",
-              summary: "Approved observation: " + (ap.obsTitle || ""),
-              metadata: { observationId: ap.obsId },
-            });
           } else {
             if (o) {
               o.obsApproval = "rejected";
@@ -97,11 +90,6 @@ export function useApprovalDecisions() {
                   o.id,
                 );
             }
-            logs.push({
-              action: "obs.rejected",
-              summary: "Rejected observation: " + (ap.obsTitle || ""),
-              metadata: { observationId: ap.obsId },
-            });
           }
           break;
         }
@@ -133,11 +121,6 @@ export function useApprovalDecisions() {
                   o.id,
                 );
             }
-            logs.push({
-              action: "obs.status_change_approved",
-              summary: "Approved status → " + ap.newStatus + ": " + (ap.obsTitle || ""),
-              metadata: { observationId: ap.obsId },
-            });
           } else {
             if (o && o.raisedBy)
               notifyBoth(
@@ -150,11 +133,6 @@ export function useApprovalDecisions() {
                 `Your status change for "${o.title}" was not approved by the Head of Audit.`,
                 o.id,
               );
-            logs.push({
-              action: "obs.status_change_rejected",
-              summary: "Rejected status change: " + (ap.obsTitle || ""),
-              metadata: { observationId: ap.obsId },
-            });
           }
           break;
         }
@@ -178,11 +156,6 @@ export function useApprovalDecisions() {
               `Your proposed edit to "${ap.obsTitle || "an observation"}" was approved by the Head of Audit and applied.`,
               ap.obsId,
             );
-            logs.push({
-              action: "obs.update_approved",
-              summary: "Approved edit to observation: " + (ap.obsTitle || ""),
-              metadata: { observationId: ap.obsId },
-            });
           } else {
             notifyBoth(
               d,
@@ -194,11 +167,6 @@ export function useApprovalDecisions() {
               `Your proposed edit to "${ap.obsTitle || "an observation"}" was not approved by the Head of Audit.`,
               ap.obsId,
             );
-            logs.push({
-              action: "obs.update_rejected",
-              summary: "Rejected edit to observation: " + (ap.obsTitle || ""),
-              metadata: { observationId: ap.obsId },
-            });
           }
           break;
         }
@@ -219,11 +187,6 @@ export function useApprovalDecisions() {
               "AuditLens — deletion approved",
               `Your request to delete "${ap.obsTitle || "an observation"}" was approved by the Head of Audit.`,
             );
-            logs.push({
-              action: "obs.delete_approved",
-              summary: "Approved deletion of observation: " + (ap.obsTitle || ""),
-              metadata: { observationId: ap.obsId },
-            });
           } else {
             notifyBoth(
               d,
@@ -235,11 +198,6 @@ export function useApprovalDecisions() {
               `Your request to delete "${ap.obsTitle || "an observation"}" was not approved by the Head of Audit.`,
               ap.obsId,
             );
-            logs.push({
-              action: "obs.delete_rejected",
-              summary: "Rejected deletion of observation: " + (ap.obsTitle || ""),
-              metadata: { observationId: ap.obsId },
-            });
           }
           break;
         }
@@ -250,23 +208,12 @@ export function useApprovalDecisions() {
               e.engStatus = "Completed";
               e.occDone = parseQuarters(e.plannedPeriod).slice();
             }
-            logs.push({
-              action: "plan.completion_approved",
-              summary: "Approved completion: " + (ap.unitName || ""),
-              metadata: { unitId: ap.unitId },
-            });
-          } else {
-            logs.push({
-              action: "plan.completion_rejected",
-              summary: "Rejected completion: " + (ap.unitName || ""),
-              metadata: { unitId: ap.unitId },
-            });
           }
+          // A rejection changes nothing on the unit; the approval's own status records it.
           break;
         }
       }
     });
-    logs.forEach((l) => logAudit(l.action, l.summary, l.metadata));
   }
 
   /** Legacy modalDecideWithdraw — the Head decides a withdrawal with a reason for the owner. */
@@ -296,7 +243,6 @@ export function useApprovalDecisions() {
     const approve = decision === "approve";
     await loadDirectory();
     let decided = false;
-    const logs: LogEntry[] = [];
     mutate((d) => {
       const ap = approvals(d).find((x) => x.id === aid);
       if (!ap || ap.status !== "pending") return;
@@ -357,13 +303,7 @@ export function useApprovalDecisions() {
             o.id,
           );
       }
-      logs.push({
-        action: approve ? "obs.withdrawn" : "obs.withdraw_rejected",
-        summary: (approve ? "Withdrew observation: " : "Rejected withdrawal: ") + (ap.obsTitle || ""),
-        metadata: { observationId: ap.obsId },
-      });
     });
-    logs.forEach((l) => logAudit(l.action, l.summary, l.metadata));
     if (decided)
       toast(approve ? "Observation withdrawn." : "Withdrawal rejected and the owner notified.", "success");
     return decided;

@@ -12,7 +12,6 @@ import BusyButton from "@/components/feedback/BusyButton";
 import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import { parseAiJson, withAiBusy } from "@/lib/client/ai";
-import { logAudit } from "@/lib/client/audit-log";
 import { isLegacyPath, urlForView } from "@/lib/routes";
 import {
   DEPARTMENTS,
@@ -228,9 +227,8 @@ export function ProcMetaDialog({ id }: { id: string }) {
     modal.close();
   }
 
-  // Legacy delProc — the audit-log label reads p.name||p.title verbatim (blank for reviews).
+  // Legacy delProc.
   async function delReview() {
-    const label = String((p!.name as string) || (p!.title as string) || "");
     const ok = await modal.confirm({
       message: "Delete this process review?",
       danger: true,
@@ -239,9 +237,6 @@ export function ProcMetaDialog({ id }: { id: string }) {
       onConfirm: () => {
         mutate((d) => {
           d.processReviews = procList(d).filter((x) => x.id !== id);
-        });
-        logAudit("process.review_deleted", "Deleted process review: " + label, {
-          processReviewId: id,
         });
       },
     });

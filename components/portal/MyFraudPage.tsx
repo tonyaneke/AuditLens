@@ -10,7 +10,6 @@ import BusyButton from "@/components/feedback/BusyButton";
 import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import { Empty, Kpi, TintPill } from "@/components/ui";
-import { logAudit } from "@/lib/client/audit-log";
 import { headUsers, loadDirectory } from "@/lib/client/directory";
 import { emailNotify } from "@/lib/client/notify";
 import { internalAuditWatcherIds } from "@/lib/workspace/observations";
@@ -92,10 +91,6 @@ export default function MyFraudPage() {
       applied = true;
     });
     if (!applied) return;
-    logAudit("fraud.action_status_updated", "Fraud action status → " + v + " (" + scheme + ")", {
-      fraudRiskId: fid,
-      actionId: aid,
-    });
     const watchers = await fetchInternalAuditWatchers();
     if (watchers.length) {
       mutate((d) => {
@@ -269,10 +264,6 @@ function MyFraudUpdateDialog({ fraudId, actionId }: { fraudId: string; actionId:
       modal.close();
       return;
     }
-    logAudit("fraud.action_update", "Implementation update on fraud action (" + scheme + ")", {
-      fraudRiskId: fraudId,
-      actionId,
-    });
     heads.forEach((h) => {
       if (h.email)
         emailNotify(

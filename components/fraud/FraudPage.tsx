@@ -11,7 +11,6 @@ import { useUser } from "@/components/chrome/UserContext";
 import { toast } from "@/components/feedback/ToastHost";
 import { useModal } from "@/components/modals/ModalProvider";
 import { Empty, Kpi, RowOpen } from "@/components/ui";
-import { logAudit } from "@/lib/client/audit-log";
 import { canManageFraudRegister } from "@/lib/workspace/observations";
 import { urlForView } from "@/lib/routes";
 import {
@@ -202,18 +201,9 @@ export default function FraudPage() {
         confirmLabel: "Delete",
         busyLabel: "Deleting…",
         onConfirm: () => {
-          const f = fraudList(db).find((x) => x.id === id);
           mutate((d) => {
             d.fraudRisks = (d.fraudRisks || []).filter((x) => x.id !== id);
           });
-          const t = f?.title;
-          const n = f?.name;
-          logAudit(
-            "fraud.risk_deleted",
-            "Deleted fraud risk: " +
-              ((typeof t === "string" && t) || (typeof n === "string" && n) || ""),
-            { fraudRiskId: id },
-          );
         },
       });
     });

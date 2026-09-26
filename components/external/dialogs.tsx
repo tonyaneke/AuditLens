@@ -9,7 +9,6 @@ import BusyButton from "@/components/feedback/BusyButton";
 import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import { runAiText } from "@/lib/client/ai";
-import { logAudit } from "@/lib/client/audit-log";
 import { countReplacementChars, readTextFile } from "@/lib/client/csv-encoding";
 import {
   buildExtInsightPrompt,
@@ -422,9 +421,6 @@ export function ExtRaiseDialog() {
           ? "External finding added. The action owner has been notified."
           : "External finding added to the register.",
       );
-      logAudit("ext.raised", "Added external finding: " + finding.title, {
-        findingId: finding.id,
-      });
     });
   }
 
@@ -638,7 +634,6 @@ export function ExtAssignDialog({ findingId }: { findingId: string }) {
           f.id,
         );
       }
-      logAudit("ext.assigned", "Assigned owner for finding: " + f.title, { findingId });
       modal.closeAll();
       modal.success(
         f.ownerUserId ? "Owner assigned. The action owner has been notified." : "Owner cleared.",

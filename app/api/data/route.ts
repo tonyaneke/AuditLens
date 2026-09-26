@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { requireActiveSession } from "@/lib/auth";
-import { writeAuditLog } from "@/lib/audit-log";
+import { categoryForAction, writeAuditLog, writeAuditLogs } from "@/lib/audit-log";
 import { defaultWorkspaceData, type WorkspaceDb } from "@/lib/db-data";
 import { prisma } from "@/lib/prisma";
 import { authorizeWorkspaceWrite } from "@/lib/workspace-authz";
+import { describeWorkspaceChanges } from "@/lib/workspace-changes";
 import { graftServerHeld, slimForClient } from "@/lib/workspace-payload";
 import { retainDeleted, withoutDeleted } from "@/lib/workspace-tombstones";
 import { viewerFor } from "@/lib/workspace-scope";
@@ -199,6 +200,31 @@ export async function PUT(request: Request) {
     });
   }
 
+  /* The audit trail of this save: what it actually changed, derived here rather than reported by
+     the browser — see lib/workspace-changes.ts. Recorded straight after the write commits, before
+     anything else can fail, and diffed against `payload` — exactly what this request wrote — never
+     a re-read row that a colleague's save could already have moved on. Both sides are read as the
+     application sees them, so a record this save soft-deleted reads as deleted and one deleted
+     earlier is not news. Nothing here may throw out of the route: the save has committed, and a
+     500 would tell the user that a change which happened had failed. If the save cannot be
+     itemised at all, that fact is itself recorded — an unrecorded save must never be the quiet
+     outcome of an odd document. */
+  try {
+    const changes = describeWorkspaceChanges(served, withoutDeleted(payload as WorkspaceDb));
+    if (changes.length) {
+      await writeAuditLogs(session, changes.map((c) => ({ ...c, category: categoryForAction(c.action) })));
+    }
+  } catch (e) {
+    console.error("[audit] could not record workspace changes", e);
+    await writeAuditLog({
+      user: session,
+      action: "security.changes_unreadable",
+      category: "security",
+      summary: `A save by ${session.name} was stored, but what it changed could not be recorded`,
+      metadata: { error: e instanceof Error ? e.message.slice(0, 300) : "unknown error" },
+    }).catch(() => {});
+  }
+
   const row = await prisma.workspaceData.findUniqueOrThrow({ where: { id: WORKSPACE_ID } });
 
   if (violations.length) {
@@ -212,11 +238,10 @@ export async function PUT(request: Request) {
     }).catch(() => {});
   }
 
-  /* Changes that were ALLOWED but must stay attributable — see AuthzResult.notices. The workspace
-     document's own trail is written by the client (logAudit), so it proves nothing about a caller
-     who simply skips it; this entry is server-asserted. The `security.` prefix is load-bearing:
-     SERVER_ONLY_ACTION_AREAS in lib/audit-log.ts refuses that area from the client-reported
-     endpoint, so nothing can forge or drown out these rows. */
+  /* Changes that were ALLOWED but must stay attributable — see AuthzResult.notices. The change
+     entries above already record the edit itself; this one flags it for the security trail,
+     because a lead-auditor reassignment grants the sign-off right. The client-reported endpoint
+     accepts only CLIENT_AUDIT_ACTIONS (lib/audit-actions.ts), so nothing can forge these rows. */
   if (notices.length) {
     const reassignments = notices.filter((n) => n.startsWith("audit_lead_reassigned:")).length;
     await writeAuditLog({

@@ -15,7 +15,6 @@
 import { useState } from "react";
 import { useUser } from "@/components/chrome/UserContext";
 import { toast } from "@/components/feedback/ToastHost";
-import { logAudit } from "@/lib/client/audit-log";
 import { dirUser, headUsers, ownerEmailFor } from "@/lib/client/directory";
 import { emailNotify } from "@/lib/client/notify";
 import { runCommentCheck } from "@/lib/client/obs-ai";
@@ -192,7 +191,6 @@ export default function ObsComposer({
       }
     });
 
-    logAudit("obs.update", "Update posted on: " + o.title, { observationId: o.id, attachments: evidence.length });
     setText("");
     setFiles([]);
     setBusy(false);

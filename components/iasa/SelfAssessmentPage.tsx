@@ -12,7 +12,6 @@ import BusyButton from "@/components/feedback/BusyButton";
 import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import { Empty } from "@/components/ui";
-import { logAudit } from "@/lib/client/audit-log";
 import { isAuditStaff } from "@/lib/workspace/observations";
 import {
   CONF_HEX,
@@ -257,11 +256,6 @@ export default function SelfAssessmentPage() {
             if (d.iaSAUserCurrent?.[user.id] === s.id) delete d.iaSAUserCurrent[user.id];
           } else if (d.iaSACurrentId === s.id) d.iaSACurrentId = "";
         });
-        logAudit(
-          "iasa.deleted",
-          "Deleted self-assessment" + (s.period ? " (" + s.period + ")" : ""),
-          { selfAssessmentId: s.id },
-        );
       },
     });
   }

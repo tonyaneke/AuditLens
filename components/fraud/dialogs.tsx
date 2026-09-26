@@ -10,7 +10,6 @@ import BusyButton from "@/components/feedback/BusyButton";
 import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import { aiGenerate, parseAiJson, runAiJson, runAiText } from "@/lib/client/ai";
-import { logAudit } from "@/lib/client/audit-log";
 import { directory, loadDirectory, ownerEmailFor as dirOwnerEmailFor } from "@/lib/client/directory";
 import { emailNotify } from "@/lib/client/notify";
 import { notifyBoth } from "@/lib/workspace/observations";
@@ -243,11 +242,6 @@ export function FraudDialog({ fraudId }: { fraudId?: string }) {
         });
       }
     });
-    logAudit(
-      "fraud.risk_created",
-      "Added fraud risk: " + obj.scheme + " (" + cleanActs.length + " preventive action(s))",
-      { fraudRiskId: obj.id },
-    );
     if (obj.ownerUserId && email) {
       emailNotify(
         [email],
@@ -720,11 +714,6 @@ export function FraudActionDialog({ riskId, actionId }: { riskId: string; action
         );
       }
     });
-    if (assignedNew)
-      logAudit("fraud.action_assigned", "Assigned fraud prevention action owner: " + (a.owner || ""), {
-        fraudRiskId: riskId,
-        actionId: actionId || "",
-      });
     modal.close();
     if (assignedNew) {
       // Same resolution notifyBoth uses: directory first, then the department's headEmail.

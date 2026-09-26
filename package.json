@@ -7,7 +7,7 @@
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx scripts/workspace-authz.test.mts",
+    "test": "tsx scripts/workspace-changes.test.mts && tsx scripts/workspace-authz.test.mts",
     "verify:scope": "tsx scripts/verify-scope.mts",
     "extract": "node scripts/extract-html.mjs",
     "postinstall": "prisma generate",

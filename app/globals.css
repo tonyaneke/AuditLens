@@ -4758,6 +4758,140 @@ body.ai-busy .ai-generate-btn:not(:disabled) {
   margin-top: 14px;
 }
 
+/* Who really did it. A developer sign-in acts as someone else's account, so the entry names the
+   developer in a flag the eye cannot skip; the row carries a matching edge. */
+.audit-log-row {
+  cursor: pointer;
+}
+
+.audit-log-row:hover td,
+.audit-log-row.is-open td {
+  background: #fafcfb;
+}
+
+.audit-log-row.is-dev td:first-child {
+  box-shadow: inset 3px 0 0 var(--high);
+}
+
+.audit-who-flag {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.audit-who-flag.is-dev {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 5px;
+  background: var(--high-bg);
+  color: #8a3a06;
+}
+
+.audit-src {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.audit-log-scope {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+
+.audit-log-detail-row > td {
+  background: #fafcfb;
+}
+
+.audit-detail {
+  display: grid;
+  gap: 12px;
+  padding: 4px 0 6px;
+  max-width: 980px;
+}
+
+.audit-changes {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.audit-changes th,
+.audit-changes td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.audit-changes th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.audit-changes td:first-child {
+  width: 22%;
+  font-weight: 600;
+}
+
+.audit-detail-note {
+  margin: 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.audit-detail-note ul {
+  margin: 6px 0 0;
+  padding-left: 20px;
+}
+
+.audit-provenance {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.audit-provenance dt {
+  color: var(--muted);
+}
+
+.audit-provenance dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.audit-provenance code,
+.audit-log-scope code {
+  font-size: 12px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #eef2f7;
+}
+
+/* Shown for the whole of a developer sign-in: this is someone else's account, on real data. */
+.dev-session-banner {
+  padding: 9px 28px;
+  border-bottom: 1px solid #f3c9a8;
+  border-radius: 20px 20px 0 0;
+  background: var(--high-bg);
+  color: #8a3a06;
+  font-size: 13px;
+}
+
 .proc-upload-row {
   margin-top: 6px;
 }

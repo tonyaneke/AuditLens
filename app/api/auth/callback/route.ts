@@ -3,6 +3,7 @@ import {
   SESSION_COOKIE,
   SESSION_MAX_AGE,
   findUserByEmail,
+  newSessionId,
   signSessionToken,
   userToSession,
 } from "@/lib/auth";
@@ -70,7 +71,7 @@ export async function GET(request: NextRequest) {
   if (!user) return toLogin(request, "not_provisioned");
   if (user.active === false) {
     await writeAuditLog({
-      user: { id: user.id, name: user.name, email: user.email },
+      user: { id: user.id, name: user.name, email: user.email, authMethod: "sso" },
       action: "auth.login_blocked",
       category: "auth",
       summary: `${user.name} attempted to sign in but the account is inactive`,
@@ -88,7 +89,8 @@ export async function GET(request: NextRequest) {
     ? await prisma.user.update({ where: { id: user.id }, data: patch })
     : user;
 
-  const sessionUser = userToSession(dbUser);
+  // Microsoft verified who this is, so the session is theirs: authMethod "sso", no operator.
+  const sessionUser = { ...userToSession(dbUser), sessionId: newSessionId(), authMethod: "sso" };
   const token = await signSessionToken(sessionUser);
 
   await writeAuditLog({

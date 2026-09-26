@@ -4,6 +4,8 @@ import { defaultWorkspaceData, type WorkspaceDb } from "@/lib/db-data";
 import { buildBriefEmailHtml, sendNotificationEmail } from "@/lib/email";
 import { computeExcoSnapshot, fmtDate } from "@/lib/exco-compute";
 import { prisma } from "@/lib/prisma";
+import { categoryForAction, writeAuditLogs } from "@/lib/audit-log";
+import { describeWorkspaceChanges } from "@/lib/workspace-changes";
 import { retainDeleted, withoutDeleted } from "@/lib/workspace-tombstones";
 
 export const runtime = "nodejs";
@@ -137,6 +139,8 @@ export async function GET(request: Request) {
   // Deleted recipients and records stay in storage but must not be emailed or reported on; the
   // write below puts them back (lib/workspace-tombstones.ts).
   const stored = (row?.data as WorkspaceDb) || defaultWorkspaceData();
+  // What the document said before this run touched it — `data` below is edited in place.
+  const before = structuredClone(withoutDeleted(stored));
   const data = withoutDeleted(stored) as WorkspaceDb & {
     exco?: {
       recipients?: string; cc?: string; subject?: string; lastSentAt?: string;
@@ -168,7 +172,7 @@ export async function GET(request: Request) {
   const period = `As at ${fmtDate(now)}`;
   const snap = computeExcoSnapshot(data, { period, headline: exco.headline || "", commentary: exco.commentary || "" });
   const token = randomUUID().replace(/-/g, "");
-  const brief = { id: randomUUID(), token, period, generatedAt: snap.generatedAt, headline: snap.headline, commentary: snap.commentary, snapshot: snap as Snapshot, sentAt: "", sentTo: 0 };
+  const brief = { id: randomUUID(), token, period, generatedAt: snap.generatedAt, headline: snap.headline, commentary: snap.commentary, snapshot: snap as Snapshot, sentAt: "", sentTo: 0, delivered: false };
   exco.briefs = Array.isArray(exco.briefs) ? exco.briefs : [];
   exco.briefs.unshift(brief);
 
@@ -207,6 +211,8 @@ export async function GET(request: Request) {
   exco.lastSentAt = now.toISOString();
   brief.sentAt = now.toISOString();
   brief.sentTo = recipients.length + cc.length;
+  // The send's outcome, so the audit trail can say "tried to send" rather than "sent" on a failure.
+  brief.delivered = result.sent;
 
   const toWrite = retainDeleted(stored, data, { id: "system", name: "Scheduled EXCO brief" });
   await prisma.workspaceData.upsert({
@@ -214,6 +220,17 @@ export async function GET(request: Request) {
     update: { data: toWrite as object },
     create: { id: WORKSPACE_ID, data: toWrite as object },
   });
+
+  // Nobody is signed in, so the entries are the scheduled job's own ("Scheduled job", via system).
+  // The brief has gone out and been saved; recording it must not turn that into a failure.
+  try {
+    const changes = describeWorkspaceChanges(before, withoutDeleted(toWrite));
+    if (changes.length) {
+      await writeAuditLogs(null, changes.map((c) => ({ ...c, category: categoryForAction(c.action) })), { via: "system" });
+    }
+  } catch (e) {
+    console.error("[audit] could not record the scheduled brief", e);
+  }
 
   return NextResponse.json({
     ok: true,

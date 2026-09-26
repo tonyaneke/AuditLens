@@ -12,7 +12,6 @@ import { useModal } from "@/components/modals/ModalProvider";
 import RichText from "@/components/ui/RichText";
 import { exportAuditWord } from "@/lib/client/word";
 import { exportExceptionsWord, exportPlanWord } from "@/lib/client/plan-word";
-import { logAudit } from "@/lib/client/audit-log";
 import {
   RESULTS,
   obsRaisedFromTest,
@@ -111,10 +110,6 @@ export default function AuditDetailPage({ auditId }: { auditId: string }) {
           const p = cur && (cur.plan as AuditPlan | undefined);
           if (!p || !p.tests) return;
           p.tests = p.tests.filter((x) => x.id !== t.id);
-        });
-        logAudit("workspace.test_deleted", "Deleted test: " + testTitle(t) + (a ? " in " + a.name : ""), {
-          auditId,
-          testId: t.id,
         });
       },
     });

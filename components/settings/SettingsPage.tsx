@@ -11,7 +11,6 @@ import { useUser } from "@/components/chrome/UserContext";
 import { toast } from "@/components/feedback/ToastHost";
 import { useModal } from "@/components/modals/ModalProvider";
 import { Avatar, Empty, RowOpen } from "@/components/ui";
-import { logAudit } from "@/lib/client/audit-log";
 import { loadDirectory, type DirectoryUser } from "@/lib/client/directory";
 import { MANUALS } from "@/lib/manuals";
 import { effectiveRole } from "@/lib/permissions";
@@ -129,11 +128,6 @@ export default function SettingsPage() {
         mutate((w) => {
           w.departments = (w.departments || []).filter((x) => x.id !== id);
         });
-        logAudit(
-          "workspace.department_removed",
-          "Removed department " + d.name + (d.headName ? " (action owner: " + d.headName + ")" : ""),
-          { departmentId: id, headUserId: d.headUserId || "" },
-        );
         if (linked) {
           try {
             const res = await fetch(`/api/users/${d.headUserId}`, {
@@ -188,12 +182,6 @@ export default function SettingsPage() {
     mutate((w) => {
       w.strictClosureCheck = on;
     });
-    logAudit(
-      "settings.closure_check",
-      on
-        ? "Closure response check set to strict — vague responses cannot be submitted"
-        : "Closure response check set to advisory — owners may submit after one warning",
-    );
     toast(on ? "Closure responses must now pass the check." : "Owners may submit after one warning.", "success");
   }
 
