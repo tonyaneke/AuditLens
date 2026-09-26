@@ -607,6 +607,23 @@ a {
   justify-content: flex-end;
 }
 
+/* A page without a search box has nothing for the middle column to hold. Reserving its
+   200–420px anyway squeezed the right-hand actions until they wrapped onto a second row. */
+.topbar.no-search {
+  grid-template-columns: minmax(170px, 1fr) auto;
+}
+.topbar.no-search .topbar-center {
+  display: none;
+}
+
+/* A page's topbar buttons stay on one row. */
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
 .topbar-filters {
   display: flex;
   align-items: center;
@@ -855,6 +872,22 @@ tr:hover td {
   font-size: 34px;
   opacity: 0.35;
   margin-bottom: 8px;
+}
+
+/* Test page: why no observations have been raised from this test, and the next step. */
+.test-obs-empty {
+  padding: 28px 10px 20px;
+}
+.test-obs-empty-heading {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.test-obs-empty-body {
+  max-width: 460px;
+  margin: 6px auto 14px;
+  font-size: 13px;
+  line-height: 1.55;
 }
 
 /* Forms */
@@ -1783,6 +1816,11 @@ td.timeline-cell {
 .status-pill.withdrawn {
   background: #f6f2fb;
   color: #6b3fa0;
+}
+/* Report status: Draft (neutral) · Under Review (reuses .progress) · Final (reuses .closed). */
+.status-pill.draft {
+  background: #eef1f4;
+  color: #4a5563;
 }
 
 /* Open observations panel */
@@ -3852,6 +3890,31 @@ td.timeline-cell {
   color: #6b3fa0;
 }
 
+/* The observation card's repeat marker: the repeat pill's colours as a round icon, sitting at the
+   top right beside the status. Hover (title) names the prior finding. */
+.repeat-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #efe3f7;
+  color: #6b3fa0;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+/* Left and right halves of the card's head row, so a third badge never lands in the middle. */
+.obs-grid-head-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 /* Tracker table rows */
 /* Keyboard entry point for a clickable row (see <RowOpen>). Looks like the plain text it
    replaces; becomes a visible target only on hover/keyboard focus. */
@@ -3865,6 +3928,22 @@ td.timeline-cell {
   color: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+/* A table row that opens a detail page when clicked anywhere (the audit plan's test rows). */
+tr.row-link {
+  cursor: pointer;
+}
+
+/* A test's title in the audit plan table opens the test's own page. */
+.test-link {
+  font-weight: 700;
+  color: var(--brand-700);
+  text-decoration: none;
+}
+.test-link:hover {
+  color: var(--accent);
+  text-decoration: underline;
 }
 
 .row-open:focus-visible {
@@ -4210,8 +4289,14 @@ td.timeline-cell {
 }
 
 @media (max-width: 1024px) {
-  .topbar {
+  .topbar,
+  .topbar.no-search {
     grid-template-columns: 1fr;
+  }
+
+  /* Stacked layout: the actions have the full width, and wrapping beats overflowing a phone. */
+  .topbar-actions {
+    flex-wrap: wrap;
   }
 
   .topbar-center {

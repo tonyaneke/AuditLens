@@ -4,6 +4,7 @@ import { defaultWorkspaceData, type WorkspaceDb } from "@/lib/db-data";
 import { buildBriefEmailHtml, sendNotificationEmail } from "@/lib/email";
 import { computeExcoSnapshot, fmtDate } from "@/lib/exco-compute";
 import { prisma } from "@/lib/prisma";
+import { retainDeleted, withoutDeleted } from "@/lib/workspace-tombstones";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -133,7 +134,10 @@ export async function GET(request: Request) {
   }
 
   const row = await prisma.workspaceData.findUnique({ where: { id: WORKSPACE_ID } });
-  const data = ((row?.data as WorkspaceDb) || defaultWorkspaceData()) as WorkspaceDb & {
+  // Deleted recipients and records stay in storage but must not be emailed or reported on; the
+  // write below puts them back (lib/workspace-tombstones.ts).
+  const stored = (row?.data as WorkspaceDb) || defaultWorkspaceData();
+  const data = withoutDeleted(stored) as WorkspaceDb & {
     exco?: {
       recipients?: string; cc?: string; subject?: string; lastSentAt?: string;
       headline?: string; commentary?: string;
@@ -204,10 +208,11 @@ export async function GET(request: Request) {
   brief.sentAt = now.toISOString();
   brief.sentTo = recipients.length + cc.length;
 
+  const toWrite = retainDeleted(stored, data, { id: "system", name: "Scheduled EXCO brief" });
   await prisma.workspaceData.upsert({
     where: { id: WORKSPACE_ID },
-    update: { data: data as object },
-    create: { id: WORKSPACE_ID, data: data as object },
+    update: { data: toWrite as object },
+    create: { id: WORKSPACE_ID, data: toWrite as object },
   });
 
   return NextResponse.json({

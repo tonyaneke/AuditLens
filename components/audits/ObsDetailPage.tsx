@@ -17,7 +17,7 @@ import { useModal } from "@/components/modals/ModalProvider";
 import { BackButton, CritPill, StatusPill } from "@/components/ui";
 import { logAudit } from "@/lib/client/audit-log";
 import { deptLabel, deptNameOf } from "@/lib/dept-scope";
-import { effectiveRole } from "@/lib/permissions";
+import { canAccessView, effectiveRole } from "@/lib/permissions";
 import {
   canVerifyItem,
   cancelPendingDelete,
@@ -30,6 +30,7 @@ import {
   obsWithdrawStage,
   pendingDelete,
   pendingUpdate,
+  sourceTestLabel,
   supersedePendingUpdate,
 } from "@/lib/workspace/observations";
 import {
@@ -207,6 +208,8 @@ export default function ObsDetailPage({
   }
 
   const ec = effectiveClose(o, r);
+  const testLabel = sourceTestLabel(a, o);
+  const testExists = !!o.sourceTest && (a.plan?.tests || []).some((x) => x.id === o.sourceTest);
   const age = obsAge(o, r);
   const overdue = isOverdueObs(o, r);
 
@@ -249,6 +252,16 @@ export default function ObsDetailPage({
           </Meta>
         ) : null}
         {o.createdAt ? <Meta label="Created">{fmtDateTime(o.createdAt)}</Meta> : null}
+        {testLabel ? (
+          <Meta label="Test programme">
+            {/* Linked only for people who can open the audit plan; everyone else sees the title. */}
+            {testExists && canAccessView(user, "audit") ? (
+              <Link href={`/audits/${a.id}/tests/${String(o.sourceTest)}`}>{testLabel}</Link>
+            ) : (
+              testLabel
+            )}
+          </Meta>
+        ) : null}
       </div>
 
       <div className="obs-detail-sections">

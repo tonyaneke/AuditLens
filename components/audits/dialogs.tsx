@@ -37,6 +37,7 @@ import {
   ASSURANCE,
   RESULTS,
   TIMELINES,
+  blankObservation,
   cancelPendingStatusChange,
   departments,
   findObsIn,
@@ -55,6 +56,7 @@ import {
   statusClass,
   supersedePendingUpdate,
   testControl,
+  testEvidence,
   testResultNotes,
   testTitle,
   worstCrit,
@@ -63,8 +65,9 @@ import {
   type RepeatCandidate,
 } from "@/lib/workspace/observations";
 import { CRITS, RUBRIC, STATUSES, approvals, expectedClose, fmtDate, isoNow, reportDateOf, uid } from "@/lib/workspace/selectors";
-import type { Audit, AuditTest, AuditPlan, Criticality, Observation, Report, WorkspaceDb } from "@/lib/workspace/types";
+import type { Audit, AuditTest, AuditPlan, Criticality, EvidenceFile, Observation, Report, WorkspaceDb } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
+import { FilePickMulti, MAX_UPLOAD_BYTES, tooLarge, uploadAllEvidence } from "./attach";
 import ResultPill from "./ResultPill";
 
 /* ---------------- Audit Add/Edit Modal ---------------- */
@@ -446,11 +449,34 @@ export function ModalTestDialog({ auditId, testId }: { auditId: string; testId?:
   const [testedDate, setTestedDate] = useState(test?.testedDate || "");
   const [resultNotes, setResultNotes] = useState(test ? testResultNotes(test) : "");
   const [evidenceRef, setEvidenceRef] = useState(test?.evidenceRef || "");
+  // Files already on the test, and new picks that upload on Save. A new test needs its id before
+  // Save so the upload can be filed under it.
+  const [keptFiles, setKeptFiles] = useState<EvidenceFile[]>(() => (test ? testEvidence(test) : []));
+  const [newFiles, setNewFiles] = useState<File[]>([]);
+  const [newTestId] = useState(() => uid());
+  const [err, setErr] = useState("");
 
-  function save() {
+  async function save() {
     if (!title.trim()) {
       toast("Test name required");
       return;
+    }
+    const big = tooLarge(newFiles);
+    if (big) {
+      setErr(`"${big.name}" exceeds the ${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} MB limit.`);
+      return;
+    }
+    setErr("");
+    // Upload first, as the raise flow does: a save that silently drops its evidence is worse than
+    // one that fails and can be retried.
+    let uploaded: EvidenceFile[] = [];
+    if (newFiles.length) {
+      try {
+        uploaded = await uploadAllEvidence(test ? test.id : newTestId, newFiles);
+      } catch (e) {
+        setErr((e instanceof Error ? e.message : "Upload failed.") + " The test has not been saved — fix the file and try again.");
+        return;
+      }
     }
     // Exact legacy field names (saveTest in audit-bot.js); name/control/notes stay mirrored
     // for rows the earlier React dialog created.
@@ -468,6 +494,7 @@ export function ModalTestDialog({ auditId, testId }: { auditId: string; testId?:
       resultNotes,
       notes: resultNotes,
       evidenceRef,
+      evidenceFiles: [...keptFiles, ...uploaded],
       testedBy,
       testedDate,
     };
@@ -481,7 +508,7 @@ export function ModalTestDialog({ auditId, testId }: { auditId: string; testId?:
         const t = curPlan.tests.find((x) => x.id === test.id);
         if (t) Object.assign(t, data);
       } else {
-        curPlan.tests.push({ id: uid(), ...data } as AuditTest);
+        curPlan.tests.push({ id: newTestId, ...data } as AuditTest);
       }
     });
     toast("Audit test saved", "success");
@@ -496,9 +523,9 @@ export function ModalTestDialog({ auditId, testId }: { auditId: string; testId?:
           <button className="btn sec" type="button" onClick={modal.close}>
             Cancel
           </button>
-          <button className="btn pri" type="button" onClick={save}>
+          <BusyButton className="btn pri" busyLabel={newFiles.length ? "Uploading…" : "Saving…"} onClick={save}>
             Save
-          </button>
+          </BusyButton>
         </>
       }
     >
@@ -557,6 +584,35 @@ export function ModalTestDialog({ auditId, testId }: { auditId: string; testId?:
       />
       <label>Evidence / working-paper reference</label>
       <input type="text" placeholder="e.g. WP-3.2 / sample sheet ref" value={evidenceRef} onChange={(e) => setEvidenceRef(e.target.value)} />
+      <label>Evidence files</label>
+      {keptFiles.length ? (
+        <ul style={{ listStyle: "none", margin: "4px 0 0", padding: 0, display: "grid", gap: 4 }}>
+          {keptFiles.map((f) => (
+            <li key={f.itemId} className="hint" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <a href={`/api/files/${f.itemId}`} target="_blank" rel="noopener noreferrer" style={{ flex: 1, wordBreak: "break-all" }}>
+                📎 {f.name}
+              </a>
+              <button
+                type="button"
+                className="btn ghost sm"
+                title={`Remove ${f.name}`}
+                onClick={() => setKeptFiles((cur) => cur.filter((x) => x.itemId !== f.itemId))}
+              >
+                ×<span className="visually-hidden"> remove {f.name}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <FilePickMulti files={newFiles} onChange={setNewFiles} label="📎 Upload evidence" />
+      <div className="hint" style={{ marginTop: 6 }}>
+        Files upload when you save the test (max {Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} MB each).
+      </div>
+      {err ? (
+        <div style={{ marginTop: 10 }}>
+          <div className="ai-err">{err}</div>
+        </div>
+      ) : null}
     </ModalFrame>
   );
 }
@@ -907,6 +963,25 @@ export function ModalRaiseExceptionDialog({ auditId, testId }: { auditId: string
     if (!d.category && testControl(t)) obs.category = testControl(t);
     obs.sourceTest = t.id;
     obs.sourceTestRef = t.ref || "";
+    obs.sourceTestTitle = testTitle(t);
+    obs.evidenceRef = t.evidenceRef || "";
+    modal.close();
+    modal.open(<RaiseFlow auditId={auditId} reportId={repId} draft={obs} />, { wide: true });
+  }
+
+  /* The no-AI path: a blank observation still linked to this test, so the auditor writes it
+     themselves instead of clearing out an AI draft. */
+  function writeManually() {
+    if (!a || !t) return;
+    if (!repId) {
+      setErr("Choose a target report.");
+      return;
+    }
+    const obs = blankObservation();
+    if (t.ref) obs.ref = t.ref;
+    obs.sourceTest = t.id;
+    obs.sourceTestRef = t.ref || "";
+    obs.sourceTestTitle = testTitle(t);
     obs.evidenceRef = t.evidenceRef || "";
     modal.close();
     modal.open(<RaiseFlow auditId={auditId} reportId={repId} draft={obs} />, { wide: true });
@@ -921,8 +996,11 @@ export function ModalRaiseExceptionDialog({ auditId, testId }: { auditId: string
           <button className="btn sec" type="button" onClick={modal.close}>
             Cancel
           </button>
+          <button className="btn sec" type="button" onClick={writeManually}>
+            ✎ Write manually
+          </button>
           <BusyButton className="btn dark ai-generate-btn" busyLabel="Generating…" onClick={generate}>
-            Generate exception
+            Generate with AI
           </BusyButton>
         </>
       }
@@ -944,6 +1022,10 @@ export function ModalRaiseExceptionDialog({ auditId, testId }: { auditId: string
           </option>
         ))}
       </select>
+      <div className="hint" style={{ marginTop: 10 }}>
+        <b>Generate with AI</b> drafts the observation from this test&apos;s result. <b>Write manually</b> opens
+        a blank form, still linked to this test.
+      </div>
       {err ? (
         <div style={{ marginTop: 10 }}>
           <div className="ai-err">{err}</div>

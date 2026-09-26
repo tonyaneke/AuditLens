@@ -19,3 +19,5 @@ export const ModalSopBulkDialog = dynamic(() => import("./dialogs").then((m) => 
 export const ModalBulkImportDialog = dynamic(() => import("./dialogs").then((m) => m.ModalBulkImportDialog), { loading: () => null });
 export const ModalReassignObsDialog = dynamic(() => import("./dialogs").then((m) => m.ModalReassignObsDialog), { loading: () => null });
 export const ModalObsDialog = dynamic(() => import("./dialogs").then((m) => m.ModalObsDialog), { loading: () => null });
+// The raise wizard itself, for entry points that skip the AI draft (a blank observation).
+export const RaiseFlowDialog = dynamic(() => import("@/components/obs/RaiseFlow"), { loading: () => null });

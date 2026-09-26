@@ -68,11 +68,17 @@ export function Section({ title, text }: { title: string; text: string | undefin
 /* Supporting documents attached when the finding was raised. Kept out of the remediation
    block on purpose: that block is the conversation, and these are the basis of the finding —
    they belong beside the description an action owner reads first. */
-export function Attachments({ files }: { files: EvidenceFile[] | undefined }) {
+export function Attachments({
+  files,
+  title = "Supporting documents",
+}: {
+  files: EvidenceFile[] | undefined;
+  title?: string;
+}) {
   if (!files || !files.length) return null;
   return (
     <section className="obs-detail-section">
-      <h4 className="obs-detail-label">Supporting documents</h4>
+      <h4 className="obs-detail-label">{title}</h4>
       <div className="obs-detail-content">
         {files.map((e) => (
           <div key={e.itemId} style={{ marginTop: 4 }}>

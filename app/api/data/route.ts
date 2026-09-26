@@ -6,6 +6,7 @@ import { defaultWorkspaceData, type WorkspaceDb } from "@/lib/db-data";
 import { prisma } from "@/lib/prisma";
 import { authorizeWorkspaceWrite } from "@/lib/workspace-authz";
 import { graftServerHeld, slimForClient } from "@/lib/workspace-payload";
+import { retainDeleted, withoutDeleted } from "@/lib/workspace-tombstones";
 import { viewerFor } from "@/lib/workspace-scope";
 import { MAX_BODY_BYTES, prepareIncomingWorkspace } from "@/lib/workspace-validate";
 
@@ -33,7 +34,8 @@ export async function GET(request: Request) {
   }
 
   const row = await prisma.workspaceData.findUnique({ where: { id: WORKSPACE_ID } });
-  const data = (row?.data as WorkspaceDb) || defaultWorkspaceData();
+  // Deleted records stay in storage but are never served — see lib/workspace-tombstones.ts.
+  const data = withoutDeleted((row?.data as WorkspaceDb) || defaultWorkspaceData());
   return NextResponse.json({
     // The document itself resolves the viewer's department name to department records — see
     // viewerFor() in lib/workspace-scope.ts.
@@ -149,17 +151,25 @@ export async function PUT(request: Request) {
     }
   }
 
+  /* Deleting never erases. The write is authorized against the document as the client was served
+     it — deleted records stripped — so a hidden record's absence from this save is not read as a
+     delete attempt; then every stored record the save left out is put back, flagged as deleted
+     (lib/workspace-tombstones.ts). */
+  const served = withoutDeleted(current);
   const { data: authorized, violations, notices } = authorizeWorkspaceWrite(
     session.role,
     session.id,
-    current,
+    served,
     incoming,
     session.activeRole,
     session.department,
     session.extraDepartments,
   );
 
-  const payload = graftServerHeld(current, authorized, session.id) as Prisma.InputJsonValue;
+  const payload = retainDeleted(current, graftServerHeld(served, authorized, session.id), {
+    id: session.id,
+    name: session.name,
+  }) as Prisma.InputJsonValue;
 
   /* The check above still leaves a window between the read and the write. Make the update
      itself conditional on the watermark so two simultaneous saves cannot both succeed:
@@ -221,7 +231,7 @@ export async function PUT(request: Request) {
     }).catch(() => {});
   }
 
-  const saved = row.data as WorkspaceDb;
+  const saved = withoutDeleted(row.data as WorkspaceDb);
   return NextResponse.json({
     data: slimForClient(saved, viewerFor(session, saved)),
     updatedAt: row.updatedAt,

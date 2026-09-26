@@ -4,7 +4,9 @@
 // audit-bot.js, including the full legacy test programme table, the Generate-audit-plan flow
 // and the ⚑ Raise-exception entry point on Exception/Partial test rows.
 
+import type { MouseEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useModal } from "@/components/modals/ModalProvider";
 import RichText from "@/components/ui/RichText";
@@ -13,13 +15,16 @@ import { exportExceptionsWord, exportPlanWord } from "@/lib/client/plan-word";
 import { logAudit } from "@/lib/client/audit-log";
 import {
   RESULTS,
+  obsRaisedFromTest,
   testControl,
+  testEvidence,
   testIsException,
-  testResultNotes,
   testTitle,
 } from "@/lib/workspace/observations";
 import type { AuditPlan, AuditTest, Report } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
+import RaisedPill from "./RaisedPill";
+import ReportStatusPill from "./ReportStatusPill";
 import ResultPill from "./ResultPill";
 import {
   ModalAuditDialog,
@@ -34,12 +39,13 @@ import {
 export default function AuditDetailPage({ auditId }: { auditId: string }) {
   const { db, mutate } = useWorkspace();
   const modal = useModal();
+  const router = useRouter();
   const a = (db.audits || []).find((x) => x.id === auditId);
 
   usePageChrome({
     title: a?.name || "Audit Engagement",
     actions: a ? (
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <div className="topbar-actions">
         <Link href="/audits" className="btn sec sm">
           ← Back to List
         </Link>
@@ -83,6 +89,15 @@ export default function AuditDetailPage({ auditId }: { auditId: string }) {
     const k = t.result || "Not Tested";
     rc[k] = (rc[k] || 0) + 1;
   });
+
+  /* The whole test row opens the test's page. The title stays a real link for keyboard and
+     screen-reader users; clicks on it, and on the row's own buttons, are left to those controls,
+     and a drag that selects text is not a click. */
+  function openTest(e: MouseEvent, href: string) {
+    if ((e.target as HTMLElement).closest("a, button, input, select, textarea, label")) return;
+    if (window.getSelection()?.toString()) return;
+    router.push(href);
+  }
 
   function delTest(t: AuditTest) {
     if (!a) return;
@@ -231,7 +246,7 @@ export default function AuditDetailPage({ auditId }: { auditId: string }) {
                     <th scope="col">Ref</th>
                     <th scope="col">Test</th>
                     <th scope="col">Objective</th>
-                    <th scope="col">Control / population</th>
+                    <th scope="col">Control</th>
                     <th scope="col">Result</th>
                     <th scope="col"></th>
                   </tr>
@@ -239,32 +254,28 @@ export default function AuditDetailPage({ auditId }: { auditId: string }) {
                 <tbody>
                   {tests.map((t: AuditTest) => {
                     const isExc = testIsException(t);
-                    const notes = testResultNotes(t);
+                    const raisedCount = obsRaisedFromTest(a, t.id).length;
+                    const files = testEvidence(t).length;
+                    const testHref = `/audits/${a.id}/tests/${t.id}`;
                     return (
-                      <tr key={t.id}>
+                      <tr key={t.id} className="row-link" onClick={(e) => openTest(e, testHref)}>
                         <td>{t.ref || ""}</td>
                         <td>
-                          <b>{testTitle(t)}</b>
-                          {notes ? (
-                            <div className="hint">
-                              <b>Found:</b> {notes}
-                            </div>
-                          ) : null}
+                          {/* The full test — what was found, evidence, the observations it raised —
+                              is on its own page; the table stays one line per test. */}
+                          <Link href={testHref} className="test-link">
+                            {testTitle(t) || "(untitled test)"}
+                          </Link>
                         </td>
                         <td>{t.objective || ""}</td>
-                        <td>
-                          {testControl(t)}
-                          {t.population || t.sampleBasis ? (
-                            <div className="hint">
-                              {t.population || ""}
-                              {t.population && t.sampleBasis ? " · " : ""}
-                              {t.sampleBasis || ""}
-                            </div>
-                          ) : null}
-                        </td>
+                        <td>{testControl(t)}</td>
                         <td>
                           <ResultPill result={t.result} />
-                          {t.evidenceRef ? <div className="hint">WP: {t.evidenceRef}</div> : null}
+                          {files ? (
+                            <div className="hint">
+                              📎 {files} evidence file{files === 1 ? "" : "s"}
+                            </div>
+                          ) : null}
                           {t.testedBy ? (
                             <div className="hint">
                               {t.testedBy}
@@ -273,7 +284,13 @@ export default function AuditDetailPage({ auditId }: { auditId: string }) {
                           ) : null}
                         </td>
                         <td style={{ whiteSpace: "nowrap" }}>
-                          {isExc ? (
+                          {/* Once an observation exists the test is done — show that in green and send
+                              further raises through the test page, where the existing ones are listed. */}
+                          {raisedCount ? (
+                            <Link href={testHref} style={{ display: "block", marginBottom: 5 }}>
+                              <RaisedPill count={raisedCount} />
+                            </Link>
+                          ) : isExc ? (
                             <button
                               className="btn sm"
                               style={{ background: "var(--crit)", display: "block", marginBottom: 5 }}
@@ -331,7 +348,7 @@ export default function AuditDetailPage({ auditId }: { auditId: string }) {
                     <Link href={`/audits/${a.id}/reports/${r.id}`} style={{ fontWeight: 700, fontSize: 16 }}>
                       {r.title}
                     </Link>
-                    <span className={`pill ${r.status === "Final" ? "c-Low" : "c-Medium"}`}>{r.status || "Draft"}</span>
+                    <ReportStatusPill status={r.status} />
                   </div>
                   {r.refNo ? <div className="meta" style={{ marginBottom: 8 }}>Ref: {r.refNo}</div> : null}
                   <div className="hint" style={{ flex: 1, marginBottom: 12 }}>

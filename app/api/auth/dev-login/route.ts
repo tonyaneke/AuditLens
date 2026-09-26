@@ -8,6 +8,8 @@ import {
 } from "@/lib/auth";
 import { writeAuditLog } from "@/lib/audit-log";
 import { prisma } from "@/lib/prisma";
+import type { WorkspaceDb } from "@/lib/db-data";
+import { withoutDeleted } from "@/lib/workspace-tombstones";
 
 export const runtime = "nodejs";
 
@@ -31,7 +33,7 @@ export async function POST(request: NextRequest) {
   if (!user) {
     // Development helper: check if email belongs to an EXCO brief recipient
     const ws = await prisma.workspaceData.findUnique({ where: { id: "default" } });
-    const data = ws?.data as
+    const data = (ws?.data ? withoutDeleted(ws.data as WorkspaceDb) : undefined) as
       | { exco?: { recipientList?: Array<{ name?: string; email?: string; role?: string }> } }
       | undefined;
     const recipients = data?.exco?.recipientList || [];

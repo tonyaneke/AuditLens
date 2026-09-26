@@ -183,6 +183,37 @@ export function testIsException(t: AuditTest): boolean {
   return t.result === "Exception" || t.result === "Partial";
 }
 
+/** Supporting evidence uploaded against a test. `evidenceRef` is the free-text working-paper
+ *  reference; these are the files themselves. */
+export function testEvidence(t: AuditTest): EvidenceFile[] {
+  return Array.isArray(t.evidenceFiles) ? (t.evidenceFiles as EvidenceFile[]) : [];
+}
+
+/** Observations raised from this test — the raise-exception flow stamps `sourceTest` on the draft.
+ *  A raise the Head rejected never became a finding, so it does not count; one awaiting approval
+ *  or later withdrawn does, because the exception was raised either way. */
+export function obsRaisedFromTest(a: Audit, testId: string): { r: Report; o: Observation }[] {
+  const out: { r: Report; o: Observation }[] = [];
+  for (const r of a.reports || []) {
+    for (const o of r.observations || []) {
+      if (o.sourceTest === testId && o.obsApproval !== "rejected") out.push({ r, o });
+    }
+  }
+  return out;
+}
+
+/** The title of the test an observation was drawn from. Read from the live programme first so a
+ *  renamed test shows its current name; the title stamped at raise time covers a test that has
+ *  since been deleted, and the ref covers observations raised before that stamp existed. */
+export function sourceTestLabel(a: Audit | undefined, o: Observation): string {
+  if (!o.sourceTest) return "";
+  const t = (a?.plan?.tests || []).find((x) => x.id === o.sourceTest);
+  if (t) return (t.ref ? t.ref + " — " : "") + testTitle(t);
+  const ref = String(o.sourceTestRef || "");
+  const title = String(o.sourceTestTitle || "");
+  return ref && title ? ref + " — " + title : title || ref;
+}
+
 /* ---------------- role & verification checks ---------------- */
 
 export function isHead(user: SessionUser): boolean {
@@ -593,6 +624,13 @@ export function normCrit(s: string | undefined): string {
 }
 
 export type AiObsDraft = Record<string, unknown>;
+/** An empty observation for the raise wizard — the "write it yourself" path, so an auditor who
+ *  does not want an AI draft is not left deleting one. Same defaults as obsFromAi(), no content.
+ *  The wizard assigns the next free ref and requires a title before it moves on. */
+export function blankObservation(): Observation {
+  return { ...obsFromAi({}), title: "" };
+}
+
 export function obsFromAi(d: AiObsDraft): Observation {
   let crit = String(d.criticality || "Moderate");
   crit = CRITS.find((c) => c.toLowerCase() === crit.toLowerCase()) || "Moderate";

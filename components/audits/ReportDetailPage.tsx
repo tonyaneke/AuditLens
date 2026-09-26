@@ -12,19 +12,19 @@ import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useUser } from "@/components/chrome/UserContext";
 import { useModal } from "@/components/modals/ModalProvider";
 import RichText from "@/components/ui/RichText";
-import { Kpi, StatusPill } from "@/components/ui";
+import { Kpi } from "@/components/ui";
 import { exportReportWord } from "@/lib/client/word";
 import { exportSopUpdatesWord } from "@/lib/client/plan-word";
 import {
+  blankObservation,
   hasExecSummary,
   isHead,
-  isRecentlyCreated,
   obsSortByAdded,
   worstCrit,
   zc,
 } from "@/lib/workspace/observations";
-import { CRITS, STATUSES, ck, fmtDateTime, isWithdrawn } from "@/lib/workspace/selectors";
-import type { Audit, Observation, Report } from "@/lib/workspace/types";
+import { CRITS, STATUSES, isWithdrawn } from "@/lib/workspace/selectors";
+import type { Observation } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 import {
   ModalExecPromptDialog,
@@ -33,51 +33,10 @@ import {
   ModalReportDialog,
   ModalScanRepeatsDialog,
   ModalSopBulkDialog,
+  RaiseFlowDialog,
 } from "./lazy";
-
-/* ---- legacy obsApprovalBadge ---- */
-function ObsApprovalBadge({ o }: { o: Observation }) {
-  if (o.obsApproval === "pending") return <span className="pill sop-pending-pill">⏳ Pending Head approval</span>;
-  if (o.obsApproval === "rejected") return <span className="pill c-Critical">Rejected</span>;
-  return null;
-}
-
-/* ---- legacy obsGridCard: criticality pill · status pill · approval badge · category tag ·
-        preview · Recently-created badge + created stamp · ↻ REPEAT pill · lc-{ck} accent ---- */
-function ObsGridCard({ a, r, o }: { a: Audit; r: Report; o: Observation }) {
-  const preview = String(o.description || o.recommendation || "").trim();
-  const previewShort = preview.length > 90 ? preview.slice(0, 89) + "…" : preview;
-  const recent = isRecentlyCreated(o);
-  const created = o.createdAt ? fmtDateTime(String(o.createdAt)) : "";
-  return (
-    <Link
-      href={`/audits/${a.id}/reports/${r.id}/observations/${o.id}`}
-      className={`obs-grid-card lc-${ck(o.criticality)}`}
-      data-obs-id={o.id}
-      role="button"
-    >
-      <div className="obs-grid-head">
-        <span className={`pill c-${ck(o.criticality)}`}>{o.criticality}</span>
-        <StatusPill status={String(o.status || "Open")} />
-        <ObsApprovalBadge o={o} />
-      </div>
-      <h4 className="obs-grid-title">
-        {o.ref ? o.ref + " — " : ""}
-        {o.title}
-      </h4>
-      {o.category ? <span className="tag">{String(o.category)}</span> : null}
-      {previewShort ? <p className="obs-grid-preview">{previewShort}</p> : null}
-      {created || recent ? (
-        <div className="obs-grid-created">
-          {recent ? <span className="obs-recent-badge">Recently created</span> : null}
-          {recent && created ? " · " : ""}
-          {created}
-        </div>
-      ) : null}
-      {o.isRepeat ? <span className="pill repeat-pill">↻ REPEAT</span> : null}
-    </Link>
-  );
-}
+import ObsGridCard from "./ObsGridCard";
+import ReportStatusPill from "./ReportStatusPill";
 
 /* ---- legacy sopStatusPill / sopListCard ---- */
 function SopStatusPill({ o }: { o: Observation }) {
@@ -188,7 +147,7 @@ export default function ReportDetailPage({ auditId, reportId }: { auditId: strin
           <div>
             <div className="ttl">Status</div>
             <div>
-              <span className={`pill ${r.status === "Final" ? "c-Low" : "c-Medium"}`}>{r.status || "Draft"}</span>
+              <ReportStatusPill status={r.status} />
             </div>
           </div>
           <div>
@@ -269,6 +228,15 @@ export default function ReportDetailPage({ auditId, reportId }: { auditId: strin
           >
             + Add observation (AI)
           </button>
+          <button
+            className="btn sec sm"
+            title="Open a blank observation and write it yourself — no AI draft to clear out"
+            onClick={() =>
+              modal.open(<RaiseFlowDialog auditId={a.id} reportId={r.id} draft={blankObservation()} />, { wide: true })
+            }
+          >
+            ✎ Add manually
+          </button>
           {activeObs.length ? (
             <button className="btn sec sm" onClick={() => modal.open(<ModalScanRepeatsDialog auditId={a.id} reportId={r.id} />)}>
               🔁 Scan for repeats
@@ -306,7 +274,8 @@ export default function ReportDetailPage({ auditId, reportId }: { auditId: strin
             <div className="big">✎</div>
             No observations yet.
             <br />
-            Use <b>Add observation</b> above to draft one — from a one-liner, manually, or by importing a CSV.
+            Use <b>+ Add observation (AI)</b> to draft one from a one-liner, or <b>✎ Add manually</b> to write it
+            yourself.
           </div>
         ) : !filteredObs.length ? (
           <div className="empty">

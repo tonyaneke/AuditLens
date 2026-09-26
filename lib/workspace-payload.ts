@@ -1,5 +1,6 @@
 import type { WorkspaceDb } from "./db-data";
 import { isHead, scopeWorkspace, type Viewer } from "./workspace-scope";
+import { withoutDeleted } from "./workspace-tombstones";
 
 type AnyRec = Record<string, unknown>;
 
@@ -12,6 +13,11 @@ type AnyRec = Record<string, unknown>;
 // workspace document (~1.1 MB of 1.7 MB stored). They stay server-side: GET replaces each with a
 // sopPdfStored flag, and PUT grafts the stored base64 back so a client save never loses them.
 export function slimForClient(data: WorkspaceDb, viewer: Viewer): WorkspaceDb {
+  /* Deleted records are kept in storage but never served (lib/workspace-tombstones.ts). Callers
+     already pass the stripped document; doing it here too means nothing that goes through this
+     function can leak one. It is a no-op on a document with nothing deleted. */
+  data = withoutDeleted(data);
+
   /* SEC-01 — role scoping first: an action owner never receives another department's
      observations, the fraud register, the audit universe or the approvals queue at all. Head of
      Audit and audit staff get the document unchanged and fall through to the trims below.

@@ -104,6 +104,11 @@ export type Observation = {
   withdrawal?: { stage: string; [k: string]: unknown } | null;
   notes?: unknown[];
   updates?: ObsUpdate[];
+  /** The audit-plan test this observation was raised from (Raise exception on a test row). */
+  sourceTest?: string;
+  sourceTestRef?: string;
+  /** The test's title at raise time — the fallback label once the test itself is deleted. */
+  sourceTestTitle?: string;
   [k: string]: unknown;
 };
 
@@ -151,6 +156,8 @@ export type AuditTest = {
   /** Earlier React shell wrote `notes`; kept mirrored for old rows. */
   notes?: string;
   evidenceRef?: string;
+  /** Evidence files uploaded from the Add / Edit test dialog. */
+  evidenceFiles?: EvidenceFile[];
   testedBy?: string;
   testedDate?: string;
   [k: string]: unknown;

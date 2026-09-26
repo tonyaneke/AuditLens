@@ -3,6 +3,8 @@ import { requireHeadOfAudit } from "@/lib/auth";
 import { writeAuditLog } from "@/lib/audit-log";
 import { loginUrlFromRequest, sendExecutiveOnboardingEmail } from "@/lib/email";
 import { prisma } from "@/lib/prisma";
+import type { WorkspaceDb } from "@/lib/db-data";
+import { withoutDeleted } from "@/lib/workspace-tombstones";
 
 export async function POST(request: Request) {
   let session;
@@ -68,7 +70,7 @@ export async function POST(request: Request) {
   if (body.allExecutives) {
     // Sync any exco recipients into prisma.user with role = 'executive'
     const ws = await prisma.workspaceData.findFirst();
-    const wsData = (ws?.data || {}) as Record<string, unknown>;
+    const wsData = withoutDeleted((ws?.data || {}) as WorkspaceDb) as Record<string, unknown>;
     const excoData = (wsData.exco || {}) as { recipientList?: Array<{ name?: string; email?: string; role?: string }> };
     const excoRecipients = excoData.recipientList || [];
 
@@ -168,7 +170,7 @@ export async function POST(request: Request) {
 
   // If in exco recipients list, ensure role is executive so they have the executive view
   const ws = await prisma.workspaceData.findFirst();
-  const wsData = (ws?.data || {}) as Record<string, unknown>;
+  const wsData = withoutDeleted((ws?.data || {}) as WorkspaceDb) as Record<string, unknown>;
   const excoData = (wsData.exco || {}) as { recipientList?: Array<{ email?: string }> };
   const inExco = (excoData.recipientList || []).some(
     (r) => (r.email || "").trim().toLowerCase() === targetUser!.email.toLowerCase(),

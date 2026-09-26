@@ -8,6 +8,7 @@ import type {
 import { hydrateBriefDetailItem } from "@/lib/brief-hydrate";
 import { defaultWorkspaceData, type WorkspaceDb } from "@/lib/db-data";
 import { prisma } from "@/lib/prisma";
+import { withoutDeleted } from "@/lib/workspace-tombstones";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -519,7 +520,8 @@ export async function GET(request: Request) {
   let data: WorkspaceDb;
   try {
     const row = await prisma.workspaceData.findUnique({ where: { id: WORKSPACE_ID } });
-    data = (row?.data as WorkspaceDb) || defaultWorkspaceData();
+    // A deleted brief's link must stop working, as it did when delete erased it.
+    data = withoutDeleted((row?.data as WorkspaceDb) || defaultWorkspaceData());
   } catch {
     return new NextResponse(notFoundPage("This brief is temporarily unavailable."), {
       status: 503,
