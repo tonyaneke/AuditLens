@@ -3,15 +3,20 @@
 // Approval details dialog — React port of modalApprovalDetails/obsDetailRowsHTML in
 // audit-bot.js. Renders the request header, the decision note for decided requests, a
 // kind-specific body (edit diff, deletion warning, status change, withdrawal reasons or the
-// full observation details) and the Approve/Reject footer for pending requests.
+// full observation details) and the Approve/Reject footer for pending requests. A pending new
+// observation also gets Edit, so the Head can correct it before deciding instead of rejecting
+// it back to the auditor.
 
 import type { ReactNode } from "react";
+import { ModalObsDialog } from "@/components/audits/lazy";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import {
   approvalItemTitle,
   approvalKindLabel,
+  editApprovesRejectedObs,
   findApprovalObs,
   OBS_FIELD_LABELS,
+  raiseUnderReview,
 } from "@/lib/workspace/approvals";
 import { approvals, fmtDateTime } from "@/lib/workspace/selectors";
 import type { Observation } from "@/lib/workspace/types";
@@ -60,6 +65,9 @@ export function ApprovalDetailsDialog({ aid }: { aid: string }) {
 
   const { o } = findApprovalObs(db, ap);
   const reason = String(ap.headReason || (ap.decisionReason as string | undefined) || "");
+  // Edit opens on top of this dialog; saving pops back here, re-rendered from the edited record.
+  const editable = raiseUnderReview(db, ap);
+  const reinstates = editApprovesRejectedObs(db, ap);
 
   const head = (
     <>
@@ -99,6 +107,13 @@ export function ApprovalDetailsDialog({ aid }: { aid: string }) {
     body = (
       <>
         {head}
+        {reinstates ? (
+          <div className="note" style={{ borderLeft: "3px solid var(--accent)", marginBottom: 10 }}>
+            This observation was <b>rejected</b> when it was raised, so it is not on the tracker and
+            its action owner has not seen it. Approving this edit also <b>approves the observation</b>:
+            it goes on the tracker and the action owner is notified.
+          </div>
+        ) : null}
         <div className="seclabel">Proposed changes</div>
         {changed.length ? (
           changed.map(([k, lab]) => (
@@ -161,6 +176,12 @@ export function ApprovalDetailsDialog({ aid }: { aid: string }) {
     body = (
       <>
         {head}
+        {editable ? (
+          <div className="hint" style={{ marginBottom: 10 }}>
+            Something to correct? <b>Edit</b> it here before you approve. Your changes apply
+            directly and are recorded in the audit trail.
+          </div>
+        ) : null}
         <ObsDetailRows o={o} />
       </>
     );
@@ -179,6 +200,20 @@ export function ApprovalDetailsDialog({ aid }: { aid: string }) {
       footer={
         ap.status === "pending" ? (
           <>
+            {editable ? (
+              <button
+                className="btn sec"
+                type="button"
+                style={{ marginRight: "auto" }}
+                onClick={() =>
+                  modal.open(
+                    <ModalObsDialog auditId={ap.auditId || ""} reportId={ap.reportId || ""} obsId={editable.id} />,
+                  )
+                }
+              >
+                Edit
+              </button>
+            ) : null}
             <button
               className="btn ghost danger"
               type="button"

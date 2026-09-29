@@ -3,14 +3,20 @@
 // Approvals inbox & history for the Head of Audit — React port of legacy viewApprovals in
 // audit-bot.js (KPI row, pending queue with inline Approve/Reject, recent-decisions history,
 // click-a-row for details) plus the React shell's extras: pending/approved/rejected/all tabs
-// and the details dialog. Decision logic lives in ./decisions and is unchanged.
+// and the details dialog. Decision logic lives in ./decisions.
 
 import { useState } from "react";
+import { ModalObsDialog } from "@/components/audits/lazy";
 import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useUser } from "@/components/chrome/UserContext";
 import { useModal } from "@/components/modals/ModalProvider";
 import { Kpi, RowOpen } from "@/components/ui";
-import { approvalItemTitle, approvalKindLabel } from "@/lib/workspace/approvals";
+import {
+  approvalItemTitle,
+  approvalKindLabel,
+  editApprovesRejectedObs,
+  raiseUnderReview,
+} from "@/lib/workspace/approvals";
 import { approvals, fmtDateTime } from "@/lib/workspace/selectors";
 import type { Approval } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
@@ -60,8 +66,10 @@ export default function ApprovalsPage() {
     modal.open(<ApprovalDetailsDialog aid={ap.id} />);
   }
 
-  /** Legacy pending-queue row: Type / Item / Requested by / Requested / Decision buttons. */
+  /** Legacy pending-queue row: Type / Item / Requested by / Requested / Decision buttons. A new
+   *  observation can also be edited in place before it is decided. */
   function pendingRow(ap: Approval) {
+    const editable = raiseUnderReview(db, ap);
     return (
       <tr className="tracker-row" key={ap.id} title="View details" onClick={() => openDetails(ap)}>
         <td>
@@ -72,6 +80,9 @@ export default function ApprovalsPage() {
             <b>{approvalItemTitle(db, ap)}</b>
           </RowOpen>
           {ap.newStatus ? <div className="hint">→ {ap.newStatus}</div> : null}
+          {editApprovesRejectedObs(db, ap) ? (
+            <div className="hint">Revises a rejected observation. Approving it approves the observation.</div>
+          ) : null}
         </td>
         <td>{ap.requestedByName || "—"}</td>
         <td>{ap.requestedAt ? fmtDateTime(ap.requestedAt) : "—"}</td>
@@ -79,6 +90,22 @@ export default function ApprovalsPage() {
           style={{ textAlign: "right", whiteSpace: "nowrap" }}
           onClick={(e) => e.stopPropagation()}
         >
+          {editable ? (
+            <>
+              <button
+                className="btn sec sm"
+                type="button"
+                aria-label={`Edit observation: ${approvalItemTitle(db, ap)}`}
+                onClick={() =>
+                  modal.open(
+                    <ModalObsDialog auditId={ap.auditId || ""} reportId={ap.reportId || ""} obsId={editable.id} />,
+                  )
+                }
+              >
+                Edit
+              </button>{" "}
+            </>
+          ) : null}
           <button className="btn sm" type="button" onClick={() => void approveAny(ap.id)}>
             Approve
           </button>{" "}

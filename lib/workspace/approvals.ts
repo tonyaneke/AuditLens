@@ -30,7 +30,25 @@ export function approvalItemTitle(db: WorkspaceDb, a: Approval): string {
     const e = (db.auditUniverse || []).find((x) => x.id === a.unitId);
     return e ? e.name : a.unitName || "(removed unit)";
   }
-  return a.obsTitle || a.unitName || "(item)";
+  // The live title, not the snapshot taken at request time: the Head can edit an observation
+  // while reviewing it, and the queue should show what is about to be approved. The snapshot
+  // still names an observation that has since been deleted.
+  const live = a.obsId ? findApprovalObs(db, a).o : undefined;
+  return live?.title || a.obsTitle || a.unitName || "(item)";
+}
+
+/** The observation behind a pending "New observation" request — what the Head may edit before
+ *  deciding it (the Edit action on the Approvals page). */
+export function raiseUnderReview(db: WorkspaceDb, a: Approval): Observation | undefined {
+  if (a.kind !== "observation_raise" || a.status !== "pending") return undefined;
+  return findApprovalObs(db, a).o;
+}
+
+/** A pending edit to an observation whose raise was rejected. Approving it approves the
+ *  observation as well — see the observation_update case in components/approvals/decisions.tsx. */
+export function editApprovesRejectedObs(db: WorkspaceDb, a: Approval): boolean {
+  if (a.kind !== "observation_update" || a.status !== "pending") return false;
+  return findApprovalObs(db, a).o?.obsApproval === "rejected";
 }
 
 /** Observation fields rendered in the approval details dialog (legacy OBS_FIELD_LABELS). */

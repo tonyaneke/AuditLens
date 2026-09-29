@@ -26,9 +26,18 @@ import {
 } from "@/lib/workspace/observations";
 import { parseQuarters } from "@/lib/workspace/ra";
 import { approvals } from "@/lib/workspace/selectors";
+import type { Observation, WorkspaceDb } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 import { effectiveRole } from "@/lib/permissions";
 
+/* Mutating (run inside mutate). Approval is the moment the finding becomes real to the
+   department — before it, canSeeObs() withholds it from them, so this is the first point at
+   which a notification would have anything to open. */
+function publishObs(d: WorkspaceDb, o: Observation): void {
+  o.obsApproval = "approved";
+  notifyOwnerAssigned(d, o);
+  notifyDeptOfObs(d, o, "assigned", "Raised against your department: " + o.title);
+}
 
 export function useApprovalDecisions() {
   const { db, mutate } = useWorkspace();
@@ -57,12 +66,7 @@ export function useApprovalDecisions() {
           const { o } = findApprovalObs(d, ap);
           if (approve) {
             if (o) {
-              o.obsApproval = "approved";
-              notifyOwnerAssigned(d, o);
-              /* Approval is the moment the finding becomes real to the department — before it,
-                 canSeeObs() withholds it from them, so this is the first point at which a
-                 notification would have anything to open. */
-              notifyDeptOfObs(d, o, "assigned", "Raised against your department: " + o.title);
+              publishObs(d, o);
               if (o.raisedBy)
                 notifyBoth(
                   d,
@@ -146,14 +150,24 @@ export function useApprovalDecisions() {
               if (((nb.status as string) || o.status) === "Closed" && nb.closedDateISO)
                 o.closedDateISO = nb.closedDateISO as string;
             }
+            /* An edit to an observation whose raise was rejected is Internal Audit's rework of
+               it: before the Head could edit a raise under review, rejecting was the only way to
+               send one back. Approving the rework used to apply the text and leave the finding
+               rejected — off the tracker, never sent to its owner — so the Head could not find
+               the observation just approved. Approving the rework now approves the finding; the
+               details dialog says so before the decision. */
+            const reinstated = !!o && o.obsApproval === "rejected";
+            if (o && reinstated) publishObs(d, o);
             notifyBoth(
               d,
               ap.requestedBy,
-              "obs_update_approved",
-              "Edit approved: " + (ap.obsTitle || ""),
+              reinstated ? "obs_approved" : "obs_update_approved",
+              (reinstated ? "Approved: " : "Edit approved: ") + (ap.obsTitle || ""),
               "audits",
-              "AuditLens — edit approved",
-              `Your proposed edit to "${ap.obsTitle || "an observation"}" was approved by the Head of Audit and applied.`,
+              reinstated ? "AuditLens — observation approved" : "AuditLens — edit approved",
+              reinstated
+                ? `Your revised observation "${ap.obsTitle || "an observation"}" was approved by the Head of Audit and the action owner has been notified.`
+                : `Your proposed edit to "${ap.obsTitle || "an observation"}" was approved by the Head of Audit and applied.`,
               ap.obsId,
             );
           } else {

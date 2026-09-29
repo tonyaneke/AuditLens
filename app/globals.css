@@ -3293,26 +3293,71 @@ td.timeline-cell {
   width: auto;
 }
 
+/* Remediation Tracker filter panel (collapsed until "Show filters"): an even grid of
+   label-over-dropdown cells, with the Repeats checkbox trailing on the right. One row of six on
+   wide screens, two rows of three below 1400px, two columns on a phone — never a row that
+   overflows the card. */
 .tracker-filters {
   padding: 13px 18px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 16px;
+}
+
+.tracker-filter-grid {
+  flex: 1 1 560px;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px 12px;
 }
 
 .tracker-filters .filter-group {
-  display: flex;
-  align-items: center;
-  gap: 5px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+}
+
+.tracker-filters .filter-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tracker-filters .field-select-sm {
+  width: 100%;
   min-width: 0;
-  max-width: 110px;
 }
 
-.filter-row {
+.tracker-filter-extras {
   display: flex;
   align-items: center;
   gap: 10px;
-  flex-wrap: nowrap;
+  min-height: 31px;
+}
+
+.tracker-filter-extras .filter-check {
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+@media (max-width: 1400px) {
+  .tracker-filter-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .tracker-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tracker-filter-extras {
+    flex: 1 1 100%;
+  }
 }
 
 /* Section headers */

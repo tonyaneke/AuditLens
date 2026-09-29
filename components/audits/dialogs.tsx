@@ -2029,6 +2029,15 @@ Management's current draft response: ${mgmt || "(none provided — draft an appr
         </>
       }
     >
+      {/* Editing is how the Head corrects a raise under review — the alternative was rejecting it,
+          which hides it for good. It is still off the tracker until approved, so say so. */}
+      {head && o.obsApproval === "pending" ? (
+        <div className="note" style={{ marginBottom: 10 }}>
+          Raised by <b>{o.raisedByName || "Internal Audit"}</b> and awaiting your approval. Your edits
+          apply straight away, but the observation only goes on the tracker and to its action owner
+          once you approve it.
+        </div>
+      ) : null}
       <div className="f3">
         <div>
           {/* QA-9 — assigned by nextObsRef(), not typed. The old free-text field carried

@@ -13,6 +13,7 @@ import { useModal } from "@/components/modals/ModalProvider";
 import { CritPill, Empty, Kpi, RowOpen, StatusPill } from "@/components/ui";
 import { StatusEditDialog, requestOwnerUpdateAction } from "@/components/audits/workflow-dialogs";
 import { esc, excelDoc, stamp, wordDoc } from "@/lib/client/exports";
+import { deptLabel, deptNameOf } from "@/lib/dept-scope";
 import { hrefForView, isLegacyPath } from "@/lib/routes";
 import { isInternalAudit, pendingStatusChange } from "@/lib/workspace/observations";
 import {
@@ -38,6 +39,7 @@ import {
   zeroCrit,
   type ObsWithContext,
 } from "@/lib/workspace/selectors";
+import type { WorkspaceDb } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 
 const RemindersDialog = dynamic(() => import("./RemindersDialog"), { loading: () => null });
@@ -62,8 +64,20 @@ const RECENT_COL: Record<string, string> = {
   closed: "#2e7d32",
 };
 
-type TrackerFilter = { crit: string; tl: string; status: string; owner: string; quarter: string; repeat: boolean };
-const NO_FILTER: TrackerFilter = { crit: "All", tl: "All", status: "All", owner: "All", quarter: "All", repeat: false };
+/** The Word "Export tracker" button is hidden for now. The export itself is kept intact — set
+ *  this to true to bring the button back. Insights mode keeps its own export regardless. */
+const SHOW_TRACKER_EXPORT = false;
+
+type TrackerFilter = { crit: string; tl: string; status: string; dept: string; owner: string; quarter: string; repeat: boolean };
+const NO_FILTER: TrackerFilter = { crit: "All", tl: "All", status: "All", dept: "All", owner: "All", quarter: "All", repeat: false };
+
+/** Header search: everything a tracker row shows (title, recommendation, audit, report, owner),
+ *  plus the ref, co-owner, department and description auditors quote from memory. */
+function matchesSearch(db: WorkspaceDb, o: ObsWithContext, needle: string): boolean {
+  return [o.title, o.ref, o.owner, o.secondaryOwner, deptNameOf(db, o), o._a.name, o._r.title, o.recommendation, o.description].some(
+    (v) => String(v || "").toLowerCase().includes(needle),
+  );
+}
 
 /** Derive the fiscal quarter label from a Date, e.g. "Q3 2025". */
 function quarterOf(d: Date | string | null | undefined): string | null {
@@ -87,11 +101,30 @@ export default function TrackerPage() {
   const search = useSearchParams();
   const mode = search.get("mode") === "insights" ? "insights" : search.get("mode") === "recent" ? "recent" : "actions";
   const [filter, setFilter] = useState<TrackerFilter>(NO_FILTER);
+  const [query, setQuery] = useState("");
+  // The filter panel starts collapsed; the KPI tiles and the header search cover most lookups.
+  const [showFilters, setShowFilters] = useState(false);
   // How many rows each close-group is currently showing. Keyed by group so expanding
   // "Recently closed" doesn't disturb the open-action groups.
   const [closedShown, setClosedShown] = useState<Record<string, number>>({});
 
   const obs = useMemo(() => allObs(db).filter(obsIsApproved), [db]);
+
+  // Must stay above the early returns below: as a hook it has to run on every render, and it
+  // used to sit after them, so switching Open Actions → Insights rendered one hook fewer.
+  const quarters = useMemo(() => {
+    const set = new Set<string>();
+    obs.forEach((o) => {
+      const q = quarterOf(o.createdAt);
+      if (q) set.add(q);
+    });
+    return [...set].sort((a, b) => {
+      // Sort descending: most recent quarter first
+      const [qa, ya] = [a.charAt(1), a.slice(3)];
+      const [qb, yb] = [b.charAt(1), b.slice(3)];
+      return yb.localeCompare(ya) || qb.localeCompare(qa);
+    });
+  }, [obs]);
 
   function goObservation(o: ObsWithContext) {
     const href = hrefForView("observation", { audit: o._a.id, report: o._r.id, obs: o.id });
@@ -229,6 +262,18 @@ export default function TrackerPage() {
   usePageChrome(
     {
       title: "Remediation Tracker",
+      // Only Open Actions lists rows to search; Insights and Recent are summaries.
+      search:
+        mode === "actions" ? (
+          <input
+            type="search"
+            className="topbar-search"
+            aria-label="Search remediation actions"
+            placeholder="Search actions by title, ref, owner, department, audit…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        ) : undefined,
       actions: (
         <>
           {canRemind ? (
@@ -240,16 +285,18 @@ export default function TrackerPage() {
               🔔 Remind owners
             </button>
           ) : null}
-          <button className="btn sec sm" type="button" onClick={mode === "insights" ? exportInsightsDoc : exportTracker}>
-            ⤓ Export {mode === "insights" ? "insights" : "tracker"}
-          </button>
+          {mode === "insights" || SHOW_TRACKER_EXPORT ? (
+            <button className="btn sec sm" type="button" onClick={mode === "insights" ? exportInsightsDoc : exportTracker}>
+              ⤓ Export {mode === "insights" ? "insights" : "tracker"}
+            </button>
+          ) : null}
           <button className="btn sec sm" type="button" onClick={exportExcelObs}>
             ⤓ All observations (Excel)
           </button>
         </>
       ),
     },
-    [mode, obs.length, canRemind],
+    [mode, obs.length, canRemind, query],
   );
 
   /* ---- header tabs ---- */
@@ -318,33 +365,49 @@ export default function TrackerPage() {
   const owners = [...new Set(obs.map((o) => String(o.owner || "")).filter(Boolean))].sort((a, b) =>
     a.localeCompare(b),
   );
+  // The owning department, resolved the way the Observations register resolves it (departmentId,
+  // then the owner's department) — so both screens agree on which department an action sits in.
+  const depts = [...new Set(obs.map((o) => deptNameOf(db, o)).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b),
+  );
 
-  const quarters = useMemo(() => {
-    const set = new Set<string>();
-    obs.forEach((o) => {
-      const q = quarterOf(o.createdAt);
-      if (q) set.add(q);
-    });
-    return [...set].sort((a, b) => {
-      // Sort descending: most recent quarter first
-      const [qa, ya] = [a.charAt(1), a.slice(3)];
-      const [qb, yb] = [b.charAt(1), b.slice(3)];
-      return yb.localeCompare(ya) || qb.localeCompare(qa);
-    });
-  }, [obs]);
-
+  const needle = query.trim().toLowerCase();
   let pool = obs.slice();
   if (filter.crit !== "All") pool = pool.filter((o) => o.criticality === filter.crit);
+  if (filter.dept !== "All") pool = pool.filter((o) => deptNameOf(db, o) === filter.dept);
   if (filter.owner !== "All") pool = pool.filter((o) => String(o.owner || "") === filter.owner);
   if (filter.quarter !== "All") pool = pool.filter((o) => quarterOf(o.createdAt) === filter.quarter);
   if (filter.repeat) pool = pool.filter((o) => o.isRepeat);
+  if (needle) pool = pool.filter((o) => matchesSearch(db, o, needle));
   const statusF = filter.status;
   const tlF = filter.tl;
   const showOpenGroups = statusF !== "Closed";
   const showClosedGroup = statusF === "All" || statusF === "Closed";
   const passStatus = (o: ObsWithContext) => statusF === "All" || (o.status || "Open") === statusF;
   const filtersActive =
-    filter.crit !== "All" || statusF !== "All" || tlF !== "All" || filter.owner !== "All" || filter.quarter !== "All" || filter.repeat;
+    filter.crit !== "All" ||
+    statusF !== "All" ||
+    tlF !== "All" ||
+    filter.dept !== "All" ||
+    filter.owner !== "All" ||
+    filter.quarter !== "All" ||
+    filter.repeat ||
+    !!needle;
+  // Shown on the toggle, so a collapsed panel — or one set from a KPI tile without opening it —
+  // never hides the fact that the list is narrowed.
+  const panelFilters = [
+    tlF !== "All",
+    filter.crit !== "All",
+    statusF !== "All",
+    filter.dept !== "All",
+    filter.owner !== "All",
+    filter.quarter !== "All",
+    filter.repeat,
+  ].filter(Boolean).length;
+  const clearAll = () => {
+    setFilter(NO_FILTER);
+    setQuery("");
+  };
   const bucketOf = (o: ObsWithContext) => closeBucketOf(o, o._r) ?? "No date";
 
   function exportFilteredExcel() {
@@ -376,9 +439,11 @@ export default function TrackerPage() {
     if (filter.crit !== "All") parts.push(filter.crit);
     if (statusF !== "All") parts.push(statusF);
     if (tlF !== "All") parts.push(groupLabel(tlF));
+    if (filter.dept !== "All") parts.push(filter.dept);
     if (filter.owner !== "All") parts.push(filter.owner);
     if (filter.quarter !== "All") parts.push(filter.quarter);
     if (filter.repeat) parts.push("Repeats only");
+    if (needle) parts.push(`matching “${query.trim()}”`);
     const subtitle = parts.length ? parts.join(" · ") : "All";
     const headers = ["Audit","Area / Department","Report","Ref","Observation","Criticality","Category","Description","Criteria","Risk / Impact","Root cause","Recommendation","Proposed SOP update","Management response","Owner","Timeline","Expected close","Actual close","Status","Overdue","Repeat","Repeat of","Raised by","Created"];
     const cell = (v: string, style = "") => `<td${style ? ` style="${style}"` : ""}>${esc(v)}</td>`;
@@ -446,10 +511,11 @@ export default function TrackerPage() {
     repeat: filter.repeat,
     open: !filtersActive,
   };
-  const applyKpi = (which: string) =>
+  const applyKpi = (which: string) => {
+    // "Open actions" is lit only when nothing narrows the list, so it clears the search too.
+    if (which === "open") return clearAll();
     setFilter((f) => {
       const n = { ...f };
-      if (which === "open") return NO_FILTER;
       if (which === "ready") n.tl = f.tl === "Ready to Close" ? "All" : "Ready to Close";
       else if (which === "watch") n.tl = f.tl === "≤ 2 weeks" ? "All" : "≤ 2 weeks";
       else if (which === "overdue") n.tl = f.tl === "Overdue" ? "All" : "Overdue";
@@ -457,6 +523,7 @@ export default function TrackerPage() {
       else if (which === "repeat") n.repeat = !f.repeat;
       return n;
     });
+  };
 
   const groups = CLOSE_GROUPS.map((g) => {
     if (tlF !== "All" && tlF !== g) return null;
@@ -532,72 +599,112 @@ export default function TrackerPage() {
         ))}
       </div>
 
-      <div className="card tracker-filters">
-        <div className="filter-row filter-row-right">
-          <div className="filter-group">
-            <span className="filter-label">Expected close</span>
-            <select className="field-select field-select-sm" value={tlF} onChange={(e) => setFilter((f) => ({ ...f, tl: e.target.value }))}>
-              <option value="All">All</option>
-              {CLOSE_GROUPS.map((x) => (
-                <option key={x} value={x}>
-                  {groupLabel(x)}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="filter-group">
-            <span className="filter-label">Criticality</span>
-            <select className="field-select field-select-sm" value={filter.crit} onChange={(e) => setFilter((f) => ({ ...f, crit: e.target.value }))}>
-              {["All", ...CRITS].map((x) => (
-                <option key={x}>{x}</option>
-              ))}
-            </select>
-          </div>
-          <div className="filter-group">
-            <span className="filter-label">Status</span>
-            <select className="field-select field-select-sm" value={statusF} onChange={(e) => setFilter((f) => ({ ...f, status: e.target.value }))}>
-              {["All", ...STATUSES].map((x) => (
-                <option key={x}>{x}</option>
-              ))}
-            </select>
-          </div>
-          <div className="filter-group">
-            <span className="filter-label">Owner</span>
-            <select className="field-select field-select-sm" value={filter.owner} onChange={(e) => setFilter((f) => ({ ...f, owner: e.target.value }))}>
-              {["All", ...owners].map((x) => (
-                <option key={x}>{x}</option>
-              ))}
-            </select>
-          </div>
-          <div className="filter-group">
-            <span className="filter-label">Quarter</span>
-            <select className="field-select field-select-sm" value={filter.quarter} onChange={(e) => setFilter((f) => ({ ...f, quarter: e.target.value }))}>
-              {["All", ...quarters].map((x) => (
-                <option key={x}>{x}</option>
-              ))}
-            </select>
-          </div>
-          <label className="filter-check" style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 500 }}>
-            <input
-              type="checkbox"
-              style={{ width: "auto" }}
-              checked={filter.repeat}
-              onChange={(e) => setFilter((f) => ({ ...f, repeat: e.target.checked }))}
-            />{" "}
-            Repeats only
-          </label>
-          {filtersActive ? (
-            <button className="btn ghost sm" type="button" onClick={() => setFilter(NO_FILTER)}>
-              Clear filters
-            </button>
-          ) : null}
-        </div>
-      </div>
-      {filtersActive ? (
-        <div style={{ display: "flex", justifyContent: "flex-end", margin: "6px 0" }}>
+      {/* Clear and Download sit beside the toggle rather than inside the panel, so both stay
+          reachable while it is collapsed (a KPI tile or the header search can filter the list). */}
+      <div className="row" style={{ marginBottom: 12 }}>
+        <div className="spacer" />
+        {filtersActive ? (
+          <button className="btn ghost sm" type="button" onClick={clearAll}>
+            Clear filters
+          </button>
+        ) : null}
+        {filtersActive ? (
           <button className="btn sec sm" type="button" onClick={exportFilteredExcel}>
             ⤓ Download filtered ({pool.filter(passStatus).length})
           </button>
+        ) : null}
+        <button
+          className={`btn ${showFilters ? "" : "sec"} sm`}
+          type="button"
+          aria-expanded={showFilters}
+          onClick={() => setShowFilters((s) => !s)}
+        >
+          {showFilters ? "Hide filters" : "Show filters"}
+          {panelFilters ? ` (${panelFilters})` : ""}
+        </button>
+      </div>
+
+      {/* Labels sit above their dropdowns in an even grid: six label-beside-select pairs could not
+          share one line with the checkbox without overflowing the card, and this wraps to two
+          tidy rows of three on narrower screens instead. */}
+      {showFilters ? (
+        <div className="card tracker-filters">
+          <div className="tracker-filter-grid">
+            <label className="filter-group">
+              <span className="filter-label">Expected close</span>
+              <select className="field-select field-select-sm" value={tlF} onChange={(e) => setFilter((f) => ({ ...f, tl: e.target.value }))}>
+                <option value="All">All</option>
+                {CLOSE_GROUPS.map((x) => (
+                  <option key={x} value={x}>
+                    {groupLabel(x)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="filter-group">
+              <span className="filter-label">Criticality</span>
+              <select className="field-select field-select-sm" value={filter.crit} onChange={(e) => setFilter((f) => ({ ...f, crit: e.target.value }))}>
+                {["All", ...CRITS].map((x) => (
+                  <option key={x}>{x}</option>
+                ))}
+              </select>
+            </label>
+            <label className="filter-group">
+              <span className="filter-label">Status</span>
+              <select className="field-select field-select-sm" value={statusF} onChange={(e) => setFilter((f) => ({ ...f, status: e.target.value }))}>
+                {["All", ...STATUSES].map((x) => (
+                  <option key={x}>{x}</option>
+                ))}
+              </select>
+            </label>
+            <label className="filter-group">
+              <span className="filter-label">Department</span>
+              <select
+                className="field-select field-select-sm"
+                value={filter.dept}
+                onChange={(e) => setFilter((f) => ({ ...f, dept: e.target.value }))}
+                title={filter.dept !== "All" ? filter.dept : undefined}
+              >
+                <option value="All">All</option>
+                {depts.map((x) => (
+                  <option key={x} value={x}>
+                    {deptLabel(x)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="filter-group">
+              <span className="filter-label">Owner</span>
+              <select
+                className="field-select field-select-sm"
+                value={filter.owner}
+                onChange={(e) => setFilter((f) => ({ ...f, owner: e.target.value }))}
+                title={filter.owner !== "All" ? filter.owner : undefined}
+              >
+                {["All", ...owners].map((x) => (
+                  <option key={x}>{x}</option>
+                ))}
+              </select>
+            </label>
+            <label className="filter-group">
+              <span className="filter-label">Quarter</span>
+              <select className="field-select field-select-sm" value={filter.quarter} onChange={(e) => setFilter((f) => ({ ...f, quarter: e.target.value }))}>
+                {["All", ...quarters].map((x) => (
+                  <option key={x}>{x}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="tracker-filter-extras">
+            <label className="filter-check">
+              <input
+                type="checkbox"
+                checked={filter.repeat}
+                onChange={(e) => setFilter((f) => ({ ...f, repeat: e.target.checked }))}
+              />
+              Repeats only
+            </label>
+          </div>
         </div>
       ) : null}
 

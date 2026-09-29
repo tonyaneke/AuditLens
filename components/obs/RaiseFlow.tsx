@@ -23,7 +23,9 @@ import {
   notifyHeadsApproval,
   notifyOwnerAssigned,
   priorObsForRepeat,
+  sourceTestLabel,
   TIMELINES,
+  withSourceTest,
 } from "@/lib/workspace/observations";
 import {
   firstError,
@@ -35,6 +37,7 @@ import {
 import { approvals, ck, uid } from "@/lib/workspace/selectors";
 import type { EvidenceFile, Observation, WorkspaceDb } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
+import TestProgrammeSelect from "./TestProgrammeSelect";
 
 type RaiseFlowDraft = {
   auditId: string;
@@ -161,9 +164,8 @@ export default function RaiseFlow({
       const u = dir.find((x) => x.id === d.headUserId);
       return !u || u.active !== false || d.headUserId === ownerId || d.headUserId === owner2Id;
     });
-  const report = (db.audits || [])
-    .find((x) => x.id === auditId)
-    ?.reports?.find((x) => x.id === reportId);
+  const audit = (db.audits || []).find((x) => x.id === auditId);
+  const report = audit?.reports?.find((x) => x.id === reportId);
   const priors = priorObsForRepeat(db, reportId);
   const [repQ, setRepQ] = useState("");
 
@@ -357,6 +359,16 @@ export default function RaiseFlow({
             <input value={String(o.category || "")} onChange={set("category")} />
           </div>
         </div>
+        {/* Every raise path lands here — including the report page's AI and manual adds, which
+            have no picker of their own — so this is where any new observation can be tied to a
+            test. A draft from New Observation or Raise exception arrives already linked. */}
+        <label>Test programme</label>
+        <TestProgrammeSelect
+          tests={audit?.plan?.tests || []}
+          value={String(o.sourceTest || "")}
+          orphanLabel={sourceTestLabel(audit, o)}
+          onChange={(t) => setO((cur) => withSourceTest(cur, t))}
+        />
         <label>Title *</label>
         <input value={String(o.title || "")} onChange={set("title")} />
         <label>Detailed description (condition)</label>

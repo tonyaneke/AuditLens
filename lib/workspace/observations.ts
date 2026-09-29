@@ -214,6 +214,19 @@ export function sourceTestLabel(a: Audit | undefined, o: Observation): string {
   return ref && title ? ref + " — " + title : title || ref;
 }
 
+/** Link an observation to the test it was drawn from, or clear the link (`t` undefined). Stamps
+ *  the same fields as Raise exception, so a test chosen while creating an observation reads
+ *  identically on the test page, the report export and the observation itself. */
+export function withSourceTest(o: Observation, t: AuditTest | undefined): Observation {
+  return {
+    ...o,
+    sourceTest: t ? t.id : "",
+    sourceTestRef: t ? t.ref || "" : "",
+    sourceTestTitle: t ? testTitle(t) : "",
+    evidenceRef: t ? t.evidenceRef || "" : "",
+  };
+}
+
 /* ---------------- role & verification checks ---------------- */
 
 export function isHead(user: SessionUser): boolean {

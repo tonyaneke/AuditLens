@@ -1,8 +1,8 @@
 "use client";
 
 // "Raise Observation" as a modal (legacy modalNewObs/viewNewObs): one-liner + department +
-// process/audit-area + target-report picker → AI drafts the observation → RaiseFlow
-// review/assign wizard takes over.
+// process/audit-area + target-report picker + optional test from that audit's programme → AI
+// drafts the observation → RaiseFlow review/assign wizard takes over.
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
@@ -17,14 +17,18 @@ import {
   loadModalDraft,
   saveModalDraft,
 } from "@/lib/client/modal-drafts";
+import { withSourceTest } from "@/lib/workspace/observations";
 import { DEPARTMENTS } from "@/lib/workspace/process";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
+import TestProgrammeSelect from "./TestProgrammeSelect";
 
 type NewObsDraft = {
   ol: string;
   area: string;
   ctx: string;
   target: string;
+  /** Absent on drafts saved before the test picker existed. */
+  test?: string;
 };
 
 // Modal-only wizard — loads on first open.
@@ -41,6 +45,7 @@ export default function NewObsDialog() {
   const [area, setArea] = useState("");
   const [ctx, setCtx] = useState("");
   const [target, setTarget] = useState("");
+  const [test, setTest] = useState("");
   const [err, setErr] = useState("");
   const [resumed, setResumed] = useState(false);
 
@@ -48,6 +53,11 @@ export default function NewObsDialog() {
     for (const a of audits) if ((a.reports || []).length) return `${a.id}|${a.reports[0].id}`;
     return "";
   })();
+  // Tests belong to the audit's plan, not the report, so the picker lists the chosen audit's
+  // whole programme. A resumed draft's test that has since been deleted simply reads as unlinked.
+  const [selAuditId] = (target || defaultTarget).split("|");
+  const tests = audits.find((a) => a.id === selAuditId)?.plan?.tests || [];
+  const linkedTest = tests.find((t) => t.id === test);
 
   useEffect(() => {
     let cancelled = false;
@@ -57,7 +67,8 @@ export default function NewObsDialog() {
       if (saved.area) setArea(saved.area);
       if (saved.ctx) setCtx(saved.ctx);
       if (saved.target) setTarget(saved.target);
-      setResumed(!!(saved.ol || saved.area || saved.ctx || saved.target));
+      if (saved.test) setTest(saved.test);
+      setResumed(!!(saved.ol || saved.area || saved.ctx || saved.target || saved.test));
     });
     return () => {
       cancelled = true;
@@ -70,8 +81,9 @@ export default function NewObsDialog() {
       area,
       ctx,
       target: target || defaultTarget,
+      test,
     });
-  }, [ol, area, ctx, target, defaultTarget]);
+  }, [ol, area, ctx, target, test, defaultTarget]);
 
   useModalGuard({
     dirty: !!(ol.trim() || area || ctx.trim()),
@@ -101,7 +113,10 @@ export default function NewObsDialog() {
       const draft = await generateObsDraft(db, ol.trim(), area, ctx.trim());
       await clearModalDraft(NEW_OBS_DRAFT_KEY);
       modal.close();
-      modal.open(<RaiseFlow auditId={aid} reportId={rid} draft={draft} />, { wide: true });
+      modal.open(
+        <RaiseFlow auditId={aid} reportId={rid} draft={linkedTest ? withSourceTest(draft, linkedTest) : draft} />,
+        { wide: true },
+      );
     } catch (e) {
       setErr(e instanceof Error ? e.message : "AI request failed.");
     }
@@ -162,7 +177,14 @@ export default function NewObsDialog() {
       {hasReports ? (
         <>
           <label>Target report</label>
-          <select value={target || defaultTarget} onChange={(e) => setTarget(e.target.value)}>
+          <select
+            value={target || defaultTarget}
+            onChange={(e) => {
+              // A test is part of one audit's programme — moving to another audit drops the link.
+              if (e.target.value.split("|")[0] !== selAuditId) setTest("");
+              setTarget(e.target.value);
+            }}
+          >
             {audits
               .filter((a) => (a.reports || []).length)
               .map((a) => (
@@ -175,6 +197,12 @@ export default function NewObsDialog() {
                 </optgroup>
               ))}
           </select>
+          <label>Test programme</label>
+          <TestProgrammeSelect
+            tests={tests}
+            value={linkedTest ? linkedTest.id : ""}
+            onChange={(t) => setTest(t ? t.id : "")}
+          />
         </>
       ) : (
         <div className="hint">
