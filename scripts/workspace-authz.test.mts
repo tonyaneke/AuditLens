@@ -9,6 +9,7 @@ import { authorizeWorkspaceWrite } from "../lib/workspace-authz";
 import { graftServerHeld, slimForClient } from "../lib/workspace-payload";
 import { scopeWorkspace, viewerFor } from "../lib/workspace-scope";
 import { normalizeDept } from "../lib/dept-scope";
+import { fileVisibleTo } from "../lib/file-access";
 
 let pass = 0, fail = 0;
 function ok(cond: boolean, msg: string) { if (cond) { pass++; console.log("  ok " + msg); } else { fail++; console.error("  x FAIL: " + msg); } }
@@ -736,6 +737,38 @@ console.log("\n== Fraud: owners report progress, only Internal Audit validates =
   act = findRisk(r.data, "f1").actions[0];
   ok(act.status === "Validated" && act.validationNote === "Sampled 10 reconciliations", "audit staff can validate with a note");
   ok(r.violations.length === 0, "staff validation logs no violation");
+}
+
+console.log("\n== Files download only through records the viewer is served ==");
+{
+  const db = baseWorkspace();
+  const file = (id: string) => [{ itemId: id, name: id + ".pdf" }];
+  findObs(db, "o1").attachments = file("sp-o1");
+  findObs(db, "o2").attachments = file("sp-o2");
+  findRisk(db, "f1").actions[0].ownerUpdates = [{ at: "2026-09-29", by: "own1", text: "Done", evidence: file("sp-f1") }];
+  findRisk(db, "f1").actions[0].validationEvidence = file("sp-f1v");
+  findRisk(db, "f2").actions[0].ownerUpdates = [{ at: "2026-09-29", by: "own2", text: "Done", evidence: file("sp-f2") }];
+  findExt(db, "e2").ownerResponseEvidence = file("sp-e2");
+  // A deleted observation of own1's — its files go with it.
+  db.audits[0].reports[0].observations.push({
+    id: "o4", title: "Removed", status: "Open", obsApproval: "approved", ownerUserId: "own1",
+    attachments: file("sp-del"), deletedAt: "2026-09-01T00:00:00.000Z", deletedBy: "head1",
+  });
+
+  const owner = { id: OWNER.id, role: "action_owner" };
+  ok(fileVisibleTo(db, owner, "sp-o1"), "an owner can open evidence on their own observation");
+  ok(fileVisibleTo(db, owner, "sp-f1"), "an owner can open their own fraud evidence");
+  ok(fileVisibleTo(db, owner, "sp-f1v"), "…and IA's validation papers on their own action");
+  ok(!fileVisibleTo(db, owner, "sp-o2"), "an owner cannot open a colleague's observation evidence");
+  ok(!fileVisibleTo(db, owner, "sp-f2"), "an owner cannot open another owner's fraud evidence");
+  ok(!fileVisibleTo(db, owner, "sp-e2"), "an owner cannot open another owner's external-finding evidence");
+  ok(!fileVisibleTo(db, owner, "sp-del"), "a deleted record's files are not served");
+  ok(!fileVisibleTo(db, owner, "sp-unknown") && !fileVisibleTo(db, owner, ""), "an unreferenced or empty id is refused");
+
+  const staff = { id: STAFF.id, role: "audit_staff" };
+  ok(["sp-o2", "sp-f2", "sp-e2", "sp-f1v"].every((id) => fileVisibleTo(db, staff, id)), "audit staff can open every live record's files");
+  ok(!fileVisibleTo(db, staff, "sp-del") && !fileVisibleTo(db, staff, "sp-unknown"), "…but not a deleted record's or an unreferenced id");
+  ok(fileVisibleTo(db, { id: HEAD.id, role: "head_of_audit" }, "sp-o2"), "the head can open any live record's files");
 }
 
 console.log("\n== SEC-02: external findings are no longer taken wholesale ==");

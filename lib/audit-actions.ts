@@ -217,6 +217,7 @@ export const ACTION_GROUPS: ActionGroup[] = [
       ["security.workspace_write_filtered", "Disallowed changes reverted"],
       ["security.audit_governance_changed", "Audit governance metadata changed"],
       ["security.unversioned_write_rejected", "Save refused — no version token"],
+      ["security.file_access_denied", "File download refused — not in viewer's scope"],
       ["security.unversioned_write_allowed", "Save accepted without a version token"],
       ["security.changes_unreadable", "Save could not be fully itemised"],
       ["workspace.changes_truncated", "Further changes in the same save"],
