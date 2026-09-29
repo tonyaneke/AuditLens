@@ -1,0 +1,162 @@
+PS C:\Users\EniolaAnishe\Documents\AuditLens> npx tsx scripts/renumber-obs-refs.mts
+
+Renumber observation references to DEPT/YEAR/NNN (dry run)
+==========================================================
+
+  123 live observation(s): 123 to renumber, 0 already in the new format (kept), 0 deleted (left alone).
+
+Numbering by department and year (11)
+-------------------------------------
+  DEPARTMENT                   SEQUENCE  RENUMBERED  RANGE    ALREADY NEW-FORMAT
+  ---------------------------  --------  ----------  -------  ------------------
+  Administration Department    ADM/2026  1           001–001
+  Corporate Communications     COM/2026  8           001–008
+  Credit Operations            CRD/2026  20          001–020
+  Finance Department           FIN/2026  31          001–031
+  Operations Department        IMS/2026  2           001–002
+  IT                           IT/2026   25          001–025
+  Legal Department             LEG/2026  2           001–002
+  People & Culture Department  PNC/2026  8           001–008
+  Procurement Department       PRC/2026  10          001–010
+  Risk Management              RSK/2026  13          001–013
+  Strategy Department          STR/2026  3           001–003
+
+References to renumber (123)
+----------------------------
+  FROM               TO            OBSERVATION            
+                       REPORT                          RAISED
+  -----------------  ------------  --------------------------------------------  ------------------------------  ----------
+  52.1               ADM/2026/001  Absence of Customer Complaints Handling Pol…  Regulatory Compliance Audit -…  2026-06-01
+  1.1                COM/2026/001  Publication of Website and Third-Party Vide…  External Communications and I…  2026-04-29
+  2.1                COM/2026/002  Absence of Documented Strategy and Governan…  External Communications and I…  2026-04-29
+  3.1                COM/2026/003  Non-Compliance with Statutory Corporate Dis…  External Communications and I…  2026-04-29
+  5.1                COM/2026/004  Lack of Contractual Safeguards Over Corpora…  External Communications and I…  2026-04-29
+  6.1                COM/2026/005  Inaccurate and Inconsistent External Report…  External Communications and I…  2026-04-29
+  7.1                COM/2026/006  Incomplete SOP and Unclear Approval Authori…  External Communications and I…  2026-04-29
+  93.1               COM/2026/007  Incomplete Consent Documentation for Third-…  External Communications and I…  2026-08-13
+  94.1               COM/2026/008  Absence of Social Media Sentiment Monitorin…  External Communications and I…  2026-08-13
+  8.1                CRD/2026/001  Control Gaps in Credit Bureau Due Diligence…  Credit Portfolio Audit - Q1     2026-04-29
+  9.1                CRD/2026/002  Deficiencies in Collateral Policy Design an…  Credit Portfolio Audit - Q1     2026-04-29
+  10.1               CRD/2026/003  Deficiencies in Legal Documentation Executi…  Credit Portfolio Audit - Q1     2026-04-29
+  12.1               CRD/2026/004  Misalignment Between Supplementary Financin…  Credit Portfolio Audit - Q1     2026-04-29
+  14.1               CRD/2026/005  Inappropriate Classification of Master Fina…  Credit Portfolio Audit - Q1     2026-04-29
+  15.1               CRD/2026/006  Absence of Independent Disbursement Confirm…  Credit Portfolio Audit - Q1     2026-04-29
+  16.1               CRD/2026/007  PFI Exposure Concentration Above Approved L…  Credit Portfolio Audit - Q1     2026-04-29
+  17.1               CRD/2026/008  Unauthorized Loan Restructuring Without Doc…  Credit Portfolio Audit - Q1     2026-04-29
+  18.1               CRD/2026/009  Absence of Standard Credit and Disbursement…  Credit Portfolio Audit - Q1     2026-04-29
+  20.1               CRD/2026/010  Conflict Between PFI Offer Letter and SFA o…  Credit Portfolio Audit - Q1     2026-04-29
+  21.1               CRD/2026/011  Lack of Ongoing Review Process for KYC Docu…  Credit Portfolio Audit - Q1     2026-04-29
+  22.1               CRD/2026/012  Inconsistencies and Ambiguities in Loan Ten…  Credit Portfolio Audit - Q1     2026-04-29
+  75.1               CRD/2026/013  Weaknesses in Loan Disbursement Controls an…  Credit Portfolio Audit - Q2     2026-06-24
+  T2                 CRD/2026/014  Credit Disbursement Accuracy, Authorization…  Q3 2026 Credit Portfolio Audit  2026-08-03
+  T7                 CRD/2026/015  Significant Weaknesses in PFI Onboarding Du…  Q3 2026 Credit Portfolio Audit  2026-08-03
+  T12                CRD/2026/016  Deficiencies in Collateral Perfection and P…  Q3 2026 Credit Portfolio Audit  2026-08-03
+  90.1               CRD/2026/017  Execution of Loan Agreements Prior to Compl…  Q3 2026 Credit Portfolio Audit  2026-08-04
+  91.1               CRD/2026/018  Approved Interest Rate Not Visible on Appro…  Q3 2026 Credit Portfolio Audit  2026-08-04
+  CPMAudit-2024-001  CRD/2026/019  Inaccurate Recording of Collateral Value in…  Q3 2026 Credit Portfolio Audit  2026-08-04
+  T8                 CRD/2026/020  Inadequate Controls and Data Integrity for …  External Communications and I…  2026-09-10
+  23.1               FIN/2026/001  Treasury Bills Pledged as Collateral Are No…  Credit Portfolio Audit - Q1     2026-04-29
+  24.1               FIN/2026/002  Inability to Trace Loan Repayment Collectio…  Credit Portfolio Audit - Q1     2026-04-29
+  25.1               FIN/2026/003  Lack of Reconciled Liability Schedules        Financial Close & Reporting A…  2026-04-29
+  26.1               FIN/2026/004  Overstatement of Payroll Expense in the Tri…  Financial Close & Reporting A…  2026-04-29
+  27.1               FIN/2026/005  System Over-Accrual of Interest Income Due …  Financial Close & Reporting A…  2026-04-29
+  28.1               FIN/2026/006  Absence of Documented Close Timetable and E…  Financial Close & Reporting A…  2026-04-29
+  29.1               FIN/2026/007  Decentralized Storage of Financial Document…  Financial Close & Reporting A…  2026-04-29
+  30.1               FIN/2026/008  Unusual Year-End Accrued Salaries Balance     Financial Close & Reporting A…  2026-04-29
+  31.1               FIN/2026/009  Inefficient and Uncontrolled General Ledger…  Financial Close & Reporting A…  2026-04-29
+  32.1               FIN/2026/010  Absence of Documented Related Party Identif…  Financial Close & Reporting A…  2026-04-29
+  33.1               FIN/2026/011  Delayed Remittance of Withholding Tax, VAT …  Financial Close & Reporting A…  2026-04-29
+  34.1               FIN/2026/012  Net Basis Posting of Capital Asset Transact…  Financial Close & Reporting A…  2026-04-29
+  35.1               FIN/2026/013  Delayed Implementation and Lack of Review o…  Financial Close & Reporting A…  2026-04-29
+  36.1               FIN/2026/014  Lack of Regular Analytical Reviews            Financial Close & Reporting A…  2026-04-29
+  37.1               FIN/2026/015  Lack of Management Review of Financial Stat…  Financial Close & Reporting A…  2026-04-29
+  40.1               FIN/2026/016  Unexplained Gaps in Fixed Asset Register Se…  Asset Management Audit - Q1     2026-04-29
+  49.1               FIN/2026/017  Assets Received but Not Supported by Vendor…  Asset Management Audit - Q1     2026-04-29
+  55.1               FIN/2026/018  Inconsistent Disclosure of Risk Management …  Regulatory Compliance Audit -…  2026-06-01
+  59.1               FIN/2026/019  Expenses Not Accrued in the Correct Financi…  Expense and Procurement Audit…  2026-06-16
+  60.1               FIN/2026/020  Misclassification of Expenses to Incorrect …  Expense and Procurement Audit…  2026-06-16
+  61.1               FIN/2026/021  User Access Granted Without Approved Access…  Expense and Procurement Audit…  2026-06-16
+  62.1               FIN/2026/022  Underpayment Risk Due to Incorrect Stamp Du…  Expense and Procurement Audit…  2026-06-16
+  64.1               FIN/2026/023  Expense Journals Posted on Net Basis Withou…  Expense and Procurement Audit…  2026-06-16
+  65.1               FIN/2026/024  Payment Made Without Supporting Evidence an…  Expense and Procurement Audit…  2026-06-16
+  66.1               FIN/2026/025  Inaccurate Transaction Narration Affecting …  Expense and Procurement Audit…  2026-06-16
+  T1                 FIN/2026/026  Non-Compliance with Approved Per Diem Expen…  Q2 Expense Audit Report         2026-08-03
+  87.1               FIN/2026/027  Unauthorized Biometric Data in Expense Proc…  Q2 Expense Audit Report         2026-08-03
+  PTP-FX-001         FIN/2026/028  Inadequate Exchange Rate Source Documentati…  Expense and Procurement Audit…  2026-09-04
+  P2P/2024/001       FIN/2026/029  Insufficient supporting documentation for I…  Expense and Procurement Audit…  2026-09-04
+  95.1               FIN/2026/030  Inadequate Retirement and Accountability of…  Expense and Procurement Audit…  2026-09-04
+  P2P.01.2024.01     FIN/2026/031  Payment Exceeded Approved Contract Value      Expense and Procurement Audit…  2026-09-15
+  T5                 IMS/2026/001  Discrepancies in Partner Facility Utilisati…  Q3 2026 Credit Portfolio Audit  2026-08-03
+  T6                 IMS/2026/002  Inaccurate Reporting of Performance Indicat…  External Communications and I…  2026-09-03
+  76.1               IT/2026/001   Subscription Management — Multiple FortiGua…  Cybersecurity & Information S…  2026-04-29
+  77.1               IT/2026/002   Publicly Exposed Management Interface         Cybersecurity & Information S…  2026-04-29
+  78.1               IT/2026/003   Super Admin Account Without MFA               Cybersecurity & Information S…  2026-04-29
+  79.1               IT/2026/004   Permissive Outbound Policy — No Segmentatio…  Cybersecurity & Information S…  2026-04-29
+  80.1               IT/2026/005   Password Policy Disabled — No Complexity, L…  Cybersecurity & Information S…  2026-04-29
+  81.1               IT/2026/006   Telnet Administrative Service Configured — …  Cybersecurity & Information S…  2026-04-29
+  82.1               IT/2026/007   System Timezone Set to Pacific Time — 9-Hou…  Cybersecurity & Information S…  2026-04-29
+  83.1               IT/2026/008   USB Auto-Install Enabled — Unauthenticated …  Cybersecurity & Information S…  2026-04-29
+  84.1               IT/2026/009   Incomplete Local Traffic Logging and No Ext…  Cybersecurity & Information S…  2026-04-29
+  85.1               IT/2026/010   No High Availability — Firewall is a Single…  Cybersecurity & Information S…  2026-04-29
+  86.1               IT/2026/011   Auto File System Check Disabled — Silent Co…  Cybersecurity & Information S…  2026-04-29
+  71.1               IT/2026/012   Inadequate Disaster Recovery Infrastructure…  Business Continuity and Disas…  2026-06-16
+  73.1               IT/2026/013   Weak Contractual Governance Over Software D…  Business Continuity and Disas…  2026-06-16
+  74.1               IT/2026/014   Generic IT Disaster Recovery Plan             Business Continuity and Disas…  2026-06-16
+  92.1               IT/2026/015   Weaknesses in Credit Information System Acc…  Q3 2026 Credit Portfolio Audit  2026-08-06
+  IT.PS.1.1          IT/2026/016   Biometric Physical Access Control Weaknesses  Cybersecurity & Information S…  2026-09-08
+  97.1               IT/2026/017   No Comprehensive Listing of Users and Assig…  Cybersecurity & Information S…  2026-09-08
+  98.1               IT/2026/018   Absence of Formal Application Change Manage…  Cybersecurity & Information S…  2026-09-08
+  99.1               IT/2026/019   Absence of Formal IT Risk Management and Vu…  Cybersecurity & Information S…  2026-09-08
+  T3                 IT/2026/020   Fire Extinguisher Overdue for Servicing and…  Cybersecurity & Information S…  2026-09-08
+  100.1              IT/2026/021   Combustible Materials and Poor Housekeeping…  Cybersecurity & Information S…  2026-09-08
+  101.1              IT/2026/022   IT Assets Not Identified or Tagged            Cybersecurity & Information S…  2026-09-08
+  102.1              IT/2026/023   Audit Log History Not Retrievable (LMS)       Cybersecurity & Information S…  2026-09-08
+  103.1              IT/2026/024   Incomplete Audit Logging and Absence of Log…  Cybersecurity & Information S…  2026-09-08
+  104.1              IT/2026/025   Password and Conditional Access Policies No…  Cybersecurity & Information S…  2026-09-08
+  56.1               LEG/2026/001  Inconsistencies in Regulatory Classificatio…  Regulatory Compliance Audit -…  2026-06-01
+  57.1               LEG/2026/002  Outdated Directors’ Information in Corporat…  Regulatory Compliance Audit -…  2026-06-01
+  19.1               PNC/2026/001  Inadequate Segregation of Duties in Credit …  Credit Portfolio Audit - Q1     2026-04-29
+  38.1               PNC/2026/002  Absence of Formal Asset Identification and …  Asset Management Audit - Q1     2026-04-29
+  39.1               PNC/2026/003  Absence of Standardized Asset Tagging Frame…  Asset Management Audit - Q1     2026-04-29
+  41.1               PNC/2026/004  Absence of Insurance Coverage for Organizat…  Asset Management Audit - Q1     2026-04-29
+  42.1               PNC/2026/005  Absence of Signed Delivery Notes to Evidenc…  Asset Management Audit - Q1     2026-04-29
+  51.1               PNC/2026/006  Lack of Organisational Independence of the …  Regulatory Compliance Audit -…  2026-06-01
+  63.1               PNC/2026/007  Inadequate Verification of Travel Vendor In…  Expense and Procurement Audit…  2026-06-16
+  T11                PNC/2026/008  Inadequate Staff Risk Awareness and Culture   Q3 2026 Risk Management & AML…  2026-08-03
+  43.1               PRC/2026/001  Engagement of Vendors Without Formal Contra…  Third-Party Risk Management A…  2026-04-29
+  44.1               PRC/2026/002  Observations in Vendor Performance Evaluati…  Third-Party Risk Management A…  2026-04-29
+  45.1               PRC/2026/003  Observations in Technical Evaluation and Do…  Third-Party Risk Management A…  2026-04-29
+  46.1               PRC/2026/004  Absence of Independent Cost Estimates to Va…  Third-Party Risk Management A…  2026-04-29
+  67.1               PRC/2026/005  Award Letter and Payment Without Signed Con…  Expense and Procurement Audit…  2026-06-16
+  105.1              PRC/2026/006  Weaknesses in Contract Variation Controls     Expense and Procurement Audit…  2026-09-15
+  PTP-2024-001       PRC/2026/007  Discrepancy Between Submitted Financial Pro…  Expense and Procurement Audit…  2026-09-15
+  P2P.2024.001       PRC/2026/008  Strengthening Procurement Documentation and…  Expense and Procurement Audit…  2026-09-15
+  TPRM-2024-001      PRC/2026/009  Absence of Defined Criteria for Selection o…  Third-Party Risk Management A…  2026-09-16
+  TRM.2024.001       PRC/2026/010  Incomplete Vendor Exit Documentation and Ex…  Third-Party Risk Management A…  2026-09-17
+  11.1               RSK/2026/001  Absence of Portfolio-Level Stress Testing I…  Credit Portfolio Audit - Q1     2026-04-29
+  13.1               RSK/2026/002  Over-Reliance on AML Questionnaire Without …  Credit Portfolio Audit - Q1     2026-04-29
+  47.1               RSK/2026/003  Absence of Sanctions and Watchlist Screenin…  Third-Party Risk Management A…  2026-04-29
+  48.1               RSK/2026/004  Absence of a Central Vendor Risk Rating Fra…  Third-Party Risk Management A…  2026-04-29
+  53.1               RSK/2026/005  Absence of Compliance Training Plan and Ann…  Regulatory Compliance Audit -…  2026-06-01
+  54.1               RSK/2026/006  Absence of Data Inventory / Data Mapping Re…  Regulatory Compliance Audit -…  2026-06-01
+  58.1               RSK/2026/007  Absence of Appointment of AML/CFT Complianc…  Regulatory Compliance Audit -…  2026-06-01
+  68.1               RSK/2026/008  Slow Implementation of Approved Business Co…  Business Continuity and Disas…  2026-06-16
+  69.1               RSK/2026/009  Absence of Business Continuity Training and…  Business Continuity and Disas…  2026-06-16
+  70.1               RSK/2026/010  Absence of Crisis Management and Crisis Com…  Business Continuity and Disas…  2026-06-16
+  T10                RSK/2026/011  Non-utilization of Expected Credit Loss (EC…  Q3 2026 Credit Portfolio Audit  2026-08-03
+  88.1               RSK/2026/012  Absence of Standard Operating Procedures fo…  Q3 2026 Risk Management & AML…  2026-08-03
+  89.1               RSK/2026/013  Absence of Risk and Control Assessment (RCA…  Q3 2026 Risk Management & AML…  2026-08-03
+  4.1                STR/2026/001  Weak Website Governance and Absence of Data…  External Communications and I…  2026-04-29
+  50.1               STR/2026/002  Weaknesses in Data Protection Governance an…  Regulatory Compliance Audit -…  2026-06-01
+  T9                 STR/2026/003  Inconsistent Integration of Risk Management…  Q3 2026 Risk Management & AML…  2026-08-03
+
+Repeat-of links rewritten (6)
+-----------------------------
+  OBSERVATION   FROM    TO
+  ------------  ------  --------------
+  CRD/2026/014  22.1    CRD/2026/012
+  CRD/2026/015  14.1    CRD/2026/005
+  CRD/2026/016  [23.1]  [FIN/2026/001]
+  CRD/2026/017  10.1    CRD/2026/003
+  COM/2026/007  [42.1]  [PNC/2026/005]
+  IMS/2026/002  6.1     COM/2026/005
