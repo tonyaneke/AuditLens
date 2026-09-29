@@ -74,10 +74,16 @@ export function parseArgs(): Ctx {
 export type Workspace = Record<string, unknown>;
 
 export async function readWorkspace(): Promise<Workspace> {
+  return (await readWorkspaceVersioned()).data;
+}
+
+/** readWorkspace() plus the row's version — pass `updatedAt` back to writeWorkspace() so the write
+ *  fails rather than overwrite a save someone made while the migration was working. */
+export async function readWorkspaceVersioned(): Promise<{ data: Workspace; updatedAt: Date }> {
   const prisma = await getPrisma();
   const row = await prisma.workspaceData.findUnique({ where: { id: WORKSPACE_ID } });
   if (!row) throw new Error(`No WorkspaceData row with id="${WORKSPACE_ID}" — is this the right database?`);
-  return row.data as Workspace;
+  return { data: row.data as Workspace, updatedAt: row.updatedAt };
 }
 
 function snapshot(data: Workspace, name: string): string {
@@ -88,20 +94,47 @@ function snapshot(data: Workspace, name: string): string {
   return file;
 }
 
-/** Write the document back, snapshotting the PRE-migration state first. */
+/** Write the document back, snapshotting the PRE-migration state first.
+ *
+ *  With `expectUpdatedAt` (from readWorkspaceVersioned) the write happens only if the row is still
+ *  that version, and throws otherwise — without it, a save made between the read and this write is
+ *  silently lost. The new updatedAt also makes every open browser's next save come back 409, so a
+ *  page still holding the pre-migration document refreshes instead of writing it back. */
 export async function writeWorkspace(
   before: Workspace,
   after: Workspace,
   migrationName: string,
+  opts: { expectUpdatedAt?: Date } = {},
 ): Promise<void> {
   const file = snapshot(before, migrationName);
   console.log(`\n  Snapshot of pre-migration state: ${path.relative(ROOT, file)}`);
   const prisma = await getPrisma();
-  await prisma.workspaceData.update({
-    where: { id: WORKSPACE_ID },
-    data: { data: after as never },
-  });
+  if (opts.expectUpdatedAt) {
+    const res = await prisma.workspaceData.updateMany({
+      where: { id: WORKSPACE_ID, updatedAt: opts.expectUpdatedAt },
+      data: { data: after as never, updatedAt: new Date() },
+    });
+    if (res.count !== 1) {
+      throw new Error(
+        "Someone saved a change while the migration was running, so nothing was written. " +
+          "Run it again — it re-reads the document and picks up their change.",
+      );
+    }
+  } else {
+    await prisma.workspaceData.update({
+      where: { id: WORKSPACE_ID },
+      data: { data: after as never },
+    });
+  }
   console.log("  Workspace document updated.");
+}
+
+/** Write a file next to the snapshots (a mapping, a report) and return its path. */
+export function writeSnapshotFile(name: string, content: string): string {
+  fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });
+  const file = path.join(SNAPSHOT_DIR, name);
+  fs.writeFileSync(file, content, "utf8");
+  return file;
 }
 
 /* ------------------------------------------------------------------------ traversal helpers */

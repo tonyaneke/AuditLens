@@ -87,10 +87,12 @@ function summarise(doc: Row, users: number, auditTrailEntries: number): BackupCo
   };
 }
 
+// Plain ASCII on purpose: Notepad and PowerShell on older Windows read UTF-8 without a BOM as ANSI,
+// and an em dash comes out as "â€”".
 function readme(m: BackupManifest): string {
   const c = m.contents;
   return [
-    "AuditLens — full database backup",
+    "AuditLens - full database backup",
     "================================",
     "",
     `Taken ${m.createdAt} (UTC) by ${m.createdBy}.`,
@@ -102,7 +104,7 @@ function readme(m: BackupManifest): string {
     "",
     "Contents",
     `  ${c.audits} audits, ${c.reports} reports`,
-    `  ${c.observations} observations — ${c.closedObservations} closed, ${c.deletedObservations} deleted (kept)`,
+    `  ${c.observations} observations: ${c.closedObservations} closed, ${c.deletedObservations} deleted (kept)`,
     `  ${c.responsesAndComments} owner responses, comments and progress updates`,
     `  ${c.externalFindings} external findings, ${c.fraudRisks} fraud risks, ${c.approvals} approval requests`,
     `  ${c.users} user accounts, ${c.auditTrailEntries} audit-trail entries`,
@@ -114,9 +116,9 @@ function readme(m: BackupManifest): string {
     "Evidence files (attachments, closure evidence, working papers) are not copied here: they are",
     "already in SharePoint, and the workspace document records where each one is.",
     "",
-    "Restoring the workspace (audits, observations, findings, approvals — everything but user",
+    "Restoring the workspace (audits, observations, findings, approvals - everything but user",
     "accounts and the audit trail, which are never overwritten):",
-    "  npx tsx scripts/restore-workspace.mts <this file>.zip            (dry run — shows what changes)",
+    "  npx tsx scripts/restore-workspace.mts <this file>.zip            (dry run: shows what changes)",
     "  npx tsx scripts/restore-workspace.mts <this file>.zip --apply",
     "",
   ].join("\r\n");

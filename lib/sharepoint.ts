@@ -250,8 +250,13 @@ export type BackupFile = {
   createdAt: string;
 };
 
-export async function uploadBackupToSharePoint(fileName: string, data: ArrayBuffer): Promise<UploadedFile> {
-  return putFile(`${BACKUP_FOLDER}/${safeName(fileName)}`, "application/zip", data);
+/** Save a backup — or a file that belongs with one, such as a migration's old→new mapping. */
+export async function uploadBackupToSharePoint(
+  fileName: string,
+  data: ArrayBuffer,
+  contentType = "application/zip",
+): Promise<UploadedFile> {
+  return putFile(`${BACKUP_FOLDER}/${safeName(fileName)}`, contentType, data);
 }
 
 /** The backups in the folder, newest first. An absent folder (no backup yet) is an empty list. */
