@@ -7,14 +7,27 @@
 // legacyRef, and repeat-of citations and pending proposals follow.
 
 import { deptNameOf } from "../lib/dept-scope";
-import { obsRefCode } from "../lib/workspace/obs-validation";
+import type { WorkspaceDb } from "../lib/workspace/types";
+import { obsRefCode, obsRefCodes } from "../lib/workspace/obs-validation";
 
 type Obj = Record<string, unknown>;
 const arr = (v: unknown): Obj[] => (Array.isArray(v) ? (v as Obj[]) : []);
 const str = (v: unknown) => String(v ?? "").trim();
 
-/** A reference in the DEPT/YEAR/NNN scheme. Codes come from obsRefCode(): 1–5 letters or digits. */
+/** The shape of a DEPT/YEAR/NNN reference. Codes come from obsRefCode(): 1–5 letters or digits. */
 export const NEW_FORMAT = /^([A-Z0-9]{1,5})\/(\d{4})\/(\d{3,})$/;
+
+/** The scheme began on 2026-09-29, so nothing it issued carries an earlier year. */
+const FIRST_YEAR = 2026;
+
+/** Whether a reference was issued by the new scheme — its shape alone is not enough: the AI
+ *  drafter invented "P2P/2024/001" for a finding raised in September 2026, and it would otherwise
+ *  have been kept as if it were one of ours. It must also carry a code the scheme can produce and a
+ *  year the scheme existed in. */
+export function isIssuedRef(ref: string, codes: ReadonlySet<string>): boolean {
+  const m = NEW_FORMAT.exec(ref);
+  return !!m && codes.has(m[1]) && Number(m[2]) >= FIRST_YEAR;
+}
 
 export type Renumbered = {
   o: Obj;
@@ -84,11 +97,12 @@ export function renumberObservationRefs(db: Obj): RenumberResult {
       }
 
   // Numbers already issued in the new format are fixed; everything else is numbered around them.
+  const codes = obsRefCodes(db as WorkspaceDb);
   const taken = new Map<string, Set<number>>();
   const legacy: Renumbered[] = [];
   live.forEach(({ o, audit, report, r }, order) => {
     const ref = str(o.ref);
-    const m = NEW_FORMAT.exec(ref);
+    const m = isIssuedRef(ref, codes) ? NEW_FORMAT.exec(ref) : null;
     if (m) {
       const key = `${m[1]}/${m[2]}`;
       if (!taken.has(key)) taken.set(key, new Set());

@@ -68,6 +68,14 @@ export function obsRefCode(department: unknown): string {
   return code === "IA" ? "IAD" : code;
 }
 
+/** Every department code a reference can carry in this workspace. Tells a reference this scheme
+ *  issued from one that merely looks like it — the AI drafter once invented "P2P/2024/001". */
+export function obsRefCodes(db: WorkspaceDb): Set<string> {
+  const codes = new Set([...Object.values(DEPT_REF_CODES), "GEN"]);
+  for (const d of db.departments || []) codes.add(obsRefCode(d.name));
+  return codes;
+}
+
 /** Next free observation reference: DEPT/YEAR/NNN, e.g. FIN/2026/004.
  *
  * Sequential per department per year, starting again at 001 each January. The department is the

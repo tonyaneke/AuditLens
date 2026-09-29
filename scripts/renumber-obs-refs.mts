@@ -18,7 +18,9 @@
 //                  browser still running the old code).
 //
 // WHAT IT LEAVES ALONE
-//   references already in the new format — never renumbered, whenever they were issued
+//   references already in the new format — never renumbered, whenever they were issued. A lookalike
+//                  is not one: the AI's "P2P/2024/001" has the shape but a code the scheme never
+//                  issues and a year before it existed, so it is renumbered like any other stray.
 //   deleted observations — hidden everywhere; numbering them would only leave gaps
 //   external findings (EF-NNN), audit tests (T1 …), report references (IA/2026/NNN)
 //   the audit trail and EXCO brief snapshots — they record what was true at the time

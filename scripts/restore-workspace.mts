@@ -140,7 +140,7 @@ async function main() {
     console.log("\n  Note them down (or export the tracker) before applying — they would have to be raised again.");
   }
   if (refChanges.length) {
-    section("References that change back", refChanges.length);
+    section("References that change", refChanges.length);
     table(refChanges.slice(0, 25), { observation: 50 });
     if (refChanges.length > 25) console.log(`  …and ${refChanges.length - 25} more.`);
   }
