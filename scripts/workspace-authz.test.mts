@@ -545,6 +545,18 @@ console.log("\n== Any Internal Audit staff may sign off remediation — action o
   const rBack = authorizeWorkspaceWrite(STAFF2.role, STAFF2.id, cur, incBack);
   ok(!findObs(rBack.data, "o1").ownerRectifiedAt, "any staff member may send it back to the owner");
   ok(findObs(rBack.data, "o1").closureRejection?.note === "Attach the signed reconciliation", "and the owner gets the note saying why");
+  // Nothing was reverted, so nothing may be reported as reverted: this used to log a false
+  // "Disallowed changes reverted" (obs_field:o1:closureRejection) on every genuine send-back.
+  ok(rBack.violations.length === 0, `a legitimate send-back logs no violation (got ${JSON.stringify(rBack.violations)})`);
+
+  // A send-back cannot forge the Head's "reject to auditor" — that is still reverted and recorded.
+  const incForge = serveTo(STAFF2.id);
+  const oForge = incForge.audits[0].reports[0].observations[0];
+  oForge.ownerRectifiedAt = "";
+  oForge.closureRejection = { target: "auditor", note: "Redo the review", byRole: "head_of_audit" };
+  const rForge = authorizeWorkspaceWrite(STAFF2.role, STAFF2.id, cur, incForge);
+  ok(findObs(rForge.data, "o1").closureRejection == null, "a forged Head rejection is not applied");
+  ok(rForge.violations.includes("obs_field:o1:closureRejection"), "and is recorded as a blocked change");
 
   // Ordinary IA chasing work is open to any staff member, as it always was.
   const incChase = serveTo(STAFF2.id);

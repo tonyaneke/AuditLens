@@ -441,6 +441,14 @@ function justVerified(cur: Obj, inc: Obj, role: string): boolean {
   return role === STAFF_ROLE && !cur.reportVerifiedAt && !!inc.reportVerifiedAt;
 }
 
+/** An audit staff member is sending the owner's closure response back in THIS save, with the note
+ *  saying why. Shared by the controlled-field pass and the derived transition for the same reason
+ *  as justVerified. Only target "owner" qualifies — a Head "reject to auditor" cannot be forged. */
+function justReturnedToOwner(cur: Obj, inc: Obj, role: string): boolean {
+  const rej = inc.closureRejection as { target?: string } | null | undefined;
+  return role === STAFF_ROLE && !!cur.ownerRectifiedAt && !inc.ownerRectifiedAt && rej?.target === "owner";
+}
+
 function reconcileOneObs(
   cur: Obj,
   inc: Obj,
@@ -449,15 +457,18 @@ function reconcileOneObs(
   violations: string[],
 ): Obj {
   const next: Obj = { ...inc };
-  /* Verification proposes the closure date, so a legitimate sign-off always arrives carrying
-     `closedDateISO` — a controlled field. Flagging it logged a spurious obs_field violation into
-     security.workspace_write_filtered on every genuine verification. The value is still forced
-     back here and re-applied by the derived transition below; only the false alarm is dropped. */
+  /* Verification proposes the closure date, and a send-back carries the note saying why — each
+     arrives in a controlled field (`closedDateISO`, `closureRejection`). Flagging them logged a
+     spurious obs_field violation into security.workspace_write_filtered ("Disallowed changes
+     reverted") on every genuine verification and every send-back, though nothing was reverted.
+     The value is still forced back here and re-applied by the derived transition below; only the
+     false alarm is dropped. */
   const verifying = justVerified(cur, inc, role);
+  const returning = justReturnedToOwner(cur, inc, role);
   // Judged on the STORED approval, so one save cannot reject-then-rewrite its way past the lock.
   const reworking = role === STAFF_ROLE && cur.obsApproval === "rejected" && !cur.rejectionFinal;
   for (const f of CONTROLLED_OBS_FIELDS) {
-    const excused = verifying && f === "closedDateISO";
+    const excused = (verifying && f === "closedDateISO") || (returning && f === "closureRejection");
     const staffReassign = role === STAFF_ROLE && STAFF_REASSIGN_FIELDS.has(f);
     const staffRework = reworking && STAFF_REWORK_FIELDS.has(f);
     if (staffReassign || staffRework) {
@@ -530,12 +541,7 @@ function applyDerivedStageTransition(
   //    without this the note explaining WHY reverted and the owner was sent back with no
   //    feedback. Restricted to target "owner": an auditor still cannot fabricate a Head
   //    "reject to auditor", and this can never close or withdraw anything.
-  const auditorReturnedToOwner =
-    role === STAFF_ROLE && !!cur.ownerRectifiedAt && !inc.ownerRectifiedAt;
-  if (auditorReturnedToOwner) {
-    const incRej = inc.closureRejection as { target?: string } | null | undefined;
-    if (incRej && incRej.target === "owner") next.closureRejection = incRej;
-  }
+  if (justReturnedToOwner(cur, inc, role)) next.closureRejection = inc.closureRejection;
 
   // 4. An owner's comment to Internal Audit satisfies an outstanding "update requested" flag
   //    (legacy addObsUpdate cleared it client-side; owners can't write updateRequestedAt here,
