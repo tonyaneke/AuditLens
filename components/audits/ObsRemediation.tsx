@@ -233,7 +233,7 @@ export default function ObsRemediation({
   const deptOnly = isDeptViewer(user, o, db);
   const head = isHead(user);
   const ia = isInternalAudit(user);
-  const canVerify = canVerifyItem(user, o, a as Audit);
+  const canVerify = canVerifyItem(user);
   const closed = o.status === "Closed";
 
   const withdrawn = isWithdrawn(o);

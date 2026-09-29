@@ -477,8 +477,10 @@ console.log("\n== Staff fieldwork on the audit plan persists (was silently disca
 
 console.log("\n== Allowed governance changes are attributable server-side (notices) ==");
 {
-  /* Staff may reassign the lead auditor, which is a GRANT — half of canVerifyItem(). The client's
-     own logAudit call cannot evidence it (a crafted client skips it), so the server records it. */
+  /* Staff may reassign the lead auditor. It grants no sign-off right (any staff may verify — see
+     the next block), but it moves accountability for the engagement and who hears about its
+     findings. The client's own logAudit call cannot evidence it (a crafted client skips it), so
+     the server records it. */
   const cur = baseWorkspace();
   // From the served payload, not raw storage — otherwise the withheld SOP PDF and brief token
   // ride back and register as locked-section violations, masking the assertion below.
@@ -509,11 +511,13 @@ console.log("\n== Allowed governance changes are attributable server-side (notic
   ok(rOwner.notices.length === 0, "and is not recorded as an allowed change");
 }
 
-console.log("\n== Only the item's auditor may sign off — not just any audit staff ==");
+console.log("\n== Any Internal Audit staff may sign off remediation — action owners may not ==");
 {
-  /* canVerifyItem() (lib/workspace/observations.ts) allows the lead auditor, the auditor who
-     raised the item, or the Head. The server used to check `role === STAFF_ROLE` alone, so any
-     audit staff could verify any observation in the organisation through the API. */
+  /* Any audit staff member may verify or send back remediation on any observation: widened on
+     purpose on 2026-09-02, confirmed 2026-09-29 — see justVerified() in lib/workspace-authz.ts and
+     canVerifyItem() in lib/workspace/observations.ts, which must agree. From 2026-08-13 until then
+     only the audit's lead auditor or the auditor who raised the item could, and this block asserted
+     the opposite. Closing an observation stays the Head's alone. */
   const cur = baseWorkspace();
   cur.audits[0].reports[0].observations[0].ownerRectifiedAt = "2026-08-10T09:00:00Z"; // owner responded
   const serveTo = (id: string) => clone(slimForClient(cur, { id, role: "audit_staff" } as any));
@@ -522,21 +526,27 @@ console.log("\n== Only the item's auditor may sign off — not just any audit st
   const incOther = serveTo(STAFF2.id);
   const oOther = incOther.audits[0].reports[0].observations[0];
   oOther.reportVerifiedAt = "2026-08-11T09:00:00Z";
-  oOther.reportVerifiedByName = "Not the auditor";
-  oOther.closureNote = "looks fine to me";
+  oOther.reportVerifiedByName = "Another auditor";
+  oOther.closureNote = "Evidence reviewed — remediated";
+  oOther.closedDateISO = "2026-08-11";
   const rOther = authorizeWorkspaceWrite(STAFF2.role, STAFF2.id, cur, incOther);
-  ok(findObs(rOther.data, "o1").reportVerifiedAt == null, "a non-auditor staff member cannot verify");
-  ok(findObs(rOther.data, "o1").closureNote == null, "their closure note is dropped with it");
-  ok(rOther.violations.some((v) => v.startsWith("obs_verify_blocked:o1:")), "verify block recorded");
+  ok(findObs(rOther.data, "o1").reportVerifiedAt === "2026-08-11T09:00:00Z", "a staff member who neither leads nor raised it may verify");
+  ok(findObs(rOther.data, "o1").closureNote === "Evidence reviewed — remediated", "their closure note is kept");
+  ok(findObs(rOther.data, "o1").closedDateISO === "2026-08-11", "the proposed closure date rides along");
+  ok(findObs(rOther.data, "o1").status === "Open", "verifying does not close it — that stays the Head's");
+  ok(rOther.violations.length === 0, `no violations for a legitimate verification (got ${JSON.stringify(rOther.violations)})`);
 
-  // The send-back half of the same dialog is blocked as one unit, so the owner is never left
-  // unwound with no explanation.
+  // The send-back half of the same dialog: the owner's response is unwound AND the note saying why
+  // reaches them — closureRejection is a controlled field the derived transition re-grants.
   const incBack = serveTo(STAFF2.id);
-  incBack.audits[0].reports[0].observations[0].ownerRectifiedAt = "";
+  const oBack = incBack.audits[0].reports[0].observations[0];
+  oBack.ownerRectifiedAt = "";
+  oBack.closureRejection = { target: "owner", note: "Attach the signed reconciliation", byRole: "audit_staff" };
   const rBack = authorizeWorkspaceWrite(STAFF2.role, STAFF2.id, cur, incBack);
-  ok(findObs(rBack.data, "o1").ownerRectifiedAt === "2026-08-10T09:00:00Z", "a non-auditor cannot send back");
+  ok(!findObs(rBack.data, "o1").ownerRectifiedAt, "any staff member may send it back to the owner");
+  ok(findObs(rBack.data, "o1").closureRejection?.note === "Attach the signed reconciliation", "and the owner gets the note saying why");
 
-  // Ordinary IA chasing work is still open to any staff member.
+  // Ordinary IA chasing work is open to any staff member, as it always was.
   const incChase = serveTo(STAFF2.id);
   incChase.audits[0].reports[0].observations[0].updateRequestedAt = "2026-08-11T10:00:00Z";
   incChase.audits[0].reports[0].observations[0].attachments = [{ id: "wp1", name: "WP-3.2.pdf" }];
@@ -544,34 +554,15 @@ console.log("\n== Only the item's auditor may sign off — not just any audit st
   ok(findObs(rChase.data, "o1").updateRequestedAt === "2026-08-11T10:00:00Z", "any staff may request an update");
   ok(findObs(rChase.data, "o1").attachments.length === 1, "any staff may attach a working paper");
 
-  // The lead auditor still can, and the derived closure date rides along.
-  const incLead = serveTo(STAFF.id);
-  const oLead = incLead.audits[0].reports[0].observations[0];
-  oLead.reportVerifiedAt = "2026-08-11T09:00:00Z";
-  oLead.closedDateISO = "2026-08-11";
-  const rLead = authorizeWorkspaceWrite(STAFF.role, STAFF.id, cur, incLead);
-  ok(findObs(rLead.data, "o1").reportVerifiedAt === "2026-08-11T09:00:00Z", "the lead auditor may verify");
-  ok(findObs(rLead.data, "o1").closedDateISO === "2026-08-11", "the proposed closure date rides along");
-  ok(rLead.violations.length === 0, `no violations for the lead auditor (got ${JSON.stringify(rLead.violations)})`);
-
-  // So may the auditor who raised it, on an audit somebody else leads.
-  const cur2 = baseWorkspace();
-  cur2.audits[0].leadAuditorId = "staff9";
-  cur2.audits[0].reports[0].observations[0].raisedBy = STAFF2.id;
-  cur2.audits[0].reports[0].observations[0].ownerRectifiedAt = "2026-08-10T09:00:00Z";
-  const incRaiser = clone(slimForClient(cur2, { id: STAFF2.id, role: "audit_staff" } as any));
-  incRaiser.audits[0].reports[0].observations[0].reportVerifiedAt = "2026-08-11T09:00:00Z";
-  const rRaiser = authorizeWorkspaceWrite(STAFF2.role, STAFF2.id, cur2, incRaiser);
-  ok(findObs(rRaiser.data, "o1").reportVerifiedAt === "2026-08-11T09:00:00Z", "the auditor who raised it may verify");
-
-  // A staff member cannot appoint themselves lead auditor and verify in the SAME save — the check
-  // reads the lead auditor from stored state. (Across two saves it is allowed by design.)
-  const incGrab = serveTo(STAFF2.id);
-  incGrab.audits[0].leadAuditorId = STAFF2.id;
-  incGrab.audits[0].reports[0].observations[0].reportVerifiedAt = "2026-08-11T09:00:00Z";
-  const rGrab = authorizeWorkspaceWrite(STAFF2.role, STAFF2.id, cur, incGrab);
-  ok((rGrab.data.audits as any[])[0].leadAuditorId === STAFF2.id, "the reassignment itself is allowed");
-  ok(findObs(rGrab.data, "o1").reportVerifiedAt == null, "but it does not grant verification in the same save");
+  // The action owner still cannot sign off their own remediation.
+  const incOwner = clone(cur);
+  const oOwn = incOwner.audits[0].reports[0].observations[0];
+  oOwn.reportVerifiedAt = "2026-08-11T09:00:00Z";
+  oOwn.closureNote = "all done";
+  const rOwner = authorizeWorkspaceWrite(OWNER.role, OWNER.id, cur, incOwner);
+  ok(findObs(rOwner.data, "o1").reportVerifiedAt == null, "the action owner cannot verify");
+  ok(findObs(rOwner.data, "o1").closureNote == null, "nor write the auditor's closure note");
+  ok(rOwner.violations.some((v) => v.startsWith("obs_field:o1:reportVerifiedAt")), "and the attempt is recorded");
 }
 
 console.log("\n== External-finding remediation stays writable for non-head ==");

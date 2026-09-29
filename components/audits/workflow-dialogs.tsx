@@ -452,7 +452,6 @@ export function VerifyRemediationDialog({ auditId, reportId, obsId }: Ids) {
   const { db, o, editObs, notifyIn } = useObs({ auditId, reportId, obsId });
   const modal = useModal();
   const user = useUser();
-  const a = (db.audits || []).find((x) => x.id === auditId);
   const [note, setNote] = useState(o?.closureNote || "");
   const [date, setDate] = useState(String(o?.closedDateISO || isoNow()).slice(0, 10));
   const [by, setBy] = useState(user.name || "");
@@ -494,7 +493,7 @@ Evidence attached: ${ev || "none listed"}`;
   }
 
   if (!o) return null;
-  if (!canVerifyItem(user, o, a)) {
+  if (!canVerifyItem(user)) {
     return (
       <ModalFrame title="View remediation">
         <div className="hint">

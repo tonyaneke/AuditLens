@@ -52,30 +52,6 @@ const NON_HEAD_WRITABLE_SECTIONS = new Set([
   "iaSAUserCurrent",
 ]);
 
-/* The verification act — an auditor confirming an owner's remediation and sending it to the Head
-   for sign-off. Gated in the UI on canVerifyItem() (lib/workspace/observations.ts:228): the audit's
-   LEAD AUDITOR, the auditor who RAISED the item, or the Head. The server used to check only
-   `role === STAFF_ROLE`, so any audit staff could verify any observation in the organisation
-   through the API — the identity half of the rule lived solely in the client.
-
-   Both halves of that dialog are covered, because they are one gate in the UI:
-     - VERIFY   confirm the remediation and propose the closure date
-     - SEND BACK  unwind the owner's response and say what still needs doing
-
-   The send-back fields have to be blocked as one unit with `closureRejection` (a controlled field
-   the derived transition re-grants only to the auditor). Blocking the note alone would let a
-   non-auditor unwind ownerRectifiedAt and leave the owner sent back with no feedback — precisely
-   the half-state note 3 in applyDerivedStageTransition() records as already fixed once.
-
-   Requesting an update, filing a progress report and attaching working papers are deliberately NOT
-   here: that is ordinary IA chasing work, open to any audit staff, and the UI does not gate it on
-   canVerifyItem either. */
-const AUDITOR_VERIFY_FIELDS = [
-  "reportVerifiedAt", "reportVerifiedBy", "reportVerifiedByName",
-  "closureNote", "closureEvidence", "closureFile", "closureFiles",
-  "ownerRectifiedAt", "ownerRectifiedBy", "ownerRectifiedByName",
-];
-
 // The implementation-progress surface of a fraud prevention action — what an assigned action
 // owner reports back on, including the evidence files attached to each ownerUpdates entry.
 // Everything else about a risk/action is IA-managed, including the "Validated" status and its
@@ -137,9 +113,10 @@ const WITHDRAWAL_FINAL_STAGES = ["withdrawn", "rejected"];
 /* Audit governance metadata — the "✎ Edit Audit" dialog. Staff may write all of it (see
    reconcileAudits), but unlike routine fieldwork these changes are worth a server-side record:
 
-     leadAuditorId  privilege-bearing. It is half of canVerifyItem(), so reassigning it grants the
-                    sign-off right on that engagement — across two saves, a staff member can move
-                    it to themselves and then verify. That has to be attributable.
+     leadAuditorId  who is accountable for the engagement: it is who hears about its findings
+                    (internalAuditWatcherIds) and whose "My audits" list it is on. It grants no
+                    sign-off right — any audit staff member may verify (see justVerified) — but a
+                    change of lead is still a change of accountability, so it is attributed.
      name / status / …  a rename or a premature "Completed" silently rewrites what the Word
                     exports and the EXCO brief say about an engagement already reported on.
 
@@ -298,12 +275,7 @@ function reconcileAudits(
 
      All of it used to be locked to storage while the audit detail page offered every one of those
      controls to staff ungated, so their edits were silently discarded: the PUT returned 200, the
-     client kept its optimistic copy and toasted success, and the change was gone on the next load.
-
-     Reassigning `leadAuditorId` is a real grant — it is half of canVerifyItem(). It cannot be
-     self-granted within a single save, because the verification check below reads the lead auditor
-     from STORED state, not from this document. Across two saves it is possible by design; the
-     reassignment is a visible change to the audit record. */
+     client kept its optimistic copy and toasted success, and the change was gone on the next load. */
   const out = curAudits.map((curA) => {
     const incA = incById.get(curA.id as string);
     if (!incA) {
@@ -325,7 +297,6 @@ function reconcileAudits(
       userId,
       viewer,
       violations,
-      curA.leadAuditorId, // STORED lead auditor — see the note above
     );
     return outA;
   });
@@ -338,8 +309,8 @@ function reconcileAudits(
 
 /** Record a non-head change to an audit's governance metadata. The change is ALLOWED — this only
  *  flags it for the security trail; the edit itself is recorded like any other (audit.updated).
- *  Reassigning the lead auditor is called out separately because it is a grant, not just an edit:
- *  it is half of canVerifyItem(), so it hands the sign-off right on that engagement to someone. */
+ *  Reassigning the lead auditor is called out separately because it moves accountability for the
+ *  engagement, and who is told about its findings, to someone else. */
 function noteGovernanceChanges(curA: Obj, incA: Obj, notices: string[]): void {
   const shown = (v: unknown) => (v === undefined || v === null || v === "" ? "—" : String(v));
   for (const f of AUDIT_GOVERNANCE_FIELDS) {
@@ -371,7 +342,6 @@ function reconcileReports(
   userId: string,
   viewer: Viewer,
   violations: string[],
-  leadAuditorId: unknown,
 ): Obj[] {
   const incById = new Map(incReps.map((r) => [r.id as string, r]));
   const curIds = new Set(curReps.map((r) => r.id as string));
@@ -393,7 +363,6 @@ function reconcileReports(
       userId,
       viewer,
       violations,
-      leadAuditorId,
     );
     return outR;
   });
@@ -411,7 +380,6 @@ function reconcileReports(
       userId,
       viewer,
       violations,
-      leadAuditorId,
     );
     out.push(outR);
   }
@@ -425,7 +393,6 @@ function reconcileObservations(
   userId: string,
   viewer: Viewer,
   violations: string[],
-  leadAuditorId: unknown,
 ): Obj[] {
   const incById = new Map(incObs.map((o) => [o.id as string, o]));
   const curIds = new Set(curObs.map((o) => o.id as string));
@@ -443,7 +410,7 @@ function reconcileObservations(
       violations.push(`out_of_scope_write:obs:${curO.id}`);
       return curO;
     }
-    return reconcileOneObs(curO, incO, role, userId, violations, leadAuditorId);
+    return reconcileOneObs(curO, incO, role, userId, violations);
   });
   // New observations: audit staff may add them (forced to pending); action owners cannot.
   for (const incO of incObs) {
@@ -454,23 +421,24 @@ function reconcileObservations(
   return out;
 }
 
-/** Server-side canVerifyItem(): any audit staff member, the audit's lead auditor as STORED,
- *  or the auditor who raised this observation. Reading the lead auditor from storage rather
- *  than from the incoming document is what stops one save appointing itself lead auditor and
- *  verifying in the same breath. The Head never reaches here — authorizeWorkspaceWrite()
- *  returns early as fully trusted. */
-function isItemAuditor(cur: Obj, userId: string, leadAuditorId: unknown, role: string): boolean {
-  if (!userId) return false;
-  if (role === STAFF_ROLE) return true;
-  if (leadAuditorId && String(leadAuditorId) === userId) return true;
-  return !!cur.raisedBy && cur.raisedBy === userId;
-}
+/* WHO MAY SIGN OFF REMEDIATION: any audit staff member, on any observation — and the Head, who never
+   reaches here (authorizeWorkspaceWrite() returns early as fully trusted). That covers both halves
+   of the verify dialog: VERIFY (confirm the remediation and propose the closure date) and SEND BACK
+   (unwind the owner's response, with a note saying what still needs doing — applyDerivedStageTransition).
+   Action owners are kept out by AUDITOR_ONLY_OBS_FIELDS. The UI applies the same rule through
+   canVerifyItem() in lib/workspace/observations.ts.
 
-/** The auditor is signing this item off in THIS save. One definition, used by both the controlled-
- *  field pass (which excuses the closure date it legitimately carries) and the derived transition
- *  (which applies it) — they must not drift. */
-function justVerified(cur: Obj, inc: Obj, role: string, auditor: boolean): boolean {
-  return role === STAFF_ROLE && auditor && !cur.reportVerifiedAt && !!inc.reportVerifiedAt;
+   It was narrower for a while: from 2026-08-13 only the audit's lead auditor or the auditor who
+   raised the item could sign off. It was widened to all of Internal Audit on purpose on 2026-09-02
+   (confirmed 2026-09-29). The control that remains is the Head's: only the Head can set
+   headVerifiedAt or close an observation. Narrowing it again means changing canVerifyItem() in the
+   same change — a server that refuses what the UI offers reverts saves silently. */
+
+/** An audit staff member is verifying this item in THIS save. One definition, used by both the
+ *  controlled-field pass (which excuses the closure date it legitimately carries) and the derived
+ *  transition (which applies it) — they must not drift. */
+function justVerified(cur: Obj, inc: Obj, role: string): boolean {
+  return role === STAFF_ROLE && !cur.reportVerifiedAt && !!inc.reportVerifiedAt;
 }
 
 function reconcileOneObs(
@@ -479,15 +447,13 @@ function reconcileOneObs(
   role: string,
   userId: string,
   violations: string[],
-  leadAuditorId: unknown,
 ): Obj {
   const next: Obj = { ...inc };
-  const auditor = isItemAuditor(cur, userId, leadAuditorId, role);
   /* Verification proposes the closure date, so a legitimate sign-off always arrives carrying
      `closedDateISO` — a controlled field. Flagging it logged a spurious obs_field violation into
      security.workspace_write_filtered on every genuine verification. The value is still forced
      back here and re-applied by the derived transition below; only the false alarm is dropped. */
-  const verifying = justVerified(cur, inc, role, auditor);
+  const verifying = justVerified(cur, inc, role);
   // Judged on the STORED approval, so one save cannot reject-then-rewrite its way past the lock.
   const reworking = role === STAFF_ROLE && cur.obsApproval === "rejected" && !cur.rejectionFinal;
   for (const f of CONTROLLED_OBS_FIELDS) {
@@ -511,15 +477,7 @@ function reconcileOneObs(
       forceField(next, f, cur[f]);
     }
   }
-  /* Staff who are not the auditor on THIS item may work the observation, but may not sign off on
-     it — see AUDITOR_VERIFY_FIELDS. Owners are already covered by AUDITOR_ONLY_OBS_FIELDS above. */
-  if (role === STAFF_ROLE && !auditor) {
-    for (const f of AUDITOR_VERIFY_FIELDS) {
-      if (!jsonEq(inc[f], cur[f])) violations.push(`obs_verify_blocked:${cur.id}:${f}`);
-      forceField(next, f, cur[f]);
-    }
-  }
-  applyDerivedStageTransition(cur, inc, next, role, userId, auditor);
+  applyDerivedStageTransition(cur, inc, next, role, userId);
   next.withdrawal = reconcileWithdrawal(
     cur.withdrawal as Obj | undefined,
     inc.withdrawal as Obj | undefined,
@@ -544,7 +502,6 @@ function applyDerivedStageTransition(
   next: Obj,
   role: string,
   userId: string,
-  auditor: boolean,
 ): void {
   const rejection = cur.closureRejection as { target?: string } | null | undefined;
 
@@ -560,7 +517,7 @@ function applyDerivedStageTransition(
   // 2. An auditor verifies the remediation and sends it to the Head for sign-off. Verification
   //    proposes the closure date; the Head confirms it. Status stays un-Closed either way —
   //    only the Head can set that, and only via the trusted path above.
-  const auditorJustVerified = justVerified(cur, inc, role, auditor);
+  const auditorJustVerified = justVerified(cur, inc, role);
   if (auditorJustVerified) {
     if (inc.closedDateISO) next.closedDateISO = inc.closedDateISO;
     if (rejection && rejection.target === "auditor") next.closureRejection = null;
@@ -574,7 +531,7 @@ function applyDerivedStageTransition(
   //    feedback. Restricted to target "owner": an auditor still cannot fabricate a Head
   //    "reject to auditor", and this can never close or withdraw anything.
   const auditorReturnedToOwner =
-    role === STAFF_ROLE && auditor && !!cur.ownerRectifiedAt && !inc.ownerRectifiedAt;
+    role === STAFF_ROLE && !!cur.ownerRectifiedAt && !inc.ownerRectifiedAt;
   if (auditorReturnedToOwner) {
     const incRej = inc.closureRejection as { target?: string } | null | undefined;
     if (incRej && incRej.target === "owner") next.closureRejection = incRej;

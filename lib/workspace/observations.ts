@@ -313,18 +313,12 @@ export function canActOnObs(
 export function canRespondToObs(user: SessionUser, o: Observation | undefined): boolean {
   return isOwnerViewer(user, o);
 }
-/** The Head or the audit's lead auditor can verify anything on the report. */
-export function canVerifyReport(user: SessionUser, a: Audit | undefined): boolean {
-  return isHead(user) || !!(a && a.leadAuditorId && a.leadAuditorId === user.id);
-}
-/** Any Internal Audit staff member may verify and close out remediation on any item. */
-export function canVerifyItem(
-  user: SessionUser,
-  o: Observation | undefined,
-  a: Audit | undefined,
-): boolean {
-  if (isInternalAudit(user)) return true;
-  return canVerifyReport(user, a) || !!(o && o.raisedBy && o.raisedBy === user.id);
+/** Any Internal Audit staff member may verify and close out remediation on any item — the same
+ *  rule the server enforces (see justVerified in lib/workspace-authz.ts). Nobody else may: being an
+ *  engagement's lead auditor or a finding's raiser grants nothing outside Internal Audit, and the
+ *  server would silently revert the attempt. */
+export function canVerifyItem(user: SessionUser): boolean {
+  return isInternalAudit(user);
 }
 
 /* ---------------- locate ---------------- */

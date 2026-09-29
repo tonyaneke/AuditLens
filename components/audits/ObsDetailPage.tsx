@@ -86,7 +86,7 @@ export default function ObsDetailPage({
   const internalAudit = isInternalAudit(user);
   const isOwner = isActionOwner(user);
   const isExec = effectiveRole(user) === "executive";
-  const canEdit = head || canVerifyItem(user, o, a);
+  const canEdit = head || canVerifyItem(user);
   const backHref = isOwner
     ? "/portal/myobs"
     : isExec
