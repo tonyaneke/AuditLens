@@ -10,13 +10,16 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useApprovalDecisions } from "@/components/approvals/decisions";
 import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useUser } from "@/components/chrome/UserContext";
+import BusyButton from "@/components/feedback/BusyButton";
 import { toast } from "@/components/feedback/ToastHost";
 import { useModal } from "@/components/modals/ModalProvider";
 import { BackButton, CritPill, StatusPill } from "@/components/ui";
 import { deptLabel, deptNameOf } from "@/lib/dept-scope";
 import { canAccessView, effectiveRole } from "@/lib/permissions";
+import { pendingRaise } from "@/lib/workspace/approvals";
 import {
   canVerifyItem,
   cancelPendingDelete,
@@ -90,6 +93,11 @@ export default function ObsDetailPage({
         ? `/audits/${a.id}/reports/${r.id}`
         : "/audits";
   const changePending = !head && !!o && (!!pendingUpdate(db, o.id) || !!pendingDelete(db, o.id));
+  /* A raise awaiting the Head can be decided here as well as on the Approvals page, so reviewing
+     it from the report — Edit, Reassign owner, then decide — never needs a trip back to the queue.
+     Same decision code as the queue, so notifications and the request's own record match. */
+  const { approveAny, rejectAny } = useApprovalDecisions();
+  const review = head && o ? pendingRaise(db, o.id) : undefined;
 
   /* Port of delObs. Non-head deletion is a request, not an act — an `observation_delete`
      approval is parked for the Head (the server blocks the direct delete anyway, see
@@ -227,6 +235,39 @@ export default function ObsDetailPage({
           {o.title}
         </h2>
       </header>
+
+      {review ? (
+        <div
+          className="note"
+          role="region"
+          aria-label="Awaiting your approval"
+          style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "0 0 16px" }}
+        >
+          <div style={{ flex: "1 1 260px" }}>
+            <b>Awaiting your approval.</b> Raised by {review.requestedByName || o.raisedByName || "Internal Audit"}
+            {review.requestedAt ? " on " + fmtDateTime(review.requestedAt) : ""}. Edit it or reassign the
+            owner first if needed. It goes on the tracker and to its action owner once you approve it.
+          </div>
+          <BusyButton
+            className="btn ghost sm danger"
+            onClick={async () => {
+              await rejectAny(review.id);
+              toast("Observation rejected. The auditor who raised it has been notified.", "success");
+            }}
+          >
+            Reject
+          </BusyButton>
+          <BusyButton
+            className="btn sm"
+            onClick={async () => {
+              await approveAny(review.id);
+              toast("Observation approved. It is on the tracker and the action owner has been notified.", "success");
+            }}
+          >
+            Approve
+          </BusyButton>
+        </div>
+      ) : null}
 
       <div className="obs-detail-meta">
         {o.owner ? <Meta label="Owner">{String(o.owner)}</Meta> : null}

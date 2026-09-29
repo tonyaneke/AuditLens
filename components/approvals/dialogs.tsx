@@ -4,11 +4,11 @@
 // audit-bot.js. Renders the request header, the decision note for decided requests, a
 // kind-specific body (edit diff, deletion warning, status change, withdrawal reasons or the
 // full observation details) and the Approve/Reject footer for pending requests. A pending new
-// observation also gets Edit, so the Head can correct it before deciding instead of rejecting
-// it back to the auditor.
+// observation also gets Edit and Reassign owner, so the Head can correct it before deciding
+// instead of rejecting it back to the auditor.
 
 import type { ReactNode } from "react";
-import { ModalObsDialog } from "@/components/audits/lazy";
+import { ModalObsDialog, ModalReassignObsDialog } from "@/components/audits/lazy";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import {
   approvalItemTitle,
@@ -101,8 +101,12 @@ export function ApprovalDetailsDialog({ aid }: { aid: string }) {
   if (ap.kind === "observation_update" && ap.changes) {
     const nb = ap.changes;
     const cur = (o || {}) as Record<string, unknown>;
+    // Only what the proposal carries — approving applies just those keys (a proposal on an
+    // assigned observation leaves `owner` out; Reassign owner is how that changes).
     const changed = OBS_FIELD_LABELS.filter(
-      ([k]) => String(nb[k] == null ? "" : nb[k]) !== String(cur[k] == null ? "" : cur[k]),
+      ([k]) =>
+        Object.prototype.hasOwnProperty.call(nb, k) &&
+        String(nb[k] == null ? "" : nb[k]) !== String(cur[k] == null ? "" : cur[k]),
     );
     body = (
       <>
@@ -178,8 +182,9 @@ export function ApprovalDetailsDialog({ aid }: { aid: string }) {
         {head}
         {editable ? (
           <div className="hint" style={{ marginBottom: 10 }}>
-            Something to correct? <b>Edit</b> it here before you approve. Your changes apply
-            directly and are recorded in the audit trail.
+            Something to correct? <b>Edit</b> it, or <b>Reassign owner</b> if it went to the wrong
+            department, before you approve. Changes apply directly and are recorded in the audit
+            trail. The owner is only notified when you approve.
           </div>
         ) : null}
         <ObsDetailRows o={o} />
@@ -201,18 +206,35 @@ export function ApprovalDetailsDialog({ aid }: { aid: string }) {
         ap.status === "pending" ? (
           <>
             {editable ? (
-              <button
-                className="btn sec"
-                type="button"
-                style={{ marginRight: "auto" }}
-                onClick={() =>
-                  modal.open(
-                    <ModalObsDialog auditId={ap.auditId || ""} reportId={ap.reportId || ""} obsId={editable.id} />,
-                  )
-                }
-              >
-                Edit
-              </button>
+              <>
+                <button
+                  className="btn sec"
+                  type="button"
+                  onClick={() =>
+                    modal.open(
+                      <ModalObsDialog auditId={ap.auditId || ""} reportId={ap.reportId || ""} obsId={editable.id} />,
+                    )
+                  }
+                >
+                  Edit
+                </button>
+                <button
+                  className="btn sec"
+                  type="button"
+                  style={{ marginRight: "auto" }}
+                  onClick={() =>
+                    modal.open(
+                      <ModalReassignObsDialog
+                        auditId={ap.auditId || ""}
+                        reportId={ap.reportId || ""}
+                        obsId={editable.id}
+                      />,
+                    )
+                  }
+                >
+                  Reassign owner
+                </button>
+              </>
             ) : null}
             <button
               className="btn ghost danger"

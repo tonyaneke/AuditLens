@@ -44,6 +44,12 @@ export function raiseUnderReview(db: WorkspaceDb, a: Approval): Observation | un
   return findApprovalObs(db, a).o;
 }
 
+/** The open "New observation" request for an observation — what the observation page's review
+ *  banner decides, through the same approveAny/rejectAny as the Approvals page. */
+export function pendingRaise(db: WorkspaceDb, obsId: string): Approval | undefined {
+  return approvals(db).find((a) => a.kind === "observation_raise" && a.obsId === obsId && a.status === "pending");
+}
+
 /** A pending edit to an observation whose raise was rejected. Approving it approves the
  *  observation as well — see the observation_update case in components/approvals/decisions.tsx. */
 export function editApprovesRejectedObs(db: WorkspaceDb, a: Approval): boolean {

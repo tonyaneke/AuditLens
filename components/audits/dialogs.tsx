@@ -64,7 +64,7 @@ import {
   type AiObsDraft,
   type RepeatCandidate,
 } from "@/lib/workspace/observations";
-import { CRITS, RUBRIC, STATUSES, approvals, expectedClose, fmtDate, isoNow, reportDateOf, uid } from "@/lib/workspace/selectors";
+import { CRITS, RUBRIC, STATUSES, approvals, expectedClose, fmtDate, isoNow, obsIsApproved, reportDateOf, uid } from "@/lib/workspace/selectors";
 import type { Audit, AuditTest, AuditPlan, Criticality, EvidenceFile, Observation, Report, WorkspaceDb } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 import { FilePickMulti, MAX_UPLOAD_BYTES, tooLarge, uploadAllEvidence } from "./attach";
@@ -1719,6 +1719,12 @@ export function ModalReassignObsDialog({
 
   if (!o) return null;
 
+  /* An owner cannot see an observation until the Head approves it (canSeeObs), so notifying them
+     now would e-mail them a finding they cannot open, and name a draft the Head may still reject.
+     They were then told a second time on approval. Approval notifies whoever is assigned at that
+     point (publishObs in components/approvals/decisions.tsx), so an unapproved one stays quiet. */
+  const unpublished = !obsIsApproved(o);
+
   function save() {
     /* Reassigning to nobody silently unassigns the observation — both notifyBoth calls no-op on
        an empty id, so it would report "the action owner has been notified" having told no one,
@@ -1744,6 +1750,7 @@ export function ModalReassignObsDialog({
       const dept2 = departments(d).find((x) => x.headUserId === cur.secondaryOwnerUserId);
       cur.secondaryOwner = dept2 ? dept2.headName : "";
       if (due) cur.dueDate = due;
+      if (!obsIsApproved(cur)) return;
       if (cur.ownerUserId && cur.ownerUserId !== prevOwner)
         notifyBoth(
           d,
@@ -1768,7 +1775,11 @@ export function ModalReassignObsDialog({
         );
     });
     modal.close();
-    modal.success("Owner reassigned. The action owner has been notified.");
+    modal.success(
+      unpublished
+        ? "Owner updated. They will be notified once the observation is approved."
+        : "Owner reassigned. The action owner has been notified.",
+    );
   }
 
   return (
@@ -1780,7 +1791,7 @@ export function ModalReassignObsDialog({
             Cancel
           </button>
           <button className="btn pri" type="button" onClick={save}>
-            Save &amp; notify
+            {unpublished ? "Save" : <>Save &amp; notify</>}
           </button>
         </>
       }
@@ -1811,8 +1822,17 @@ export function ModalReassignObsDialog({
       <label style={{ marginTop: 8 }}>Closure date</label>
       <input type="date" value={due} onChange={(e) => setDue(e.target.value)} />
       <div className="hint" style={{ marginTop: 8 }}>
-        The newly-assigned owner(s) are notified. Reassignment works on any observation, including recent or past
-        (closed) ones.
+        {unpublished ? (
+          <>
+            This observation has not been approved yet, so nobody is notified now. Whoever is assigned
+            here is told when it is approved.
+          </>
+        ) : (
+          <>
+            The newly-assigned owner(s) are notified. Reassignment works on any observation, including recent or past
+            (closed) ones.
+          </>
+        )}
       </div>
     </ModalFrame>
   );
@@ -1875,6 +1895,13 @@ export function ModalObsDialog({
 
   if (!o) return null;
   const head = isHead(user);
+  /* Once someone is actually assigned, the owner changes only through Reassign owner, which moves
+     the name, the person and the department together. Typing a new name here changed what the
+     tracker showed while notifications still went to the person first assigned. Unassigned
+     (imported) observations keep the free-text name. Read live, never from state, so a reassign
+     made while this form is open is not overwritten by the name it opened with. */
+  const ownerAssigned = !!o.ownerUserId;
+  const ownerShown = ownerAssigned ? String(o.owner || "") : owner;
 
   const base = reportDateOf(r);
   const ec = expectedClose({ ...o, timeline: tl }, r);
@@ -1919,7 +1946,7 @@ Criteria / expectation: ${criteria || "-"}
 Impact / risk: ${risk || "-"}
 Possible root cause: ${root || "-"}
 Auditor recommendation: ${rec || "-"}
-Criticality: ${crit || "-"}${owner ? `\nAction owner: ${owner}` : ""}${tl ? `\nResolution timeline: ${tl}` : ""}${due ? `\nTarget date: ${due}` : ""}
+Criticality: ${crit || "-"}${ownerShown ? `\nAction owner: ${ownerShown}` : ""}${tl ? `\nResolution timeline: ${tl}` : ""}${due ? `\nTarget date: ${due}` : ""}
 
 Management's current draft response: ${mgmt || "(none provided — draft an appropriate response from scratch)"}`;
     try {
@@ -1977,6 +2004,9 @@ Management's current draft response: ${mgmt || "(none provided — draft an appr
       closureNote: cnote.trim(),
     };
     if (status === "Closed" && cdate) data.closedDateISO = cdate;
+    // Left out rather than sent unchanged: a staff proposal is a snapshot, and approving it later
+    // must not put back the name from before a reassignment made in between.
+    if (ownerAssigned) delete data.owner;
 
     if (!head) {
       // Audit staff cannot edit an observation directly — the full proposed change is
@@ -2102,7 +2132,21 @@ Management's current draft response: ${mgmt || "(none provided — draft an appr
       <div className="f3">
         <div>
           <label>Action owner</label>
-          <input value={owner} onChange={(e) => setOwner(e.target.value)} placeholder="e.g. Head, Credit Operations" />
+          {ownerAssigned ? (
+            <>
+              <input
+                value={ownerShown}
+                readOnly
+                className="field-readonly"
+                title="Change the owner with Reassign owner, which also updates the department and who is notified"
+              />
+              <div className="hint">
+                Change with <b>Reassign owner</b>.
+              </div>
+            </>
+          ) : (
+            <input value={owner} onChange={(e) => setOwner(e.target.value)} placeholder="e.g. Head, Credit Operations" />
+          )}
         </div>
         <div>
           <label>Resolution timeline</label>
