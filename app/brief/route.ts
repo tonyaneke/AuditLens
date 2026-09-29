@@ -6,6 +6,7 @@ import type {
   BriefThreadEntry,
 } from "@/lib/brief-detail-map";
 import { hydrateBriefDetailItem } from "@/lib/brief-hydrate";
+import { fraudActionDone } from "@/lib/workspace/fraud";
 import { defaultWorkspaceData, type WorkspaceDb } from "@/lib/db-data";
 import { prisma } from "@/lib/prisma";
 import { withoutDeleted } from "@/lib/workspace-tombstones";
@@ -298,7 +299,7 @@ function renderExtDetail(item: BriefExtDetail) {
 }
 
 function renderFraudDetail(item: BriefFraudDetail) {
-  const implN = item.actions.filter((a) => a.status === "Implemented").length;
+  const implN = item.actions.filter((a) => fraudActionDone(a.status)).length;
   return `
     <div class="badges">
       <span class="pill" style="background:${bandColor(item.res)}1a;color:${bandColor(item.res)}">Residual ${esc(item.res)}</span>

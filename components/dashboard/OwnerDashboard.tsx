@@ -26,6 +26,7 @@ import {
   portalExtList,
   portalObsList,
 } from "@/lib/workspace/portal";
+import { fraudActionDone } from "@/lib/workspace/fraud";
 import type { ExtFinding, FraudAction, FraudRisk } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 
@@ -68,7 +69,7 @@ export default function OwnerDashboard() {
   const fraudMine = myFraudRisks(db, user.id).flatMap((f) =>
     myFraudActionsFor(f, user.id).map((a) => ({ f, a })),
   );
-  const fraudOpen = fraudMine.filter((x) => x.a.status !== "Implemented");
+  const fraudOpen = fraudMine.filter((x) => !fraudActionDone(x.a.status));
 
   const totalMine = intMine.length + extMine.length;
   const totalOpen = intOpen.length + extOpen.length;

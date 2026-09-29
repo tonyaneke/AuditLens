@@ -33,6 +33,7 @@ import {
   unitOccTotal,
   universe,
 } from "@/lib/workspace/ra";
+import { fraudActionDone } from "@/lib/workspace/fraud";
 import type { WorkspaceDb } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 
@@ -53,7 +54,7 @@ function buildCaePrompt(db: WorkspaceDb, period: string): string {
   const pc = en.filter((e) => e.engStatus === "Completed").length;
   const F = fraudList(db);
   const fA = F.flatMap((f) => f.actions || []);
-  const fI = fA.filter((a) => a.status === "Implemented").length;
+  const fI = fA.filter((a) => fraudActionDone(a.status)).length;
   const ratingMix =
     CRITS.map((k) => c[k] + " " + k).filter((x) => !x.startsWith("0 ")).join(", ") || "none";
   return `Act as the Chief Audit Executive for ${db.org}. Draft a concise executive commentary (3–5 short paragraphs) for the quarterly Internal Audit report to the Board Audit Committee for ${period || "the period"}. Summarise: audit plan delivery, key observations and themes, remediation status (open / overdue), notable repeat findings, and fraud risk management progress. Return plain text only (no JSON).
@@ -94,7 +95,7 @@ export function exportCaeReport(db: WorkspaceDb): void {
   const pPct = pTotOcc ? Math.round((pDoneOcc / pTotOcc) * 100) : 0;
   const F = fraudList(db);
   const fA = F.flatMap((f) => f.actions || []);
-  const fImpl = fA.filter((a) => a.status === "Implemented").length;
+  const fImpl = fA.filter((a) => fraudActionDone(a.status)).length;
   const fHighX = F.map((f) =>
     f.residualOverride || residualBand(fraudBand(f.likelihood * f.impact), f.controlStrength),
   ).filter((b) => b === "Extreme" || b === "High").length;

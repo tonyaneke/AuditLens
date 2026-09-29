@@ -15,6 +15,7 @@ import {
   approvalKindLabel,
   editApprovesRejectedObs,
   findApprovalObs,
+  lastRaiseRejection,
   OBS_FIELD_LABELS,
   raiseUnderReview,
 } from "@/lib/workspace/approvals";
@@ -68,6 +69,8 @@ export function ApprovalDetailsDialog({ aid }: { aid: string }) {
   // Edit opens on top of this dialog; saving pops back here, re-rendered from the edited record.
   const editable = raiseUnderReview(db, ap);
   const reinstates = editApprovesRejectedObs(db, ap);
+  // A raise sent back after rejection: show what the Head asked for last round.
+  const priorRejection = editable && ap.resubmitted ? lastRaiseRejection(db, editable.id) : undefined;
 
   const head = (
     <>
@@ -81,7 +84,7 @@ export function ApprovalDetailsDialog({ aid }: { aid: string }) {
           {ap.status === "approved" ? (
             <span className="pill c-Low">Approved</span>
           ) : ap.status === "rejected" ? (
-            <span className="pill c-Critical">Rejected</span>
+            <span className="pill c-Critical">{ap.final === true ? "Rejected for good" : "Rejected"}</span>
           ) : (
             <span className="pill">{ap.status}</span>
           )}{" "}
@@ -180,6 +183,18 @@ export function ApprovalDetailsDialog({ aid }: { aid: string }) {
     body = (
       <>
         {head}
+        {priorRejection ? (
+          <div className="note" style={{ marginBottom: 10, borderLeft: "3px solid var(--accent)" }}>
+            <b>Sent back after rejection.</b> Rejected
+            {priorRejection.decidedByName ? " by " + priorRejection.decidedByName : ""}
+            {priorRejection.decidedAt ? " on " + fmtDateTime(priorRejection.decidedAt) : ""}.
+            {priorRejection.headReason ? (
+              <div style={{ marginTop: 4 }}>
+                <b>You asked for:</b> {String(priorRejection.headReason)}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         {editable ? (
           <div className="hint" style={{ marginBottom: 10 }}>
             Something to correct? <b>Edit</b> it, or <b>Reassign owner</b> if it went to the wrong

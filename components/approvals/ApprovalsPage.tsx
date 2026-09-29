@@ -25,9 +25,9 @@ import { useApprovalDecisions } from "./decisions";
 import { ApprovalDetailsDialog } from "./dialogs";
 
 /** Decision pill — legacy uses `pill c-Low` / `pill c-Critical`; Pending only shows on the All tab. */
-function DecisionPill({ status }: { status: string }) {
+function DecisionPill({ status, final }: { status: string; final?: boolean }) {
   if (status === "approved") return <span className="pill c-Low">Approved</span>;
-  if (status === "rejected") return <span className="pill c-Critical">Rejected</span>;
+  if (status === "rejected") return <span className="pill c-Critical">{final ? "Rejected · final" : "Rejected"}</span>;
   if (status === "pending") return <span className="pill c-High">Pending</span>;
   return <span className="pill">{status}</span>;
 }
@@ -83,6 +83,9 @@ export default function ApprovalsPage() {
           {editApprovesRejectedObs(db, ap) ? (
             <div className="hint">Revises a rejected observation. Approving it approves the observation.</div>
           ) : null}
+          {ap.kind === "observation_raise" && ap.resubmitted ? (
+            <div className="hint">↩ Sent back after your rejection</div>
+          ) : null}
         </td>
         <td>{ap.requestedByName || "—"}</td>
         <td>{ap.requestedAt ? fmtDateTime(ap.requestedAt) : "—"}</td>
@@ -132,7 +135,7 @@ export default function ApprovalsPage() {
         <td>{ap.requestedByName || "—"}</td>
         {withRequested ? <td>{ap.requestedAt ? fmtDateTime(ap.requestedAt) : "—"}</td> : null}
         <td>
-          <DecisionPill status={ap.status} />
+          <DecisionPill status={ap.status} final={ap.final === true} />
         </td>
         <td>{ap.decidedByName || "—"}</td>
         <td>{ap.decidedAt ? fmtDateTime(ap.decidedAt) : "—"}</td>

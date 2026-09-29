@@ -18,8 +18,9 @@ import { toast } from "@/components/feedback/ToastHost";
 import { useModal } from "@/components/modals/ModalProvider";
 import { BackButton, CritPill, StatusPill } from "@/components/ui";
 import { deptLabel, deptNameOf } from "@/lib/dept-scope";
+import { loadDirectory } from "@/lib/client/directory";
 import { canAccessView, effectiveRole } from "@/lib/permissions";
-import { pendingRaise } from "@/lib/workspace/approvals";
+import { lastRaiseRejection, pendingRaise, resubmitObs } from "@/lib/workspace/approvals";
 import {
   canVerifyItem,
   cancelPendingDelete,
@@ -52,9 +53,10 @@ import { ModalObsDialog, ModalReassignObsDialog } from "./lazy";
 import ObsRemediation from "./ObsRemediation";
 
 /* legacy obsApprovalBadge */
-function ApprovalBadge({ approval }: { approval: string | undefined }) {
+function ApprovalBadge({ approval, final }: { approval: string | undefined; final?: boolean }) {
   if (approval === "pending") return <span className="pill sop-pending-pill">⏳ Pending Head approval</span>;
-  if (approval === "rejected") return <span className="pill c-Critical">Rejected</span>;
+  if (approval === "rejected")
+    return <span className="pill c-Critical">{final ? "Rejected" : "Rejected · sent back"}</span>;
   return null;
 }
 
@@ -96,8 +98,15 @@ export default function ObsDetailPage({
   /* A raise awaiting the Head can be decided here as well as on the Approvals page, so reviewing
      it from the report — Edit, Reassign owner, then decide — never needs a trip back to the queue.
      Same decision code as the queue, so notifications and the request's own record match. */
-  const { approveAny, rejectAny } = useApprovalDecisions();
+  const { approveAny, rejectAny, approveRejected, reopenRejected } = useApprovalDecisions();
   const review = head && o ? pendingRaise(db, o.id) : undefined;
+  /* Rejected = sent back for rework. Internal Audit edits it and sends it back; the Head can edit
+     and approve it directly. Owners never see a rejected raise (canSeeObs). */
+  const rejected = internalAudit && !!o && o.obsApproval === "rejected";
+  const rejection = rejected && o ? lastRaiseRejection(db, o.id) : undefined;
+  // Rejected for good: closed. Nothing for staff to do; the Head may reopen it.
+  const finalRejected = rejected && !!o?.rejectionFinal;
+  const rework = rejected && !head && !finalRejected;
 
   /* Port of delObs. Non-head deletion is a request, not an act — an `observation_delete`
      approval is parked for the Head (the server blocks the direct delete anyway, see
@@ -186,17 +195,22 @@ export default function ObsDetailPage({
             Reassign owner
           </button>
         ) : null}
-        <button className="btn sec sm" type="button"
-          onClick={() => modal.open(<ModalObsDialog auditId={a.id} reportId={r.id} obsId={o.id} />)}>
-          {head ? "Edit" : "Propose edit"}
-        </button>
+        {head || !finalRejected ? (
+          <button className="btn sec sm" type="button"
+            onClick={() => modal.open(<ModalObsDialog auditId={a.id} reportId={r.id} obsId={o.id} />)}>
+            {head || rework ? "Edit" : "Propose edit"}
+          </button>
+        ) : null}
         <button className="btn ghost sm danger" type="button" onClick={requestDelete}>
           {head ? "Delete" : "Request deletion"}
         </button>
         {changePending ? <span className="pill sop-pending-pill">⏳ Change pending approval</span> : null}
       </div>
     ) : null,
-  });
+  },
+  // The title here is always blank, so without these the topbar kept the buttons it had on first
+  // load — still offering Edit after a final rejection, or the old label after a send-back.
+  [o?.id, o?.obsApproval, o?.rejectionFinal, changePending, canEdit]);
 
   if (!a || !r || !o) {
     return (
@@ -220,7 +234,7 @@ export default function ObsDetailPage({
         <div className="obs-detail-badges">
           <CritPill crit={o.criticality} />
           <StatusPill status={o.status} />
-          <ApprovalBadge approval={o.obsApproval} />
+          <ApprovalBadge approval={o.obsApproval} final={!!o.rejectionFinal} />
           {o.isRepeat ? (
             <span className="pill repeat-pill" title={o.repeatOf || "Repeat finding"}>↻ REPEAT</span>
           ) : null}
@@ -244,19 +258,15 @@ export default function ObsDetailPage({
           style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "0 0 16px" }}
         >
           <div style={{ flex: "1 1 260px" }}>
-            <b>Awaiting your approval.</b> Raised by {review.requestedByName || o.raisedByName || "Internal Audit"}
+            <b>Awaiting your approval.</b> {review.resubmitted ? "Sent back after your rejection" : "Raised"} by{" "}
+            {review.requestedByName || o.raisedByName || "Internal Audit"}
             {review.requestedAt ? " on " + fmtDateTime(review.requestedAt) : ""}. Edit it or reassign the
             owner first if needed. It goes on the tracker and to its action owner once you approve it.
           </div>
-          <BusyButton
-            className="btn ghost sm danger"
-            onClick={async () => {
-              await rejectAny(review.id);
-              toast("Observation rejected. The auditor who raised it has been notified.", "success");
-            }}
-          >
+          {/* Opens the reject dialog, which asks what needs changing and confirms on its own. */}
+          <button className="btn ghost sm danger" type="button" onClick={() => void rejectAny(review.id)}>
             Reject
-          </BusyButton>
+          </button>
           <BusyButton
             className="btn sm"
             onClick={async () => {
@@ -266,6 +276,93 @@ export default function ObsDetailPage({
           >
             Approve
           </BusyButton>
+        </div>
+      ) : null}
+
+      {rejected ? (
+        <div
+          className="note"
+          role="region"
+          aria-label="Rejected — sent back for changes"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            flexWrap: "wrap",
+            margin: "0 0 16px",
+            borderLeft: "3px solid var(--crit)",
+          }}
+        >
+          <div style={{ flex: "1 1 260px" }}>
+            <b>{finalRejected ? "Rejected for good" : "Rejected"}</b>
+            {rejection?.decidedByName ? " by " + rejection.decidedByName : ""}
+            {rejection?.decidedAt ? " on " + fmtDateTime(rejection.decidedAt) : ""}.{" "}
+            {finalRejected
+              ? head
+                ? "No further action. Reopen it if Internal Audit should rework it after all."
+                : "No further action is needed."
+              : head
+                ? "Internal Audit can edit it and send it back for your approval, or you can edit it and approve it now."
+                : "Edit it, then send it back to the Head of Audit for approval."}
+            {rejection?.headReason ? (
+              <div style={{ marginTop: 4 }}>
+                <b>{finalRejected ? "Reason:" : "What needs to change:"}</b> {String(rejection.headReason)}
+              </div>
+            ) : null}
+          </div>
+          {finalRejected ? (
+            head ? (
+              <BusyButton
+                className="btn sec sm"
+                onClick={async () => {
+                  if (await reopenRejected(a.id, r.id, o.id))
+                    toast("Reopened. Internal Audit can now edit it and send it back for approval.", "success");
+                }}
+              >
+                Reopen for changes
+              </BusyButton>
+            ) : null
+          ) : (
+          <>
+          <button
+            className="btn sec sm"
+            type="button"
+            onClick={() => modal.open(<ModalObsDialog auditId={a.id} reportId={r.id} obsId={o.id} />)}
+          >
+            Edit
+          </button>
+          {head ? (
+            <BusyButton
+              className="btn sm"
+              onClick={async () => {
+                if (await approveRejected(a.id, r.id, o.id))
+                  toast("Observation approved. It is on the tracker and the action owner has been notified.", "success");
+              }}
+            >
+              Approve
+            </BusyButton>
+          ) : (
+            <BusyButton
+              className="btn sm"
+              onClick={async () => {
+                await loadDirectory(); // the Head is told through the directory cache
+                let sent = false;
+                mutate((d) => {
+                  const curA = (d.audits || []).find((x) => x.id === a.id);
+                  const curR = curA && (curA.reports || []).find((x) => x.id === r.id);
+                  const cur = curR && (curR.observations || []).find((x) => x.id === o.id);
+                  if (!cur || cur.obsApproval !== "rejected") return;
+                  resubmitObs(d, a.id, r.id, cur, user);
+                  sent = true;
+                });
+                if (sent) toast("Sent back to the Head of Audit for approval.", "success");
+              }}
+            >
+              Send back for approval
+            </BusyButton>
+          )}
+          </>
+          )}
         </div>
       ) : null}
 

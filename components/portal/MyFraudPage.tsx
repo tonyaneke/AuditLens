@@ -12,6 +12,9 @@ import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import { Empty, Kpi, TintPill } from "@/components/ui";
 import { headUsers, loadDirectory } from "@/lib/client/directory";
 import { emailNotify } from "@/lib/client/notify";
+import { FilePickMulti, MAX_UPLOAD_BYTES, tooLarge, uploadAllEvidence } from "@/components/audits/attach";
+import { EvidenceLinks, FraudOwnerEvidence, FraudValidationNote } from "@/components/fraud/ValidationNote";
+import { FRAUD_VALIDATED, fraudActionDone, fraudUploadKey } from "@/lib/workspace/fraud";
 import { internalAuditWatcherIds } from "@/lib/workspace/observations";
 import {
   ACTION_STATUS,
@@ -25,7 +28,7 @@ import {
   rollupFraud,
 } from "@/lib/workspace/portal";
 import { BAND_HEX, fmtDateTime } from "@/lib/workspace/selectors";
-import type { FraudRisk } from "@/lib/workspace/types";
+import type { EvidenceFile, FraudRisk } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 
 /* Legacy headUsers(): the notification fan-out targets every Head of Audit account.
@@ -69,7 +72,7 @@ export default function MyFraudPage() {
   // Only the actions this owner is responsible for: all of a risk's actions when the risk
   // itself is theirs, otherwise just the individually-assigned ones.
   const acts = risks.flatMap((f) => myFraudActionsFor(f, user.id).map((a) => ({ f, a })));
-  const impl = acts.filter((x) => x.a.status === "Implemented").length;
+  const impl = acts.filter((x) => fraudActionDone(x.a.status)).length;
   const unmit = acts.length - impl;
   const hiRes = risks.filter((f) => {
     const res = fraudResidualBand(f);
@@ -122,7 +125,7 @@ export default function MyFraudPage() {
       {risks.map((f) => {
         const res = fraudResidualBand(f);
         const A = myFraudActionsFor(f, user.id);
-        const done = A.filter((a) => a.status === "Implemented").length;
+        const done = A.filter((a) => fraudActionDone(a.status)).length;
         const pct = A.length ? Math.round((done / A.length) * 100) : 0;
         return (
           <div className="card anim-fade-in mft-card" key={f.id}>
@@ -167,6 +170,7 @@ export default function MyFraudPage() {
                         {last ? (
                           <div className="mft-update">
                             {last.text}
+                            <EvidenceLinks files={last.evidence} />
                             <div className="mft-update-meta">
                               {last.byName || ""} · {fmtDateTime(last.at)}
                             </div>
@@ -177,17 +181,25 @@ export default function MyFraudPage() {
                             implementation progress.
                           </div>
                         )}
+                        <FraudValidationNote a={a} />
                       </div>
                       <div className="mft-action-side">
-                        <select
-                          className="field-select field-select-sm"
-                          value={a.status || "Planned"}
-                          onChange={(e) => void setStatus(f.id, a.id, e.target.value)}
-                        >
-                          {ACTION_STATUS.map((s) => (
-                            <option key={s}>{s}</option>
-                          ))}
-                        </select>
+                        {/* Validated is Internal Audit's sign-off — the owner can no longer move it. */}
+                        {a.status === FRAUD_VALIDATED ? (
+                          <span className="s-Validated" title="Validated by Internal Audit — status locked">
+                            Validated by IA
+                          </span>
+                        ) : (
+                          <select
+                            className="field-select field-select-sm"
+                            value={a.status || "Planned"}
+                            onChange={(e) => void setStatus(f.id, a.id, e.target.value)}
+                          >
+                            {ACTION_STATUS.map((s) => (
+                              <option key={s}>{s}</option>
+                            ))}
+                          </select>
+                        )}
                         <button className="btn sm" type="button" onClick={() => openUpdate(f, a.id)}>
                           + Post update
                         </button>
@@ -220,6 +232,7 @@ function MyFraudUpdateDialog({ fraudId, actionId }: { fraudId: string; actionId:
 
   const [status, setStatus] = useState<string>(a?.status || "Planned");
   const [text, setText] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
   const [err, setErr] = useState("");
 
   if (!f || !a) return null;
@@ -230,7 +243,19 @@ function MyFraudUpdateDialog({ fraudId, actionId }: { fraudId: string; actionId:
       setErr("Describe the implementation progress before posting.");
       return;
     }
+    const big = tooLarge(files);
+    if (big) {
+      setErr(`"${big.name}" exceeds the ${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} MB limit.`);
+      return;
+    }
     setErr("");
+    let evidence: EvidenceFile[] = [];
+    try {
+      evidence = await uploadAllEvidence(fraudUploadKey(fraudId), files);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Upload failed.");
+      return;
+    }
     const heads = await fetchHeadUsers();
     const watchers = await fetchInternalAuditWatchers();
     let scheme = "";
@@ -249,6 +274,7 @@ function MyFraudUpdateDialog({ fraudId, actionId }: { fraudId: string; actionId:
         byName: user.name || "",
         text: t,
         status: ra.status,
+        ...(evidence.length ? { evidence } : {}),
       });
       ra.update = t; // surfaces on the Fraud Prevention Plan table for Internal Audit
       rollupFraud(rf);
@@ -269,7 +295,7 @@ function MyFraudUpdateDialog({ fraudId, actionId }: { fraudId: string; actionId:
         emailNotify(
           [h.email],
           "AuditLens — fraud control update",
-          `${user.name || "The action owner"} posted an implementation update on the fraud risk "${scheme}".\n\nAction: ${actionText}\nStatus: ${finalStatus}\n\nUpdate: ${t}\n\nSign in to AuditLens to review.`,
+          `${user.name || "The action owner"} posted an implementation update on the fraud risk "${scheme}".\n\nAction: ${actionText}\nStatus: ${finalStatus}\n\nUpdate: ${t}${evidence.length ? `\n\nEvidence attached: ${evidence.map((e) => e.name).join(", ")}` : ""}\n\nSign in to AuditLens to review.`,
         );
     });
     modal.close();
@@ -294,12 +320,21 @@ function MyFraudUpdateDialog({ fraudId, actionId }: { fraudId: string; actionId:
         <b>{a.text}</b>
         <div className="hint" style={{ marginTop: 4 }}>Fraud risk: {f.scheme}</div>
       </div>
-      <label>Status</label>
-      <select value={status} onChange={(e) => setStatus(e.target.value)}>
-        {ACTION_STATUS.map((s) => (
-          <option key={s}>{s}</option>
-        ))}
-      </select>
+      {status === FRAUD_VALIDATED ? (
+        <div className="hint" style={{ marginBottom: 6 }}>
+          Status: <span className="s-Validated">Validated by Internal Audit</span> — locked; you can
+          still post an update.
+        </div>
+      ) : (
+        <>
+          <label>Status</label>
+          <select value={status} onChange={(e) => setStatus(e.target.value)}>
+            {ACTION_STATUS.map((s) => (
+              <option key={s}>{s}</option>
+            ))}
+          </select>
+        </>
+      )}
       <label>What has been done / current progress *</label>
       <textarea
         style={{ minHeight: 110 }}
@@ -307,6 +342,8 @@ function MyFraudUpdateDialog({ fraudId, actionId }: { fraudId: string; actionId:
         onChange={(e) => setText(e.target.value)}
         placeholder="Describe concretely what has been implemented, current progress, and what remains…"
       />
+      <FilePickMulti files={files} onChange={setFiles} label="📎 Attach evidence" />
+      <FraudOwnerEvidence a={a} />
       <div style={{ marginTop: 8 }}>
         {err ? <div className="ai-err">{err}</div> : null}
       </div>

@@ -833,6 +833,32 @@ a {
 .s-Open { color: var(--open); font-weight: 600; }
 .s-InProgress { color: var(--prog); font-weight: 600; }
 .s-Closed { color: var(--closed); font-weight: 600; }
+/* Fraud prevention action validated by Internal Audit — a step past the owner's "Implemented". */
+.s-Validated { color: var(--closed); font-weight: 700; white-space: nowrap; }
+.s-Validated::before { content: "✓ "; }
+.fraud-validation {
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-left: 3px solid var(--closed);
+  background: #f3faf5;
+  border-radius: 0 6px 6px 0;
+  font-size: 12.5px;
+  color: #1c2733;
+  white-space: pre-wrap;
+}
+.fraud-validation .fraud-validation-meta { display: block; margin-top: 3px; font-size: 11.5px; color: var(--muted); }
+/* Files attached to a fraud prevention action (owner evidence / IA working papers). */
+.fraud-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-top: 4px;
+  font-size: 12.5px;
+  white-space: normal;
+}
+.fraud-evidence a { word-break: break-all; }
+.fraud-evidence-label { color: var(--muted); font-weight: 600; }
 
 /* Tables */
 table {
@@ -1465,6 +1491,40 @@ textarea:focus {
   color: var(--muted);
   font-weight: 600;
   background: #fff;
+}
+
+/* Fraud risk register filters: label-over-dropdown cells in one row of five, wrapping to three
+   and then two columns rather than overflowing the card. */
+.fraud-filters {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px 12px;
+  margin: 12px 0 8px;
+}
+
+.fraud-filters .filter-group {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+}
+
+.fraud-filters .field-select-sm {
+  width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 1100px) {
+  .fraud-filters {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .fraud-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .rcrow {

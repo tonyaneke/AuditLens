@@ -4,7 +4,7 @@
 // (fraudBand/residualBand/fraudResidual/fraudList, BANDS/BAND_HEX) already live in selectors.ts.
 
 import { BANDS, fraudBand, fraudList, residualBand, uid } from "./selectors";
-import type { Department, FraudAction, FraudRisk, WorkspaceDb } from "./types";
+import type { Department, EvidenceFile, FraudAction, FraudRisk, WorkspaceDb } from "./types";
 
 /* ---------------- constants (verbatim from audit-bot.js) ---------------- */
 
@@ -18,6 +18,10 @@ export const CTRL_STRENGTH = ["Strong", "Moderate", "Weak", "None"] as const;
 export const FRAUD_STATUS = ["Identified", "Mitigating", "Mitigated"] as const;
 export const ACTION_TYPES = ["Preventive", "Detective", "Corrective"] as const;
 export const ACTION_STATUS = ["Planned", "In Progress", "Implemented"] as const;
+/** Internal Audit's sign-off on an owner's "Implemented" — never offered to action owners, and
+ *  always carries a validation note. */
+export const FRAUD_VALIDATED = "Validated";
+export const IA_ACTION_STATUS = [...ACTION_STATUS, FRAUD_VALIDATED] as const;
 export const LIKE_LABEL = ["", "Rare", "Unlikely", "Possible", "Likely", "Almost certain"] as const;
 export const IMP_LABEL = ["", "Insignificant", "Minor", "Moderate", "Major", "Severe"] as const;
 
@@ -47,7 +51,62 @@ export function fraudActions(f: FraudRisk): FraudAction[] {
 }
 
 export function actStatusClass(s: string | undefined): string {
-  return s === "Implemented" ? "s-Closed" : s === "In Progress" ? "s-InProgress" : "s-Open";
+  return s === FRAUD_VALIDATED
+    ? "s-Validated"
+    : s === "Implemented"
+      ? "s-Closed"
+      : s === "In Progress"
+        ? "s-InProgress"
+        : "s-Open";
+}
+
+/** Implemented by the owner or validated by Internal Audit — either way, no longer outstanding. */
+export function fraudActionDone(status: unknown): boolean {
+  return status === "Implemented" || status === FRAUD_VALIDATED;
+}
+
+/** Mutating (run inside mutate()): record Internal Audit's validation of an action. Files are
+ *  added to any already attached to the validation, never replace them. */
+export function validateFraudAction(
+  a: FraudAction,
+  note: string,
+  by: { id: string; name: string },
+  files: EvidenceFile[] = [],
+): void {
+  a.status = FRAUD_VALIDATED;
+  a.validationNote = note;
+  a.validatedAt = new Date().toISOString();
+  a.validatedBy = by.id;
+  a.validatedByName = by.name;
+  if (files.length) a.validationEvidence = [...(a.validationEvidence || []), ...files];
+}
+
+/** Mutating: withdraw a validation when Internal Audit moves the action off "Validated". */
+export function clearFraudValidation(a: FraudAction): void {
+  delete a.validationNote;
+  delete a.validatedAt;
+  delete a.validatedBy;
+  delete a.validatedByName;
+  delete a.validationEvidence;
+}
+
+/** Every file the owner has attached across their implementation updates, newest first. */
+export function fraudOwnerEvidence(a: FraudAction): EvidenceFile[] {
+  const seen = new Set<string>();
+  const out: EvidenceFile[] = [];
+  for (const u of a.ownerUpdates || []) {
+    for (const e of u.evidence || []) {
+      if (!e?.itemId || seen.has(e.itemId)) continue;
+      seen.add(e.itemId);
+      out.push(e);
+    }
+  }
+  return out;
+}
+
+/** SharePoint folder key for a fraud risk's evidence (uploads group files by record). */
+export function fraudUploadKey(riskId: string): string {
+  return "fraud-" + riskId;
 }
 
 /** Sort rank for a residual band (Low → Extreme). */
@@ -72,9 +131,9 @@ export function residualFor(
 export function rollupFraud(f: FraudRisk): void {
   const a = f.actions || [];
   if (!a.length) return;
-  f.status = a.every((x) => x.status === "Implemented")
+  f.status = a.every((x) => fraudActionDone(x.status))
     ? "Mitigated"
-    : a.some((x) => x.status === "Implemented" || x.status === "In Progress")
+    : a.some((x) => fraudActionDone(x.status) || x.status === "In Progress")
       ? "Mitigating"
       : "Identified";
 }
@@ -82,9 +141,9 @@ export function rollupFraud(f: FraudRisk): void {
 function rolledUpStatus(f: FraudRisk): string | undefined {
   const a = f.actions || [];
   if (!a.length) return f.status;
-  return a.every((x) => x.status === "Implemented")
+  return a.every((x) => fraudActionDone(x.status))
     ? "Mitigated"
-    : a.some((x) => x.status === "Implemented" || x.status === "In Progress")
+    : a.some((x) => fraudActionDone(x.status) || x.status === "In Progress")
       ? "Mitigating"
       : "Identified";
 }
@@ -120,14 +179,57 @@ export function migrateFraudActions(db: WorkspaceDb): void {
 
 /* ---------------- enriched view model ---------------- */
 
-export type FraudView = FraudRisk & { inh: string; res: string; score: number };
+/**
+ * Where a risk sits on the likelihood × impact grid after controls. Only a residual BAND is
+ * recorded (inherent band stepped down by control strength, or a manual override), so this picks
+ * the cell of that band nearest the inherent rating: impact is held wherever the band allows and
+ * the reduction is taken in likelihood, since anti-fraud controls mainly make a scheme less likely
+ * rather than less damaging. A risk whose controls don't change its band stays on its inherent
+ * cell, and the cell's colour always matches the residual band shown in the register.
+ */
+export function residualCell(
+  likelihood: number,
+  impact: number,
+  band: string,
+): { likelihood: number; impact: number } {
+  let best = { likelihood, impact };
+  let bestCost = Infinity;
+  for (let i = 1; i <= 5; i++) {
+    for (let l = 1; l <= 5; l++) {
+      if (fraudBand(l * i) !== band) continue;
+      // An impact step always costs more than any likelihood move (|ΔL| ≤ 4).
+      const cost = Math.abs(impact - i) * 10 + Math.abs(likelihood - l);
+      if (cost < bestCost) {
+        bestCost = cost;
+        best = { likelihood: l, impact: i };
+      }
+    }
+  }
+  return best;
+}
 
-/** Register enriched with inherent band, residual band and L×I score (legacy `en`). */
+export type FraudView = FraudRisk & {
+  inh: string;
+  res: string;
+  score: number;
+  resLikelihood: number;
+  resImpact: number;
+};
+
+/** Register enriched with inherent band, residual band, L×I score and residual grid cell (legacy `en`). */
 export function fraudEnriched(db: WorkspaceDb): FraudView[] {
   return fraudList(db).map((f) => {
     const inh = fraudBand(f.likelihood * f.impact);
     const res = f.residualOverride || residualBand(inh, f.controlStrength);
-    return { ...f, inh, res, score: f.likelihood * f.impact };
+    const rc = residualCell(f.likelihood, f.impact, res);
+    return {
+      ...f,
+      inh,
+      res,
+      score: f.likelihood * f.impact,
+      resLikelihood: rc.likelihood,
+      resImpact: rc.impact,
+    };
   });
 }
 

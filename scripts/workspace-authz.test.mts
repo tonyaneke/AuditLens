@@ -287,6 +287,93 @@ console.log("\n== Staff may reassign observation owners, but action owners canno
   ok(rOwner.violations.includes("obs_field:o1:ownerUserId"), "owner reassignment violation recorded");
 }
 
+/* A rejected raise is sent back to Internal Audit for rework: staff may rewrite it and resubmit it,
+   but may not decide it themselves. Built from the served document, as a real client save is. */
+console.log("\n== Staff may rework and resubmit a REJECTED observation, nothing more ==");
+{
+  const rejected = () => {
+    const w = baseWorkspace();
+    Object.assign(w.audits[0].reports[0].observations[0], { obsApproval: "rejected", ref: "7.1" });
+    return w;
+  };
+
+  // Rewrite + resubmit in one save — the "Save & send back for approval" button.
+  const cur = rejected();
+  const inc = clone(slimForClient(cur, { id: STAFF2.id, role: "audit_staff" }));
+  const o = inc.audits[0].reports[0].observations[0];
+  o.title = "Weak SoD in disbursement";
+  o.description = "reworked desc";
+  o.criticality = "Moderate";
+  o.obsApproval = "pending";
+  inc.approvals.push({ id: "apRe", kind: "observation_raise", obsId: "o1", auditId: "a1", reportId: "r1", status: "pending", requestedBy: STAFF2.id });
+  const r = authorizeWorkspaceWrite(STAFF2.role, STAFF2.id, cur, inc);
+  const out = findObs(r.data, "o1");
+  ok(out.title === "Weak SoD in disbursement", "staff may rewrite a rejected observation's title");
+  ok(out.description === "reworked desc" && out.criticality === "Moderate", "…and its content");
+  ok(out.obsApproval === "pending", "staff may send it back for approval (rejected → pending)");
+  ok(r.data.approvals.some((a: any) => a.id === "apRe" && a.status === "pending"), "the new raise request is queued");
+  ok(!r.violations.some((v) => v.startsWith("obs_field:o1")), "no field violations for a legitimate rework");
+
+  // A rework save may not decide, close or re-reference it.
+  const inc2 = clone(slimForClient(cur, { id: STAFF.id, role: "audit_staff" }));
+  const o2 = inc2.audits[0].reports[0].observations[0];
+  o2.obsApproval = "approved";
+  o2.status = "Closed";
+  o2.ref = "1.1";
+  const r2 = authorizeWorkspaceWrite(STAFF.role, STAFF.id, cur, inc2);
+  const out2 = findObs(r2.data, "o1");
+  ok(out2.obsApproval === "rejected", "staff cannot approve a rejected observation");
+  ok(out2.status === "Open", "staff cannot close a rejected observation");
+  ok(out2.ref === "7.1", "the reference stays system-assigned");
+  ok(r2.violations.includes("obs_field:o1:obsApproval"), "self-approval violation recorded");
+
+  // The rework allowance is about the STORED rejection — a pending or approved one stays locked.
+  for (const stored of ["pending", "approved"]) {
+    const c = baseWorkspace();
+    c.audits[0].reports[0].observations[0].obsApproval = stored;
+    const i = clone(slimForClient(c, { id: STAFF.id, role: "audit_staff" }));
+    i.audits[0].reports[0].observations[0].title = "Sneaky edit";
+    const rr = authorizeWorkspaceWrite(STAFF.role, STAFF.id, c, i);
+    ok(findObs(rr.data, "o1").title === "Weak SoD", `${stored === "approved" ? "an" : "a"} ${stored} observation's title stays locked for staff`);
+  }
+
+  // Action owners never get the rework allowance (they cannot even see a rejected raise).
+  const r3 = authorizeWorkspaceWrite(OWNER.role, OWNER.id, cur, (() => {
+    const i = clone(cur);
+    i.audits[0].reports[0].observations[0].title = "Owner rewrite";
+    i.audits[0].reports[0].observations[0].obsApproval = "pending";
+    return i;
+  })());
+  ok(findObs(r3.data, "o1").title === "Weak SoD" && findObs(r3.data, "o1").obsApproval === "rejected", "an action owner cannot rework or resubmit");
+
+  // Rejected FOR GOOD: closed — no rework, no resubmit, and staff cannot lift the finality.
+  const fin = rejected();
+  fin.audits[0].reports[0].observations[0].rejectionFinal = true;
+  const i4 = clone(slimForClient(fin, { id: STAFF.id, role: "audit_staff" }));
+  const o4 = i4.audits[0].reports[0].observations[0];
+  o4.title = "Rewritten anyway";
+  o4.obsApproval = "pending";
+  delete o4.rejectionFinal;
+  const r4 = authorizeWorkspaceWrite(STAFF.role, STAFF.id, fin, i4);
+  const out4 = findObs(r4.data, "o1");
+  ok(out4.title === "Weak SoD", "a finally rejected observation cannot be reworked");
+  ok(out4.obsApproval === "rejected", "…or sent back for approval");
+  ok(out4.rejectionFinal === true, "…and staff cannot lift the final rejection");
+  ok(r4.violations.includes("obs_field:o1:rejectionFinal"), "lifting it is recorded as a violation");
+
+  // Nor can staff close a sent-back rejection for good on the Head's behalf.
+  const i5 = clone(slimForClient(cur, { id: STAFF.id, role: "audit_staff" }));
+  i5.audits[0].reports[0].observations[0].rejectionFinal = true;
+  const r5 = authorizeWorkspaceWrite(STAFF.role, STAFF.id, cur, i5);
+  ok(findObs(r5.data, "o1").rejectionFinal === undefined, "staff cannot make a rejection final");
+
+  // The Head can do either.
+  const i6 = clone(fin);
+  i6.audits[0].reports[0].observations[0].rejectionFinal = false;
+  const r6 = authorizeWorkspaceWrite(HEAD.role, HEAD.id, fin, i6);
+  ok(findObs(r6.data, "o1").rejectionFinal === false, "the Head can reopen a final rejection for changes");
+}
+
 console.log("\n== Staff may raise a NEW observation but it is forced to pending ==");
 {
   const cur = baseWorkspace(); const inc = clone(cur);
@@ -584,6 +671,71 @@ console.log("\n== SEC-01: echoing back a record that was never served is refused
   ok(r.violations.includes("out_of_scope_write:obs:o2"), "out-of-scope observation write recorded");
   ok(r.violations.includes("out_of_scope_write:ext:e2"), "out-of-scope external write recorded");
   ok(r.violations.includes("out_of_scope_write:fraud:f2"), "out-of-scope fraud write recorded");
+}
+
+console.log("\n== Fraud: owners report progress, only Internal Audit validates ==");
+{
+  const validated = {
+    status: "Validated", validationNote: "Sampled 10 reconciliations", validatedBy: "staff1",
+    validatedByName: "Ada", validatedAt: "2026-09-29T09:00:00.000Z",
+  };
+  const ownerSave = (cur: any, edit: (act: any) => void) => {
+    const served = clone(scopeWorkspace(cur, { id: OWNER.id, role: "action_owner" }));
+    edit(findRisk(served, "f1").actions[0]);
+    return authorizeWorkspaceWrite(OWNER.role, OWNER.id, cur, served);
+  };
+
+  // The ordinary portal save: the owner marks their action Implemented.
+  let r = ownerSave(baseWorkspace(), (a) => (a.status = "Implemented"));
+  ok(r.violations.length === 0, `marking Implemented logs no violation (got ${JSON.stringify(r.violations)})`);
+  ok(findRisk(r.data, "f1").actions[0].status === "Implemented", "the owner's Implemented persists");
+  ok(findRisk(r.data, "f1").status === "Mitigated", "the roll-up is derived server-side");
+
+  // A crafted save: the owner validates their own action.
+  let cur = baseWorkspace(); cur.fraudRisks[0].actions[0].status = "Implemented";
+  r = ownerSave(cur, (a) => Object.assign(a, validated, { validationNote: "Self-certified", validatedBy: "own1" }));
+  let act = findRisk(r.data, "f1").actions[0];
+  ok(act.status === "Implemented", "an owner cannot validate their own action");
+  ok(act.validationNote === undefined && act.validatedBy === undefined, "the validation note and stamps are not owner-writable");
+  ok(r.violations.includes("fraud_validate_blocked:f1:fa1"), "the self-validation attempt is recorded");
+
+  // Internal Audit has validated; the owner tries to move it back.
+  cur = baseWorkspace(); Object.assign(cur.fraudRisks[0].actions[0], validated); cur.fraudRisks[0].status = "Mitigated";
+  r = ownerSave(cur, (a) => {
+    a.status = "In Progress";
+    a.validationNote = "";
+    a.update = "Adding a second reviewer";
+  });
+  act = findRisk(r.data, "f1").actions[0];
+  ok(act.status === "Validated", "an owner cannot move an action Internal Audit validated");
+  ok(act.validationNote === "Sampled 10 reconciliations", "IA's validation note is untouched");
+  ok(act.update === "Adding a second reviewer", "the owner can still post an update on a validated action");
+  ok(findRisk(r.data, "f1").status === "Mitigated", "a validated action counts as done in the roll-up");
+  ok(r.violations.includes("fraud_validate_blocked:f1:fa1"), "the attempt to un-validate is recorded");
+
+  // Evidence: the owner's files ride on their own update; IA's working papers stay IA's.
+  const file = { itemId: "sp-1", name: "recon-aug.pdf", size: 1200 };
+  r = ownerSave(baseWorkspace(), (a) => {
+    a.status = "Implemented";
+    a.ownerUpdates = [{ at: "2026-09-29T10:00:00.000Z", by: "own1", byName: "Ola", text: "Done", evidence: [file] }];
+    a.validationEvidence = [{ itemId: "sp-forged", name: "forged.pdf" }];
+  });
+  act = findRisk(r.data, "f1").actions[0];
+  ok(act.ownerUpdates?.[0]?.evidence?.[0]?.itemId === "sp-1", "an owner can attach evidence to their update");
+  ok(act.validationEvidence === undefined, "an owner cannot attach files to IA's validation");
+
+  // An untouched validated action round-trips through the owner's save cleanly.
+  r = ownerSave(cur, () => {});
+  ok(r.violations.length === 0, `a validated action round-trips with no violation (got ${JSON.stringify(r.violations)})`);
+
+  // Audit staff validate (from the slimmed document a staff client is actually served).
+  cur = baseWorkspace(); cur.fraudRisks[0].actions[0].status = "Implemented";
+  const inc = clone(slimForClient(cur, { id: STAFF.id, role: "audit_staff" }));
+  Object.assign(findRisk(inc, "f1").actions[0], validated);
+  r = authorizeWorkspaceWrite(STAFF.role, STAFF.id, cur, inc);
+  act = findRisk(r.data, "f1").actions[0];
+  ok(act.status === "Validated" && act.validationNote === "Sampled 10 reconciliations", "audit staff can validate with a note");
+  ok(r.violations.length === 0, "staff validation logs no violation");
 }
 
 console.log("\n== SEC-02: external findings are no longer taken wholesale ==");

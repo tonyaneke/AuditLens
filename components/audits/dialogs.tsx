@@ -64,7 +64,8 @@ import {
   type AiObsDraft,
   type RepeatCandidate,
 } from "@/lib/workspace/observations";
-import { CRITS, RUBRIC, STATUSES, approvals, expectedClose, fmtDate, isoNow, obsIsApproved, reportDateOf, uid } from "@/lib/workspace/selectors";
+import { lastRaiseRejection, resubmitObs } from "@/lib/workspace/approvals";
+import { CRITS, RUBRIC, STATUSES, approvals, expectedClose, fmtDate, isoNow, isoToDate, obsIsApproved, reportDateOf, uid } from "@/lib/workspace/selectors";
 import type { Audit, AuditTest, AuditPlan, Criticality, EvidenceFile, Observation, Report, WorkspaceDb } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 import { FilePickMulti, MAX_UPLOAD_BYTES, tooLarge, uploadAllEvidence } from "./attach";
@@ -1902,6 +1903,11 @@ export function ModalObsDialog({
      made while this form is open is not overwritten by the name it opened with. */
   const ownerAssigned = !!o.ownerUserId;
   const ownerShown = ownerAssigned ? String(o.owner || "") : owner;
+  /* A rejected raise is sent back to Internal Audit for rework: it was never published, so staff
+     edit it directly (the server allows its content — STAFF_REWORK_FIELDS in
+     lib/workspace-authz.ts) and then send it back, rather than proposing an edit to a draft. */
+  const rework = !head && o.obsApproval === "rejected" && !o.rejectionFinal;
+  const rejection = rework ? lastRaiseRejection(db, o.id) : undefined;
 
   const base = reportDateOf(r);
   const ec = expectedClose({ ...o, timeline: tl }, r);
@@ -1962,7 +1968,7 @@ Management's current draft response: ${mgmt || "(none provided — draft an appr
     setFlagged(repLabel(c));
   }
 
-  function save() {
+  async function save(sendBack = false) {
     if (!o) return;
     if (!title.trim()) {
       toast("Title required.", "error");
@@ -2007,6 +2013,27 @@ Management's current draft response: ${mgmt || "(none provided — draft an appr
     // Left out rather than sent unchanged: a staff proposal is a snapshot, and approving it later
     // must not put back the name from before a reassignment made in between.
     if (ownerAssigned) delete data.owner;
+    // Both staff paths tell the Head, whose address resolves through the directory cache — an
+    // unwarmed cache means nobody is told. Loaded before mutate: never read db across an await.
+    if (!head) await loadDirectory();
+
+    if (rework) {
+      // Content only. Status and closure are the Head's; the server would put them back anyway.
+      for (const k of ["ref", "status", "closedDateISO", "verifiedBy", "closureEvidence", "closureNote"] as const)
+        delete data[k];
+      mutate((d) => {
+        const cur = findObsIn(d, auditId, reportId, obsId);
+        if (!cur) return;
+        Object.assign(cur, data);
+        if (sendBack) resubmitObs(d, auditId, reportId, cur, user);
+      });
+      modal.close();
+      toast(
+        sendBack ? "Sent back to the Head of Audit for approval." : "Saved. Send it back for approval when it is ready.",
+        "success",
+      );
+      return;
+    }
 
     if (!head) {
       // Audit staff cannot edit an observation directly — the full proposed change is
@@ -2053,19 +2080,40 @@ Management's current draft response: ${mgmt || "(none provided — draft an appr
           <button className="btn sec" type="button" onClick={modal.close}>
             Cancel
           </button>
-          <button className="btn" type="button" onClick={save}>
+          <button className={rework ? "btn sec" : "btn"} type="button" onClick={() => void save()}>
             Save
           </button>
+          {rework ? (
+            <button className="btn" type="button" onClick={() => void save(true)}>
+              Save &amp; send back for approval
+            </button>
+          ) : null}
         </>
       }
     >
-      {/* Editing is how the Head corrects a raise under review — the alternative was rejecting it,
-          which hides it for good. It is still off the tracker until approved, so say so. */}
+      {/* Editing is how the Head corrects a raise under review instead of rejecting it. It is
+          still off the tracker until approved, so say so. */}
       {head && o.obsApproval === "pending" ? (
         <div className="note" style={{ marginBottom: 10 }}>
           Raised by <b>{o.raisedByName || "Internal Audit"}</b> and awaiting your approval. Your edits
           apply straight away, but the observation only goes on the tracker and to its action owner
           once you approve it.
+        </div>
+      ) : null}
+      {rework ? (
+        <div className="note" style={{ marginBottom: 10, borderLeft: "3px solid var(--crit)" }}>
+          <b>Rejected</b>
+          {rejection?.decidedByName ? " by " + rejection.decidedByName : " by the Head of Audit"}
+          {rejection?.decidedAt ? " on " + fmtDate(isoToDate(rejection.decidedAt)) : ""}.
+          {rejection?.headReason ? (
+            <div style={{ marginTop: 4 }}>
+              <b>What needs to change:</b> {String(rejection.headReason)}
+            </div>
+          ) : null}
+          <div style={{ marginTop: 4 }}>
+            Make the changes, then <b>send it back for approval</b>. It stays off the tracker until the
+            Head approves it.
+          </div>
         </div>
       ) : null}
       <div className="f3">
@@ -2092,7 +2140,12 @@ Management's current draft response: ${mgmt || "(none provided — draft an appr
         </div>
         <div>
           <label>Status</label>
-          <select value={status} onChange={(e) => setStatus(e.target.value)}>
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            disabled={rework}
+            title={rework ? "Set by the Head of Audit once the observation is approved" : undefined}
+          >
             {STATUSES.map((s) => (
               <option key={s}>{s}</option>
             ))}

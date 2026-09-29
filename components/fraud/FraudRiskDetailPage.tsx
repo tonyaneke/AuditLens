@@ -13,7 +13,7 @@ import { useModal } from "@/components/modals/ModalProvider";
 import RichText from "@/components/ui/RichText";
 import { TintPill } from "@/components/ui";
 import { canManageFraudRegister } from "@/lib/workspace/observations";
-import { rollupFraud } from "@/lib/workspace/fraud";
+import { FRAUD_VALIDATED, actStatusClass, fraudActionDone, rollupFraud } from "@/lib/workspace/fraud";
 import { fraudActionsView } from "@/lib/workspace/portal";
 import {
   BAND_HEX,
@@ -23,7 +23,8 @@ import {
   hx2rgba,
 } from "@/lib/workspace/selectors";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
-import { FraudActionDialog, FraudDialog } from "./lazy";
+import { FraudActionDialog, FraudDialog, ValidateFraudActionDialog } from "./lazy";
+import { FraudOwnerEvidence, FraudValidationNote } from "./ValidationNote";
 
 function DetailSection({ title, text }: { title: string; text: unknown }) {
   if (!text) return null;
@@ -126,7 +127,8 @@ export default function FraudRiskDetailPage({ riskId }: { riskId: string }) {
   const inh = fraudBand(score);
   const res = fraudResidual(f);
   const acts = fraudActionsView(f);
-  const implN = acts.filter((a) => a.status === "Implemented").length;
+  const implN = acts.filter((a) => fraudActionDone(a.status)).length;
+  const validatedN = acts.filter((a) => a.status === FRAUD_VALIDATED).length;
 
   const meta: [string, React.ReactNode][] = [
     ["Category", f.category || "—"],
@@ -178,7 +180,8 @@ export default function FraudRiskDetailPage({ riskId }: { riskId: string }) {
       <div className="obs-notes">
         <div className="row" style={{ alignItems: "center", gap: 8 }}>
           <div className="obs-notes-label" style={{ margin: 0 }}>
-            Prevention actions{acts.length ? ` — ${implN}/${acts.length} implemented` : ""}
+            Prevention actions
+            {acts.length ? ` — ${implN}/${acts.length} implemented · ${validatedN} validated` : ""}
           </div>
           <div className="spacer" />
           {canManage ? (
@@ -198,7 +201,9 @@ export default function FraudRiskDetailPage({ riskId }: { riskId: string }) {
                 <b>{a.text}</b>
               </div>
               <div className="obs-note-meta">
-                {[a.type, a.status, a.owner, a.targetDate ? "target " + a.targetDate : ""]
+                <span className={actStatusClass(a.status)}>{a.status || "Planned"}</span>
+                {" · "}
+                {[a.type, a.owner, a.targetDate ? "target " + a.targetDate : ""]
                   .filter(Boolean)
                   .join(" · ")}
               </div>
@@ -207,9 +212,20 @@ export default function FraudRiskDetailPage({ riskId }: { riskId: string }) {
                   {a.update}
                 </div>
               ) : null}
+              <FraudOwnerEvidence a={a} />
+              <FraudValidationNote a={a} />
               <div className="row" style={{ gap: 6, marginTop: 8 }}>
                 {canManage ? (
                   <>
+                    {a.status === "Implemented" ? (
+                      <button
+                        className="btn sm"
+                        type="button"
+                        onClick={() => modal.open(<ValidateFraudActionDialog riskId={f.id} actionId={a.id} />)}
+                      >
+                        Validate
+                      </button>
+                    ) : null}
                     <button
                       className="btn ghost sm"
                       type="button"

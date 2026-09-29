@@ -1,5 +1,6 @@
 import type { WorkspaceDb } from "./db-data";
 import { slimForClient } from "./workspace-payload";
+import { FRAUD_VALIDATED, fraudActionDone } from "./workspace/fraud";
 import {
   canSeeExt,
   canSeeFraudAction,
@@ -76,7 +77,9 @@ const AUDITOR_VERIFY_FIELDS = [
 ];
 
 // The implementation-progress surface of a fraud prevention action — what an assigned action
-// owner reports back on. Everything else about a risk/action is IA-managed.
+// owner reports back on, including the evidence files attached to each ownerUpdates entry.
+// Everything else about a risk/action is IA-managed, including the "Validated" status and its
+// note and working papers (see reconcileFraudRisks).
 const OWNER_FRAUD_ACTION_FIELDS = ["status", "update", "ownerUpdates"];
 
 /* The remediation surface of an external / regulatory finding — the mirror of
@@ -103,7 +106,7 @@ const CONTROLLED_OBS_FIELDS = [
   "ref", "title", "category", "description", "criteria", "risk", "rootCause", "recommendation",
   "sopUpdate", "criticality", "managementResponse", "timeline", "dueDate", "isRepeat", "repeatOf",
   "owner", "ownerUserId", "departmentId", "secondaryOwner", "secondaryOwnerUserId",
-  "status", "closedDateISO", "withdrawn", "withdrawnAt", "obsApproval",
+  "status", "closedDateISO", "withdrawn", "withdrawnAt", "obsApproval", "rejectionFinal",
   "headVerifiedAt", "headVerifiedByName", "headComment", "closureRejection",
 ];
 // Also locked for action owners: only auditors/head verify remediation or request updates.
@@ -117,6 +120,16 @@ const AUDITOR_ONLY_OBS_FIELDS = [
 // Controlled fields that audit staff may update directly to reassign an observation.
 const STAFF_REASSIGN_FIELDS = new Set([
   "owner", "ownerUserId", "departmentId", "secondaryOwner", "secondaryOwnerUserId", "dueDate",
+]);
+/* A raise the Head REJECTED is sent back to Internal Audit for rework, not killed: staff may
+   rewrite its content and resubmit it (rejected → pending). It was never published — owners
+   cannot see it (canSeeObs) — so this is still their draft, not a live finding. Everything that
+   is a decision stays locked: status, closure, withdrawal, and any obsApproval other than the
+   one resubmit step. `ref` stays system-assigned. A rejection the Head made FINAL
+   (`rejectionFinal`, head-only) is closed: no rework and no resubmit. */
+const STAFF_REWORK_FIELDS = new Set([
+  "title", "category", "description", "criteria", "risk", "rootCause", "recommendation",
+  "sopUpdate", "criticality", "managementResponse", "timeline", "isRepeat", "repeatOf",
 ]);
 const WITHDRAWAL_HEAD_FIELDS = ["headBy", "headByName", "headAt", "headReason"];
 const WITHDRAWAL_FINAL_STAGES = ["withdrawn", "rejected"];
@@ -475,11 +488,18 @@ function reconcileOneObs(
      security.workspace_write_filtered on every genuine verification. The value is still forced
      back here and re-applied by the derived transition below; only the false alarm is dropped. */
   const verifying = justVerified(cur, inc, role, auditor);
+  // Judged on the STORED approval, so one save cannot reject-then-rewrite its way past the lock.
+  const reworking = role === STAFF_ROLE && cur.obsApproval === "rejected" && !cur.rejectionFinal;
   for (const f of CONTROLLED_OBS_FIELDS) {
     const excused = verifying && f === "closedDateISO";
     const staffReassign = role === STAFF_ROLE && STAFF_REASSIGN_FIELDS.has(f);
-    if (staffReassign) {
+    const staffRework = reworking && STAFF_REWORK_FIELDS.has(f);
+    if (staffReassign || staffRework) {
       forceField(next, f, inc[f]);
+      continue;
+    }
+    if (reworking && f === "obsApproval" && inc[f] === "pending") {
+      forceField(next, f, "pending"); // resubmitted for the Head's approval
       continue;
     }
     if (!excused && !jsonEq(inc[f], cur[f])) violations.push(`obs_field:${cur.id}:${f}`);
@@ -616,15 +636,25 @@ function reconcileFraudRisks(
       if (!ownsRisk && curA.ownerUserId !== userId) return curA; // not theirs — fully locked
       const outA = { ...curA };
       for (const f of OWNER_FRAUD_ACTION_FIELDS) forceField(outA, f, incA[f]);
+      /* "Validated" is Internal Audit's sign-off on the owner's "Implemented": the owner can
+         neither award it to their own action nor move one IA has validated. The validation
+         note and stamps are not owner fields, so they already stay as stored. */
+      if (
+        (curA.status === FRAUD_VALIDATED || incA.status === FRAUD_VALIDATED) &&
+        !jsonEq(incA.status, curA.status)
+      ) {
+        violations.push(`fraud_validate_blocked:${curF.id}:${curA.id}`);
+        forceField(outA, "status", curA.status);
+      }
       return outA;
     });
     // Risk metadata stays stored; the overall status is re-derived from the reconciled
     // actions server-side (rollupFraud), never taken from the client.
     const outF: Obj = { ...curF, actions };
     if (actions.length) {
-      outF.status = actions.every((a) => a.status === "Implemented")
+      outF.status = actions.every((a) => fraudActionDone(a.status))
         ? "Mitigated"
-        : actions.some((a) => a.status === "Implemented" || a.status === "In Progress")
+        : actions.some((a) => fraudActionDone(a.status) || a.status === "In Progress")
           ? "Mitigating"
           : "Identified";
     }

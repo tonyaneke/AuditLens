@@ -132,6 +132,7 @@ export const ACTION_GROUPS: ActionGroup[] = [
       ["fraud.action_edited", "Prevention action edited"],
       ["fraud.action_assigned", "Prevention action assigned"],
       ["fraud.action_status_updated", "Prevention action status changed"],
+      ["fraud.action_validated", "Prevention action validated by IA"],
       ["fraud.action_update", "Implementation update posted"],
       ["fraud.action_deleted", "Prevention action deleted"],
       ["fraud.plan_updated", "Fraud plan narrative updated"],

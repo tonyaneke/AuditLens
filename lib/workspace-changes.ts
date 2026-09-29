@@ -207,7 +207,7 @@ const LABELS: Readonly<Record<string, string>> = {
   ownerResponseEvidence: "owner's evidence", closureNote: "closure note",
   closureEvidence: "closure evidence", closureFile: "closure file", closureFiles: "closure evidence",
   closedDateISO: "closure date", closureDate: "closure date", sourceRef: "source reference",
-  targetDate: "target date", obsApproval: "approval", withdrawal: "withdrawal request",
+  targetDate: "target date", obsApproval: "approval", rejectionFinal: "final rejection", withdrawal: "withdrawal request",
   raisedBy: "raised by (account)", raisedByName: "raised by", raisedAt: "raised on",
   ownerRectifiedBy: "responded by (account)", ownerRectifiedByName: "responded by",
   ownerRectifiedAt: "response submitted", reportVerifiedBy: "verified by (account)",
@@ -227,7 +227,7 @@ const LABELS: Readonly<Record<string, string>> = {
   // fraud
   existingControls: "existing controls", controlStrength: "control strength",
   residualOverride: "residual rating override", preventionAction: "prevention action",
-  text: "action",
+  text: "action", validationNote: "IA validation note", validationEvidence: "IA validation files",
   // annual plan
   factors: "risk factors", lastAudited: "last audited", plannedPeriod: "planned period",
   includeInPlan: "include in plan", engStatus: "engagement status", occDone: "quarters done",
@@ -278,6 +278,11 @@ function itemName(o: Obj): string {
 function excerpt(v: unknown, n = 140): string {
   const s = clip(str(v), n);
   return s ? `: ${quoted(s)}` : "";
+}
+
+/** " — 2 files attached", or nothing. */
+function attached(files: unknown[]): string {
+  return files.length ? ` — ${plural(files.length, "file")} attached` : "";
 }
 
 function paren(parts: unknown[]): string {
@@ -676,12 +681,29 @@ function itemUpdated(
   const cleared = (f: string) => changed.has(f) && !isBlank(b[f]) && isBlank(a[f]);
 
   // The Head deciding on an observation Internal Audit raised for approval.
+  // A rejection either sends the raise back for changes or, with rejectionFinal, closes it.
   if (changed.has("obsApproval")) {
     const to = str(a.obsApproval);
     if (to === "approved") push("approved", `Approved ${kind.noun} ${name}${where}`);
-    else if (to === "rejected") push("rejected", `Rejected ${kind.noun} ${name}${where}`);
+    else if (to === "rejected")
+      push(
+        "rejected",
+        a.rejectionFinal === true
+          ? `Rejected ${kind.noun} ${name}${where} for good — no further action`
+          : `Rejected ${kind.noun} ${name}${where} and sent it back for changes`,
+      );
     else if (to === "pending") push("raise_requested", `Resubmitted ${kind.noun} ${name} for the Head's approval${where}`);
-    if (to === "approved" || to === "rejected" || to === "pending") claim("obsApproval");
+    if (to === "approved" || to === "rejected" || to === "pending") claim("obsApproval", "rejectionFinal");
+  }
+  // The Head revisiting an existing rejection (reopening it for changes) without re-deciding it.
+  if (changed.has("rejectionFinal")) {
+    push(
+      "edited",
+      a.rejectionFinal === true
+        ? `Closed the rejected ${kind.noun} ${name}${where} — no further action`
+        : `Reopened the rejected ${kind.noun} ${name}${where} for changes`,
+    );
+    claim("rejectionFinal");
   }
 
   // Withdrawal: owner asks → Internal Audit forwards or declines → the Head decides. A note edited
@@ -941,22 +963,37 @@ function diffFraudActions(prev: Obj, risk: Obj, riskName: string, meta: Obj, out
       changed.delete("owner");
       changed.delete("ownerUserId");
     }
+    // Who/when of an IA validation are bookkeeping for the entry below, not edits in their own
+    // right; the note travels with the status change that awards or withdraws the validation.
+    for (const f of ["validatedAt", "validatedBy", "validatedByName"]) changed.delete(f);
     if (changed.has("status")) {
-      out.push({
-        action: "fraud.action_status_updated",
-        summary: `Changed the status of prevention action ${name} (${riskName}): ${show(was.status)} → ${show(act.status)}`,
-        metadata: m,
-      });
+      changed.delete("validationNote");
+      changed.delete("validationEvidence");
+      if (str(act.status) === "Validated") {
+        const files = arr(act.validationEvidence);
+        out.push({
+          action: "fraud.action_validated",
+          summary: `Validated prevention action ${name} (${riskName})${excerpt(act.validationNote)}${attached(files)}`,
+          metadata: { ...m, note: detail(act.validationNote), ...(files.length ? { files: detail(files) } : {}) },
+        });
+      } else {
+        out.push({
+          action: "fraud.action_status_updated",
+          summary: `Changed the status of prevention action ${name} (${riskName}): ${show(was.status)} → ${show(act.status)}`,
+          metadata: m,
+        });
+      }
       changed.delete("status");
     }
     if (changed.has("ownerUpdates") || changed.has("update")) {
       const seen = new Set(arr(was.ownerUpdates).map((u) => `${str(u.at)}|${str(u.by)}`));
       const fresh = arr(act.ownerUpdates).filter((u) => !seen.has(`${str(u.at)}|${str(u.by)}`));
       const text = fresh.length ? fresh[fresh.length - 1].text : act.update;
+      const files = fresh.flatMap((u) => arr(u.evidence));
       out.push({
         action: "fraud.action_update",
-        summary: `Posted an implementation update on prevention action ${name} (${riskName})${excerpt(text)}`,
-        metadata: { ...m, update: detail(text) },
+        summary: `Posted an implementation update on prevention action ${name} (${riskName})${excerpt(text)}${attached(files)}`,
+        metadata: { ...m, update: detail(text), ...(files.length ? { files: detail(files) } : {}) },
       });
       changed.delete("ownerUpdates");
       changed.delete("update");

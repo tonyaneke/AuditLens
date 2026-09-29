@@ -16,6 +16,7 @@ import {
   withdrawnObsAll,
   type ObsWithContext,
 } from "./selectors";
+import { fraudActionDone } from "./fraud";
 import type { ExtFinding, FraudAction, FraudRisk, Observation, WorkspaceDb } from "./types";
 
 /* ---------------- constants (verbatim from audit-bot.js) ---------------- */
@@ -158,10 +159,10 @@ export function myExtPendingCount(db: WorkspaceDb, user: PortalUser | undefined)
   ).length;
 }
 
-/** Fraud prevention actions this owner has not implemented yet. */
+/** Fraud prevention actions this owner has not implemented (or had validated) yet. */
 export function myFraudPendingCount(db: WorkspaceDb, userId: string | undefined): number {
   return myFraudRisks(db, userId).reduce(
-    (n, f) => n + myFraudActionsFor(f, userId).filter((a) => a.status !== "Implemented").length,
+    (n, f) => n + myFraudActionsFor(f, userId).filter((a) => !fraudActionDone(a.status)).length,
     0,
   );
 }
@@ -215,9 +216,9 @@ export function fraudActionsView(f: FraudRisk): FraudAction[] {
 export function fraudRollupStatus(f: FraudRisk): string {
   const a = fraudActionsView(f);
   if (!a.length) return f.status || "Identified";
-  return a.every((x) => x.status === "Implemented")
+  return a.every((x) => fraudActionDone(x.status))
     ? "Mitigated"
-    : a.some((x) => x.status === "Implemented" || x.status === "In Progress")
+    : a.some((x) => fraudActionDone(x.status) || x.status === "In Progress")
       ? "Mitigating"
       : "Identified";
 }
@@ -254,9 +255,9 @@ export function resolveFraudAction(f: FraudRisk, actionId: string): FraudAction 
 export function rollupFraud(f: FraudRisk): void {
   const a = f.actions || [];
   if (!a.length) return;
-  f.status = a.every((x) => x.status === "Implemented")
+  f.status = a.every((x) => fraudActionDone(x.status))
     ? "Mitigated"
-    : a.some((x) => x.status === "Implemented" || x.status === "In Progress")
+    : a.some((x) => fraudActionDone(x.status) || x.status === "In Progress")
       ? "Mitigating"
       : "Identified";
 }

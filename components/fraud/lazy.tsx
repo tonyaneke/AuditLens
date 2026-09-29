@@ -10,4 +10,5 @@ export const FraudActionDialog = dynamic(() => import("./dialogs").then((m) => m
 export const FraudDownloadDialog = dynamic(() => import("./dialogs").then((m) => m.FraudDownloadDialog), { loading: () => null });
 export const FraudPlanDialog = dynamic(() => import("./dialogs").then((m) => m.FraudPlanDialog), { loading: () => null });
 export const FraudUpdateDialog = dynamic(() => import("./dialogs").then((m) => m.FraudUpdateDialog), { loading: () => null });
+export const ValidateFraudActionDialog = dynamic(() => import("./dialogs").then((m) => m.ValidateFraudActionDialog), { loading: () => null });
 export const GenerateFraudRisksDialog = dynamic(() => import("./dialogs").then((m) => m.GenerateFraudRisksDialog), { loading: () => null });

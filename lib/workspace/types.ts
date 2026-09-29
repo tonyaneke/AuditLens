@@ -75,6 +75,10 @@ export type Observation = {
    *  these are the basis of the finding itself and are set at raise time. */
   attachments?: EvidenceFile[];
   obsApproval?: "pending" | "approved" | "rejected";
+  /** With obsApproval "rejected": the Head rejected it for good — no further action. Staff can
+   *  no longer edit or resubmit it (the server enforces this); without it, a rejection means
+   *  "sent back for changes". Head-only to set or clear (CONTROLLED_OBS_FIELDS). */
+  rejectionFinal?: boolean;
   raisedBy?: string;
   raisedByName?: string;
   raisedAt?: string;
@@ -196,9 +200,24 @@ export type FraudAction = {
   /** Assigned action owner's user id (department head) — set via the action dialog. */
   ownerUserId?: string;
   targetDate?: string;
-  status?: "Planned" | "In Progress" | "Implemented" | string;
+  status?: "Planned" | "In Progress" | "Implemented" | "Validated" | string;
   update?: string;
-  ownerUpdates?: { at: string; by: string; byName: string; text: string; status?: string }[];
+  ownerUpdates?: {
+    at: string;
+    by: string;
+    byName: string;
+    text: string;
+    status?: string;
+    /** Implementation evidence the owner attached with this update. */
+    evidence?: EvidenceFile[];
+  }[];
+  /** Internal Audit's validation of the action (status "Validated"): compulsory note, who, when. */
+  validationNote?: string;
+  validatedAt?: string;
+  validatedBy?: string;
+  validatedByName?: string;
+  /** Working papers Internal Audit attached when validating. */
+  validationEvidence?: EvidenceFile[];
   [k: string]: unknown;
 };
 

@@ -6,6 +6,8 @@
 // modalFraudUpdate/generateFraudUpdateCommentary and modalFraudDownload in audit-bot.js.
 
 import { useEffect, useRef, useState } from "react";
+import { FilePickMulti, MAX_UPLOAD_BYTES, tooLarge, uploadAllEvidence } from "@/components/audits/attach";
+import { useUser } from "@/components/chrome/UserContext";
 import BusyButton from "@/components/feedback/BusyButton";
 import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
@@ -20,14 +22,21 @@ import {
   DEPARTMENTS,
   FRAUD_CATS,
   FRAUD_STATUS,
+  FRAUD_VALIDATED,
+  IA_ACTION_STATUS,
   IMP_LABEL,
   LIKE_LABEL,
+  clearFraudValidation,
   deptByHead,
+  fraudActionDone,
+  fraudUploadKey,
   ownerDepartments,
   ownerEmailFor,
   residualFor,
   rollupFraud,
+  validateFraudAction,
 } from "@/lib/workspace/fraud";
+import { fraudActionsView, pushNotification, resolveFraudAction } from "@/lib/workspace/portal";
 import {
   BAND_HEX,
   BANDS,
@@ -37,9 +46,29 @@ import {
   isoNow,
   uid,
 } from "@/lib/workspace/selectors";
-import type { FraudRisk, WorkspaceDb } from "@/lib/workspace/types";
+import type { EvidenceFile, FraudAction, FraudRisk, WorkspaceDb } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 import { exportFraud, exportFraudPlan, exportFraudUpdate } from "./exports";
+import { EvidenceLinks, FraudOwnerEvidence } from "./ValidationNote";
+
+/** Size-check then upload a fraud risk's evidence; returns null (after reporting) on failure. */
+async function uploadFraudFiles(
+  riskId: string,
+  files: File[],
+  report: (msg: string) => void,
+): Promise<EvidenceFile[] | null> {
+  const big = tooLarge(files);
+  if (big) {
+    report(`"${big.name}" exceeds the ${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} MB limit.`);
+    return null;
+  }
+  try {
+    return await uploadAllEvidence(fraudUploadKey(riskId), files);
+  } catch (e) {
+    report(e instanceof Error ? e.message : "Upload failed.");
+    return null;
+  }
+}
 
 function ResidualPill({ band, bold }: { band: string; bold?: boolean }) {
   return (
@@ -618,8 +647,25 @@ export function FraudDialog({ fraudId }: { fraudId?: string }) {
 
 /* ================= add / edit prevention action — modalFraudAction ================= */
 
+/** In-app heads-up to the action owner that Internal Audit validated their action. */
+function notifyValidated(d: WorkspaceDb, r: FraudRisk, a: FraudAction): void {
+  const to = String(a.ownerUserId || r.ownerUserId || "");
+  if (!to) return;
+  pushNotification(
+    d,
+    to,
+    "fraud_validated",
+    "Internal Audit validated your fraud prevention action: " + a.text.slice(0, 120),
+    "myfraud",
+  );
+}
+
+const VALIDATION_PLACEHOLDER =
+  "What did Internal Audit check to confirm this action is in place and working? e.g. reviewed the July–September reconciliations and re-performed a sample of 10.";
+
 export function FraudActionDialog({ riskId, actionId }: { riskId: string; actionId?: string }) {
   const { db, mutate } = useWorkspace();
+  const user = useUser();
   const modal = useModal();
   const f = fraudList(db).find((x) => x.id === riskId);
   const existing = actionId ? f?.actions?.find((a) => a.id === actionId) : undefined;
@@ -631,7 +677,9 @@ export function FraudActionDialog({ riskId, actionId }: { riskId: string; action
     targetDate: existing?.targetDate || "",
     status: existing?.status || "Planned",
     update: existing?.update || "",
+    validationNote: existing?.validationNote || "",
   }));
+  const [valFiles, setValFiles] = useState<File[]>([]);
   const [dirVersion, setDirVersion] = useState(0);
   useEffect(() => {
     let cancelled = false;
@@ -668,7 +716,7 @@ export function FraudActionDialog({ riskId, actionId }: { riskId: string; action
     }
   }
 
-  function save() {
+  async function save() {
     const text = a.text.trim();
     if (!text) {
       toast("Action description required");
@@ -680,6 +728,17 @@ export function FraudActionDialog({ riskId, actionId }: { riskId: string; action
       toast("Assign an owner — a prevention action needs someone accountable for it.", "error");
       return;
     }
+    const validating = a.status === FRAUD_VALIDATED;
+    const note = a.validationNote.trim();
+    if (validating && !note) {
+      toast("Add a validation note — say what Internal Audit checked — before validating.", "error");
+      return;
+    }
+    const wasValidated = existing?.status === FRAUD_VALIDATED;
+    // A changed note is a fresh validation: re-stamp who validated and when.
+    const restamp = validating && (!wasValidated || note !== (existing?.validationNote || ""));
+    const evidence = validating ? await uploadFraudFiles(riskId, valFiles, (m) => toast(m, "error")) : [];
+    if (!evidence) return;
     const prevOwnerId = String(existing?.ownerUserId || "");
     const assignedNew = !!a.ownerUserId && a.ownerUserId !== prevOwnerId;
     mutate((d) => {
@@ -695,11 +754,21 @@ export function FraudActionDialog({ riskId, actionId }: { riskId: string; action
         status: a.status,
         update: a.update,
       };
+      let target: FraudAction | undefined;
       if (actionId) {
-        const cur = r.actions.find((x) => x.id === actionId);
-        if (cur) Object.assign(cur, data);
+        target = r.actions.find((x) => x.id === actionId);
+        if (target) Object.assign(target, data);
       } else {
-        r.actions.push({ id: uid(), ...data });
+        target = { id: uid(), ...data };
+        r.actions.push(target);
+      }
+      if (target) {
+        if (!validating) clearFraudValidation(target);
+        else if (restamp)
+          validateFraudAction(target, note, { id: user.id || "", name: user.name || "" }, evidence);
+        else if (evidence.length)
+          target.validationEvidence = [...(target.validationEvidence || []), ...evidence];
+        if (validating && !wasValidated) notifyValidated(d, r, target);
       }
       rollupFraud(r);
       if (assignedNew) {
@@ -735,9 +804,9 @@ export function FraudActionDialog({ riskId, actionId }: { riskId: string; action
           <button className="btn sec" type="button" onClick={modal.close}>
             Cancel
           </button>
-          <button className="btn" type="button" onClick={save}>
+          <BusyButton className="btn" busyLabel="Saving…" onClick={save}>
             Save
-          </button>
+          </BusyButton>
         </>
       }
     >
@@ -779,17 +848,127 @@ export function FraudActionDialog({ riskId, actionId }: { riskId: string; action
           />
         </div>
       </div>
-      <label>Status</label>
+      <label>
+        Status <span className="hint">(Validated — Internal Audit only)</span>
+      </label>
       <select value={a.status} onChange={(e) => setA((c) => ({ ...c, status: e.target.value }))}>
-        {ACTION_STATUS.map((s) => (
+        {IA_ACTION_STATUS.map((s) => (
           <option key={s}>{s}</option>
         ))}
       </select>
+      {a.status === FRAUD_VALIDATED ? (
+        <>
+          <label>
+            Validation note * <span className="hint">(required — the action owner will see it)</span>
+          </label>
+          <textarea
+            value={a.validationNote}
+            placeholder={VALIDATION_PLACEHOLDER}
+            onChange={(e) => setA((c) => ({ ...c, validationNote: e.target.value }))}
+          />
+          <EvidenceLinks files={existing?.validationEvidence} label="Already attached:" />
+          <FilePickMulti files={valFiles} onChange={setValFiles} label="📎 Attach working papers" />
+        </>
+      ) : null}
       <label>
         Progress update{" "}
         <span className="hint">(latest status note — appears in the quarterly BAC update)</span>
       </label>
       <textarea value={a.update} onChange={(e) => setA((c) => ({ ...c, update: e.target.value }))} />
+    </ModalFrame>
+  );
+}
+
+/* ================= Internal Audit validation of an implemented action ================= */
+
+export function ValidateFraudActionDialog({ riskId, actionId }: { riskId: string; actionId: string }) {
+  const { db, mutate } = useWorkspace();
+  const user = useUser();
+  const modal = useModal();
+  const [note, setNote] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
+  const [err, setErr] = useState("");
+  const f = fraudList(db).find((x) => x.id === riskId);
+  const act = f ? fraudActionsView(f).find((x) => x.id === actionId) : undefined;
+  if (!f || !act) return null;
+  const last = (act.ownerUpdates || [])[0];
+  const ownerSaid = last?.text || act.update || "";
+
+  async function validate() {
+    const t = note.trim();
+    if (!t) {
+      setErr("Add a validation note — say what Internal Audit checked — before validating.");
+      return;
+    }
+    setErr("");
+    const evidence = await uploadFraudFiles(riskId, files, setErr);
+    if (!evidence) return;
+    mutate((d) => {
+      const r = (d.fraudRisks || []).find((x) => x.id === riskId);
+      const ra = r ? resolveFraudAction(r, actionId) : undefined;
+      if (!r || !ra) return;
+      const already = ra.status === FRAUD_VALIDATED;
+      validateFraudAction(ra, t, { id: user.id || "", name: user.name || "" }, evidence);
+      rollupFraud(r);
+      if (!already) notifyValidated(d, r, ra);
+    });
+    modal.close();
+    toast("Action validated — the action owner has been notified in AuditLens.", "success");
+  }
+
+  return (
+    <ModalFrame
+      title="Validate prevention action"
+      footer={
+        <>
+          <button className="btn sec" type="button" onClick={modal.close}>
+            Cancel
+          </button>
+          <BusyButton className="btn" busyLabel="Validating…" onClick={validate}>
+            Validate
+          </BusyButton>
+        </>
+      }
+    >
+      <div className="note" style={{ marginBottom: 12 }}>
+        <b>{act.text}</b>
+        <div className="hint" style={{ marginTop: 4 }}>
+          Fraud risk: {f.scheme} · owner status: <b>{act.status || "Planned"}</b>
+          {act.owner ? " · " + act.owner : ""}
+        </div>
+        {ownerSaid ? (
+          <div className="hint" style={{ marginTop: 6 }}>
+            Owner&apos;s latest update: {ownerSaid}
+          </div>
+        ) : null}
+        <FraudOwnerEvidence a={act} />
+      </div>
+      {!fraudActionDone(act.status) ? (
+        <div className="hint" style={{ marginBottom: 8 }}>
+          The owner has not marked this action Implemented yet — validate only if Internal Audit has
+          confirmed it is in place.
+        </div>
+      ) : null}
+      <label>Validation note *</label>
+      <textarea
+        style={{ minHeight: 110 }}
+        value={note}
+        placeholder={VALIDATION_PLACEHOLDER}
+        onChange={(e) => {
+          setNote(e.target.value);
+          if (err) setErr("");
+        }}
+      />
+      <FilePickMulti files={files} onChange={setFiles} label="📎 Attach working papers" />
+      <div className="hint" style={{ marginTop: 6 }}>
+        The note and any files are recorded with your name and the date, and are shown to the
+        action owner.
+      </div>
+      {err ? (
+        <div className="ai-err" style={{ marginTop: 10 }}>
+          {err}
+        </div>
+      ) : null}
     </ModalFrame>
   );
 }
@@ -963,11 +1142,18 @@ function buildFraudUpdatePrompt(db: WorkspaceDb, period: string): string {
     .map((f) => {
       const res = fraudResidual(f);
       const acts = f.actions || [];
-      const done = acts.filter((a) => a.status === "Implemented").length;
+      const done = acts.filter((a) => fraudActionDone(a.status)).length;
+      const validated = acts.filter((a) => a.status === FRAUD_VALIDATED).length;
       return (
-        `- [${res}] ${f.scheme}: ${done}/${acts.length} actions implemented` +
+        `- [${res}] ${f.scheme}: ${done}/${acts.length} actions implemented, ${validated} of them validated by Internal Audit` +
         (acts.length
-          ? "; " + acts.map((a) => `${a.text} (${a.status}${a.update ? ": " + a.update : ""})`).join("; ")
+          ? "; " +
+            acts
+              .map(
+                (a) =>
+                  `${a.text} (${a.status}${a.update ? ": " + a.update : ""}${a.validationNote ? "; IA validation: " + a.validationNote : ""})`,
+              )
+              .join("; ")
           : "")
       );
     })

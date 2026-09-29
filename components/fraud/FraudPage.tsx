@@ -16,6 +16,10 @@ import { urlForView } from "@/lib/routes";
 import {
   actStatusClass,
   bandRank,
+  DEPARTMENTS,
+  FRAUD_STATUS,
+  FRAUD_VALIDATED,
+  fraudActionDone,
   fraudActions,
   fraudEnriched,
   fraudMigrationNeeded,
@@ -33,7 +37,9 @@ import {
   FraudPlanDialog,
   FraudUpdateDialog,
   GenerateFraudRisksDialog,
+  ValidateFraudActionDialog,
 } from "./lazy";
+import { FraudOwnerEvidence, FraudValidationNote } from "./ValidationNote";
 
 const TRASH = (
   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true">
@@ -87,7 +93,8 @@ function FraudHeatMap({ grid }: { grid: Record<string, number> }) {
       </table>
       <div className="hint" style={{ marginTop: 8 }}>
         Y = Impact (1 Insignificant → 5 Severe) · X = Likelihood (1 Rare → 5 Almost certain).
-        Numbers = fraud risks at that inherent rating.
+        Numbers = fraud risks at that residual rating, after existing controls — each risk is moved
+        from its inherent rating into its residual band, reducing likelihood first.
         <div style={{ marginTop: 6 }}>
           {[...BANDS].reverse().map((b) => (
             <span key={b}>
@@ -122,6 +129,48 @@ function FraudCatBars({ byCat }: { byCat: Record<string, number> }) {
   );
 }
 
+/* ---- register filters ---- */
+const ALL = "All";
+const NO_DEPT = "__none";
+const NO_FILTER = { status: ALL, dept: ALL, cat: ALL, inh: ALL, res: ALL };
+type RegisterFilter = typeof NO_FILTER;
+
+/** Canonical values first, then any non-canonical value the data actually holds. */
+function withExtras(canonical: readonly string[], present: (string | undefined)[]): string[] {
+  const extras = [...new Set(present)].filter((v): v is string => !!v && !canonical.includes(v));
+  return [...canonical, ...extras.sort()];
+}
+
+function FilterSelect({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: Array<[value: string, label: string]>;
+}) {
+  // Keep a selection visible even after an edit removes its last matching risk, so the dropdown
+  // never reads "All" while it is still filtering.
+  const opts: Array<[string, string]> =
+    value !== ALL && !options.some(([v]) => v === value) ? [...options, [value, value]] : options;
+  return (
+    <label className="filter-group">
+      <span className="filter-label">{label}</span>
+      <select className="field-select field-select-sm" value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value={ALL}>All</option>
+        {opts.map(([v, l]) => (
+          <option key={v} value={v}>
+            {l}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 export default function FraudPage() {
   const { db, mutate, version } = useWorkspace();
   const user = useUser();
@@ -129,6 +178,7 @@ export default function FraudPage() {
   const router = useRouter();
   const canManage = canManageFraudRegister(user);
   const [planExpanded, setPlanExpanded] = useState(false);
+  const [flt, setFlt] = useState<RegisterFilter>(NO_FILTER);
 
   function requireManage(open: () => void) {
     if (!canManage) {
@@ -252,11 +302,31 @@ export default function FraudPage() {
   en.forEach((f) => (byCat[f.category || ""] = (byCat[f.category || ""] || 0) + 1));
   const grid: Record<string, number> = {};
   en.forEach((f) => {
-    const k = f.likelihood + "-" + f.impact;
+    const k = f.resLikelihood + "-" + f.resImpact;
     grid[k] = (grid[k] || 0) + 1;
   });
+
+  const bandOpts = [...BANDS].reverse().map((b) => [b, b] as [string, string]);
+  const deptVals = en.map((f) => f.process || "");
+  const deptOpts: Array<[string, string]> = withExtras(
+    DEPARTMENTS.filter((d) => deptVals.includes(d)),
+    deptVals,
+  ).map((d) => [d, d]);
+  if (deptVals.includes("") || flt.dept === NO_DEPT) deptOpts.push([NO_DEPT, "No department"]);
+  const shown = en.filter(
+    (f) =>
+      (flt.status === ALL || (f.status || "Identified") === flt.status) &&
+      (flt.dept === ALL || (f.process || NO_DEPT) === flt.dept) &&
+      (flt.cat === ALL || f.category === flt.cat) &&
+      (flt.inh === ALL || f.inh === flt.inh) &&
+      (flt.res === ALL || f.res === flt.res),
+  );
+  const isFiltered = Object.values(flt).some((v) => v !== ALL);
+  const setF = (k: keyof RegisterFilter) => (v: string) => setFlt((cur) => ({ ...cur, [k]: v }));
+  const clearFilters = () => setFlt(NO_FILTER);
   const allActs = en.flatMap((f) => fraudActions(f));
-  const implN = allActs.filter((a) => a.status === "Implemented").length;
+  const implN = allActs.filter((a) => fraudActionDone(a.status)).length;
+  const validatedN = allActs.filter((a) => a.status === FRAUD_VALIDATED).length;
   const planRanked = en.slice().sort((a, b) => bandRank(b.res) - bandRank(a.res));
 
   return (
@@ -270,7 +340,7 @@ export default function FraudPage() {
 
       <div className="dash2">
         <div className="card">
-          <div className="seclabel">Fraud risk heat map — likelihood × impact (inherent)</div>
+          <div className="seclabel">Fraud risk heat map — likelihood × impact (residual)</div>
           <FraudHeatMap grid={grid} />
         </div>
         <div className="card acfe-card">
@@ -292,79 +362,120 @@ export default function FraudPage() {
       </div>
 
       <div className="card">
-        <div className="seclabel">Fraud risk register</div>
-        <table style={{ marginTop: 6 }}>
-          <thead>
-            <tr>
-              <th scope="col">Scheme</th>
-              <th scope="col">Category</th>
-              <th scope="col">Process</th>
-              <th scope="col">L×I</th>
-              <th scope="col">Inherent</th>
-              <th scope="col">Controls</th>
-              <th scope="col">Residual</th>
-              <th scope="col">Owner</th>
-              <th scope="col">Status</th>
-              <th scope="col"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {en.map((f) => (
-              <tr
-                className="tracker-row"
-                key={f.id}
-                title="Open fraud risk"
-                onClick={() => router.push(urlForView("fraudrisk", { fraud: f.id }))}
-              >
-                <td>
-                  <RowOpen
-                    onOpen={() => router.push(urlForView("fraudrisk", { fraud: f.id }))}
-                    label={`Open fraud risk: ${f.scheme}`}
-                  >
-                    <b>{f.scheme}</b>
-                  </RowOpen>
-                  {f.year ? <div className="hint">{f.year}</div> : null}
-                </td>
-                <td>{f.category}</td>
-                <td>{f.process || "—"}</td>
-                <td style={{ textAlign: "center" }}>
-                  {f.likelihood}×{f.impact}={f.score}
-                </td>
-                <td>
-                  <BandPill band={f.inh} />
-                </td>
-                <td>{f.controlStrength || "—"}</td>
-                <td>
-                  <BandPill band={f.res} />
-                </td>
-                <td>{f.owner || "—"}</td>
-                <td>{f.status || "Identified"}</td>
-                <td className="ra-actions-cell" onClick={(e) => e.stopPropagation()}>
-                  {canManage ? (
-                    <>
-                      <button
-                        className="btn-icon-action"
-                        type="button"
-                        title="Edit"
-                        onClick={() => requireManage(() => modal.open(<FraudDialog fraudId={f.id} />))}
-                      >
-                        ✎
-                      </button>
-                      <button
-                        className="btn-icon-action danger"
-                        type="button"
-                        title="Delete"
-                        onClick={() => delFraud(f.id)}
-                      >
-                        {TRASH}
-                      </button>
-                    </>
-                  ) : null}
-                </td>
+        <div className="row" style={{ alignItems: "center" }}>
+          <div className="seclabel" style={{ margin: 0 }}>
+            Fraud risk register
+          </div>
+          <div className="spacer" />
+          <span className="hint">
+            {shown.length} of {en.length} risk{en.length === 1 ? "" : "s"}
+          </span>
+          {isFiltered ? (
+            <button className="btn ghost sm" type="button" onClick={clearFilters}>
+              Clear filters
+            </button>
+          ) : null}
+        </div>
+        <div className="fraud-filters">
+          <FilterSelect
+            label="Status"
+            value={flt.status}
+            onChange={setF("status")}
+            options={withExtras(FRAUD_STATUS, en.map((f) => f.status)).map((s) => [s, s])}
+          />
+          <FilterSelect label="Department" value={flt.dept} onChange={setF("dept")} options={deptOpts} />
+          <FilterSelect
+            label="Category"
+            value={flt.cat}
+            onChange={setF("cat")}
+            options={withExtras(FRAUD_CATS, en.map((f) => f.category)).map((c) => [c, c])}
+          />
+          <FilterSelect label="Inherent" value={flt.inh} onChange={setF("inh")} options={bandOpts} />
+          <FilterSelect label="Residual" value={flt.res} onChange={setF("res")} options={bandOpts} />
+        </div>
+        {shown.length ? (
+          <table style={{ marginTop: 6 }}>
+            <thead>
+              <tr>
+                <th scope="col">Scheme</th>
+                <th scope="col">Category</th>
+                <th scope="col">Department</th>
+                <th scope="col">L×I</th>
+                <th scope="col">Inherent</th>
+                <th scope="col">Controls</th>
+                <th scope="col">Residual</th>
+                <th scope="col">Owner</th>
+                <th scope="col">Status</th>
+                <th scope="col"></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {shown.map((f) => (
+                <tr
+                  className="tracker-row"
+                  key={f.id}
+                  title="Open fraud risk"
+                  onClick={() => router.push(urlForView("fraudrisk", { fraud: f.id }))}
+                >
+                  <td>
+                    <RowOpen
+                      onOpen={() => router.push(urlForView("fraudrisk", { fraud: f.id }))}
+                      label={`Open fraud risk: ${f.scheme}`}
+                    >
+                      <b>{f.scheme}</b>
+                    </RowOpen>
+                    {f.year ? <div className="hint">{f.year}</div> : null}
+                  </td>
+                  <td>{f.category}</td>
+                  <td>{f.process || "—"}</td>
+                  <td style={{ textAlign: "center" }}>
+                    {f.likelihood}×{f.impact}={f.score}
+                  </td>
+                  <td>
+                    <BandPill band={f.inh} />
+                  </td>
+                  <td>{f.controlStrength || "—"}</td>
+                  <td>
+                    <BandPill band={f.res} />
+                  </td>
+                  <td>{f.owner || "—"}</td>
+                  <td>{f.status || "Identified"}</td>
+                  <td className="ra-actions-cell" onClick={(e) => e.stopPropagation()}>
+                    {canManage ? (
+                      <>
+                        <button
+                          className="btn-icon-action"
+                          type="button"
+                          title="Edit"
+                          onClick={() => requireManage(() => modal.open(<FraudDialog fraudId={f.id} />))}
+                        >
+                          ✎
+                        </button>
+                        <button
+                          className="btn-icon-action danger"
+                          type="button"
+                          title="Delete"
+                          onClick={() => delFraud(f.id)}
+                        >
+                          {TRASH}
+                        </button>
+                      </>
+                    ) : null}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <Empty big="🔍">
+            No fraud risks match these filters.
+            <div style={{ marginTop: 14 }}>
+              <button className="btn sec sm" type="button" onClick={clearFilters}>
+                Clear filters
+              </button>
+            </div>
+          </Empty>
+        )}
       </div>
 
       <div className="card">
@@ -374,7 +485,9 @@ export default function FraudPage() {
           </div>
           <div className="spacer" />
           <span className="hint">
-            {allActs.length ? implN + "/" + allActs.length + " actions implemented" : "no actions yet"}
+            {allActs.length
+              ? `${implN}/${allActs.length} actions implemented · ${validatedN} validated by Internal Audit`
+              : "no actions yet"}
           </span>
           {canManage ? (
             <>
@@ -471,12 +584,28 @@ export default function FraudPage() {
                         <td>
                           {a.text}
                           {a.update ? <div className="hint">Update: {a.update}</div> : null}
+                          <FraudOwnerEvidence a={a} />
+                          <FraudValidationNote a={a} />
                         </td>
                         <td>{a.type || "—"}</td>
                         <td>{a.owner || "—"}</td>
                         <td>{a.targetDate || "—"}</td>
                         <td>
                           <span className={actStatusClass(a.status)}>{a.status || "Planned"}</span>
+                          {canManage && a.status === "Implemented" ? (
+                            <div style={{ marginTop: 6 }}>
+                              <button
+                                className="btn sm"
+                                type="button"
+                                title="Confirm the owner's implementation, with a compulsory note"
+                                onClick={() =>
+                                  modal.open(<ValidateFraudActionDialog riskId={f.id} actionId={a.id} />)
+                                }
+                              >
+                                Validate
+                              </button>
+                            </div>
+                          ) : null}
                         </td>
                         <td className="ra-actions-cell">
                           {canManage ? (

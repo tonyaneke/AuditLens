@@ -3,8 +3,9 @@
 // takes the workspace db explicitly. Shared observation-side helpers (stampClosed, notify*,
 // supersede/cancel bookkeeping) live in ./observations; the queue selectors live in ./selectors.
 
-import { approvals, findAudit, findReport } from "./selectors";
-import { stampClosed } from "./observations";
+import type { SessionUser } from "@/lib/permissions";
+import { approvals, findAudit, findReport, uid } from "./selectors";
+import { notifyHeadsApproval, stampClosed } from "./observations";
 import type { Approval, Observation, Report, WorkspaceDb } from "./types";
 
 /** Human label for an approval kind (legacy approvalKindLabel). */
@@ -50,11 +51,47 @@ export function pendingRaise(db: WorkspaceDb, obsId: string): Approval | undefin
   return approvals(db).find((a) => a.kind === "observation_raise" && a.obsId === obsId && a.status === "pending");
 }
 
+/* ---- rejected = sent back for rework ----
+   Rejecting a raise does not end it: the observation stays with Internal Audit, who can edit it
+   and send it back for approval (the server allows exactly that — STAFF_REWORK_FIELDS in
+   lib/workspace-authz.ts), and the Head can still edit and approve it directly. */
+
+/** The most recent rejection of an observation's raise — who, when, and the note left for the
+ *  auditor. Earlier rounds stay in the queue's history. */
+export function lastRaiseRejection(db: WorkspaceDb, obsId: string): Approval | undefined {
+  return approvals(db)
+    .filter((a) => a.kind === "observation_raise" && a.obsId === obsId && a.status === "rejected")
+    .sort((a, b) => String(b.decidedAt || "").localeCompare(String(a.decidedAt || "")))[0];
+}
+
+/** Mutating (run inside mutate): put a rejected observation back in the Head's queue as a new
+ *  "New observation" request. The trail records it as a resubmission (obsApproval → pending). */
+export function resubmitObs(d: WorkspaceDb, auditId: string, reportId: string, o: Observation, user: SessionUser): void {
+  if (o.obsApproval !== "rejected") return;
+  o.obsApproval = "pending";
+  approvals(d).push({
+    id: uid(),
+    kind: "observation_raise",
+    obsId: o.id,
+    auditId,
+    reportId,
+    obsTitle: o.title,
+    ownerUserId: o.ownerUserId || "",
+    requestedBy: user.id || "",
+    requestedByName: user.name || "",
+    requestedAt: new Date().toISOString(),
+    status: "pending",
+    resubmitted: true,
+  });
+  notifyHeadsApproval(d, o.title + " (sent back after rejection)");
+}
+
 /** A pending edit to an observation whose raise was rejected. Approving it approves the
  *  observation as well — see the observation_update case in components/approvals/decisions.tsx. */
 export function editApprovesRejectedObs(db: WorkspaceDb, a: Approval): boolean {
   if (a.kind !== "observation_update" || a.status !== "pending") return false;
-  return findApprovalObs(db, a).o?.obsApproval === "rejected";
+  const o = findApprovalObs(db, a).o;
+  return o?.obsApproval === "rejected" && !o.rejectionFinal;
 }
 
 /** Observation fields rendered in the approval details dialog (legacy OBS_FIELD_LABELS). */

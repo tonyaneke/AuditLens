@@ -8,6 +8,7 @@ import {
   mapBriefFraudDetail,
   mapBriefIssueDetail,
 } from "./brief-detail-map";
+import { fraudActionDone } from "@/lib/workspace/fraud";
 import type { Observation } from "@/lib/workspace/types";
 
 const CRITS = ["Critical", "High", "Moderate", "Low", "Process Improvement"];
@@ -85,7 +86,7 @@ export function computeExcoSnapshot(data: any, opts: { period?: string; headline
   const themes = Object.entries(themeCount).sort((a, b) => b[1] - a[1]) as [string, number][];
 
   const fraudRisks: any[] = Array.isArray(data.fraudRisks) ? data.fraudRisks : [];
-  const fr = fraudRisks.map((f) => { const inh = fraudBand((f.likelihood || 0) * (f.impact || 0)); const res = f.residualOverride || residualBand(inh, f.controlStrength); const acts = f.actions || []; const done = acts.length && acts.every((a: any) => a.status === "Implemented"); return { ...f, res, mitigated: f.status === "Mitigated" || done }; });
+  const fr = fraudRisks.map((f) => { const inh = fraudBand((f.likelihood || 0) * (f.impact || 0)); const res = f.residualOverride || residualBand(inh, f.controlStrength); const acts = f.actions || []; const done = acts.length && acts.every((a: any) => fraudActionDone(a.status)); return { ...f, res, mitigated: f.status === "Mitigated" || done }; });
   const unmit = fr.filter((f) => (f.res === "High" || f.res === "Extreme") && !f.mitigated).sort((a, b) => BANDS.indexOf(b.res) - BANDS.indexOf(a.res));
 
   const extFindings: any[] = Array.isArray(data.extFindings) ? data.extFindings : [];

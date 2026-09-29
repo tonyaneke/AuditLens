@@ -178,6 +178,27 @@ console.log("\n== Observations: each workflow step reads as that step, once ==")
   const rejected = after((db) => (obs(db, "o1").obsApproval = "rejected"), b);
   ok(sameList(rejected.actions, ["obs.rejected"]), "…or rejecting it → obs.rejected (it is kept, not deleted)", rejected.actions);
 
+  // Rejected is "sent back for rework": staff rewrite it and send it back in one save. The new
+  // raise request is the resubmission itself, so it must not be reported a second time.
+  const rb = base();
+  obs(rb, "o1").obsApproval = "rejected";
+  const resubmitted = after((db) => {
+    Object.assign(obs(db, "o1"), { title: "Weak SoD in disbursement", obsApproval: "pending" });
+    db.approvals = [...(db.approvals || []), { id: "apRe", kind: "observation_raise", obsId: "o1", status: "pending" }];
+  }, rb);
+  ok(sameList(resubmitted.actions, ["obs.raise_requested", "obs.edited"]), "reworking a rejected observation and sending it back → resubmitted + edited, once each", resubmitted.actions);
+  ok(resubmitted.events.some((e) => /^Resubmitted observation/.test(e.summary)), "…and the resubmission reads as one", resubmitted.events.map((e) => e.summary));
+
+  // A rejection says which kind it was: sent back for changes, or closed for good.
+  ok(/and sent it back for changes$/.test(rejected.events[0].summary), "a plain rejection reads as sent back for changes", rejected.events[0].summary);
+  const finalRej = after((db) => Object.assign(obs(db, "o1"), { obsApproval: "rejected", rejectionFinal: true }), b);
+  ok(sameList(finalRej.actions, ["obs.rejected"]), "rejecting for good → one obs.rejected (the flag is folded in)", finalRej.actions);
+  ok(/for good — no further action$/.test(finalRej.events[0].summary), "…reading as final", finalRej.events[0].summary);
+  const fb = base();
+  Object.assign(obs(fb, "o1"), { obsApproval: "rejected", rejectionFinal: true });
+  const reopened = after((db) => (obs(db, "o1").rejectionFinal = false), fb);
+  ok(sameList(reopened.actions, ["obs.edited"]) && /^Reopened the rejected observation/.test(reopened.events[0].summary), "the Head reopening a final rejection → one entry saying so", reopened.events.map((e) => e.summary));
+
   const responded = after((db) => {
     Object.assign(obs(db, "o1"), {
       ownerRectifiedAt: "2026-09-20T10:00:00Z", ownerRectifiedBy: "own1", ownerRectifiedByName: "Ola",
@@ -302,6 +323,20 @@ console.log("\n== Registers, plan, reviews, assessments ==");
   ok(sameList(act.actions, ["fraud.action_status_updated"]), "an action's status → one entry; the risk's roll-up is not news", act.actions);
   const upd = after((db) => (db.fraudRisks[0].actions[0].ownerUpdates = [{ at: "2026-09-20", by: "own1", byName: "Ola", text: "Recon done for Aug" }]));
   ok(sameList(upd.actions, ["fraud.action_update"]) && /Recon done for Aug/.test(upd.events[0].summary), "an implementation update → fraud.action_update, quoted", upd.events.map((e) => e.summary));
+  const val = after((db) => {
+    Object.assign(db.fraudRisks[0].actions[0], {
+      status: "Validated", validationNote: "Sampled 10 reconciliations", validatedBy: "staff1",
+      validatedByName: "Ada", validatedAt: "2026-09-29T09:00:00.000Z",
+      validationEvidence: [{ itemId: "sp-2", name: "sample-test.xlsx" }],
+    });
+    db.fraudRisks[0].status = "Mitigated";
+  });
+  ok(sameList(val.actions, ["fraud.action_validated"]) && /Sampled 10 reconciliations/.test(val.events[0].summary), "an IA validation → one fraud.action_validated entry quoting the note, stamps folded in", val.events.map((e) => e.summary));
+  ok(/1 file attached/.test(val.events[0]?.summary) && val.events[0]?.metadata.files === "sample-test.xlsx", "…naming the working papers attached", val.events[0]);
+  const ev = after((db) => (db.fraudRisks[0].actions[0].ownerUpdates = [
+    { at: "2026-09-29", by: "own1", byName: "Ola", text: "Implemented", evidence: [{ itemId: "sp-1", name: "recon-aug.pdf" }, { itemId: "sp-3", name: "recon-sep.pdf" }] },
+  ]));
+  ok(sameList(ev.actions, ["fraud.action_update"]) && /2 files attached/.test(ev.events[0].summary) && ev.events[0].metadata.files === "recon-aug.pdf, recon-sep.pdf", "an owner update with evidence names its files", ev.events[0]);
 
   const done = after((db) => Object.assign(db.auditUniverse[0], { engStatus: "Completed", occDone: ["Q1", "Q2"] }));
   ok(sameList(done.actions, ["plan.completed"]), "completing an engagement → plan.completed only", done.actions);

@@ -5,7 +5,13 @@
 
 import { toast } from "@/components/feedback/ToastHost";
 import { esc, stamp, wordDoc } from "@/lib/client/exports";
-import { bandRank, fraudEnriched, type FraudView } from "@/lib/workspace/fraud";
+import {
+  bandRank,
+  FRAUD_VALIDATED,
+  fraudActionDone,
+  fraudEnriched,
+  type FraudView,
+} from "@/lib/workspace/fraud";
 import {
   BAND_HEX,
   BANDS,
@@ -46,7 +52,8 @@ export function exportFraud(db: WorkspaceDb): void {
     <table><tr><th>Scheme</th><th>Category</th><th>Process</th><th>L</th><th>I</th><th>Inherent</th><th>Controls (strength)</th><th>Residual</th><th>Owner</th><th>Status</th></tr>
     ${en.map((f) => `<tr><td><b>${esc(f.scheme)}</b>${f.description ? `<br><span class="meta">${esc(f.description)}</span>` : ""}</td><td>${esc(f.category)}</td><td>${esc(f.process || "—")}</td><td>${f.likelihood}</td><td>${f.impact}</td><td>${f.inh}</td><td>${esc(f.existingControls || "—")} (${esc(f.controlStrength || "—")})</td><td>${f.res}</td><td>${esc(f.owner || "—")}</td><td>${esc(f.status || "Identified")}</td></tr>`).join("")}
     </table>
-    <h2>Heat Map — Inherent Likelihood × Impact</h2>${fraudHeatWord(en)}`;
+    <h2>Heat Map — Residual Likelihood × Impact</h2>
+    <div class="meta">Each risk is placed at its residual rating after existing controls: moved from its inherent rating into its residual band, reducing likelihood first.</div>${fraudHeatWord(en)}`;
   wordDoc(
     "Fraud Risk Assessment " + stamp(),
     inner,
@@ -57,7 +64,7 @@ export function exportFraud(db: WorkspaceDb): void {
 function fraudHeatWord(en: FraudView[]): string {
   const grid: Record<string, number> = {};
   en.forEach((f) => {
-    const k = f.likelihood + "-" + f.impact;
+    const k = f.resLikelihood + "-" + f.resImpact;
     grid[k] = (grid[k] || 0) + 1;
   });
   let h = `<table><tr><td style="border:none"></td>${[1, 2, 3, 4, 5].map((l) => `<th>L${l}</th>`).join("")}</tr>`;
@@ -81,7 +88,7 @@ export function exportFraudPlan(db: WorkspaceDb): void {
   const en = fraudEnriched(db).sort((a, b) => bandRank(b.res) - bandRank(a.res));
   const totA = en.reduce((s, f) => s + effActions(f).length, 0);
   const implA = en.reduce(
-    (s, f) => s + effActions(f).filter((a) => a.status === "Implemented").length,
+    (s, f) => s + effActions(f).filter((a) => fraudActionDone(a.status)).length,
     0,
   );
   const inner = `<h1>Fraud Prevention Plan</h1><div class="meta">${esc(db.org)} — Internal Audit · derived from the annual Fraud Risk Assessment</div>
@@ -117,13 +124,14 @@ export function exportFraudUpdate(db: WorkspaceDb): void {
   const en = fraudEnriched(db).sort((a, b) => bandRank(b.res) - bandRank(a.res));
   const allA = en.flatMap((f) => effActions(f).map((a) => ({ a, f })));
   const tot = allA.length;
-  const impl = allA.filter((x) => x.a.status === "Implemented").length;
+  const impl = allA.filter((x) => fraudActionDone(x.a.status)).length;
+  const validated = allA.filter((x) => x.a.status === FRAUD_VALIDATED).length;
   const prog = allA.filter((x) => x.a.status === "In Progress").length;
   const plan = allA.filter((x) => x.a.status === "Planned").length;
   const today = today0();
   const overdue = allA.filter((x) => {
     const d = looseDate(x.a.targetDate);
-    return x.a.status !== "Implemented" && d && d < today;
+    return !fraudActionDone(x.a.status) && d && d < today;
   }).length;
   const pct = tot ? Math.round((impl / tot) * 100) : 0;
   const resCount: Record<string, number> = {};
@@ -133,7 +141,7 @@ export function exportFraudUpdate(db: WorkspaceDb): void {
     b === "Extreme" || b === "High" ? "Critical" : b === "Medium" ? "Moderate" : "Low";
   const inner = `<h1>Fraud Prevention Plan — Quarterly Implementation Update</h1>
     <div class="meta">${esc(db.org)} — Internal Audit · Report to the Board Audit Committee${u.period ? " · " + esc(u.period) : ""}</div>
-    <div class="note">Implementation progress: <b>${impl}/${tot}</b> action(s) implemented (<b>${pct}%</b>) · ${prog} in progress · ${plan} planned · <b>${overdue}</b> overdue. Residual exposure: ${[...BANDS].reverse().map((b) => `<span class="pill ${bandCls(b)}">${resCount[b]} ${b}</span>`).join(" ")}.</div>
+    <div class="note">Implementation progress: <b>${impl}/${tot}</b> action(s) implemented (<b>${pct}%</b>), <b>${validated}</b> validated by Internal Audit · ${prog} in progress · ${plan} planned · <b>${overdue}</b> overdue. Residual exposure: ${[...BANDS].reverse().map((b) => `<span class="pill ${bandCls(b)}">${resCount[b]} ${b}</span>`).join(" ")}.</div>
     ${u.commentary ? `<h2>Executive Commentary</h2><div>${esc(u.commentary).replace(/\n/g, "<br>")}</div>` : ""}
     <h2>Implementation Status by Fraud Risk</h2>
     <table><tr><th>Residual</th><th>Fraud risk</th><th>Prevention / response action</th><th>Owner</th><th>Target</th><th>Status</th><th>Progress update</th></tr>
@@ -144,8 +152,8 @@ export function exportFraudUpdate(db: WorkspaceDb): void {
           : [{ id: "", text: "(no action defined yet)", owner: "", targetDate: "", status: "", update: "" }];
         return acts.map((a, i) => {
           const d = looseDate(a.targetDate);
-          const od = a.status !== "Implemented" && d && d < today;
-          return `<tr><td>${i === 0 ? f.res : ""}</td><td>${i === 0 ? "<b>" + esc(f.scheme) + "</b>" : ""}</td><td>${esc(a.text)}</td><td>${esc(a.owner || "—")}</td><td>${esc(a.targetDate || "")}${od ? " (overdue)" : ""}</td><td>${esc(a.status || "")}</td><td>${esc(a.update || "")}</td></tr>`;
+          const od = !fraudActionDone(a.status) && d && d < today;
+          return `<tr><td>${i === 0 ? f.res : ""}</td><td>${i === 0 ? "<b>" + esc(f.scheme) + "</b>" : ""}</td><td>${esc(a.text)}</td><td>${esc(a.owner || "—")}</td><td>${esc(a.targetDate || "")}${od ? " (overdue)" : ""}</td><td>${esc(a.status || "")}</td><td>${esc(a.update || "")}${a.validationNote ? `<br><i>Internal Audit validation: ${esc(a.validationNote)}${a.validatedByName ? " (" + esc(a.validatedByName) + ")" : ""}</i>` : ""}</td></tr>`;
         });
       })
       .join("")}

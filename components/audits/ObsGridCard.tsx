@@ -13,7 +13,9 @@ import type { Audit, Observation, Report } from "@/lib/workspace/types";
 /* ---- legacy obsApprovalBadge ---- */
 export function ObsApprovalBadge({ o }: { o: Observation }) {
   if (o.obsApproval === "pending") return <span className="pill sop-pending-pill">⏳ Pending Head approval</span>;
-  if (o.obsApproval === "rejected") return <span className="pill c-Critical">Rejected</span>;
+  // A sent-back rejection is still Internal Audit's to fix, so it reads differently from a final one.
+  if (o.obsApproval === "rejected")
+    return <span className="pill c-Critical">{o.rejectionFinal ? "Rejected" : "Rejected · sent back"}</span>;
   return null;
 }
 

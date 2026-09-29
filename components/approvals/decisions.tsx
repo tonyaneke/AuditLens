@@ -17,6 +17,7 @@ import { loadDirectory } from "@/lib/client/directory";
 import { applyStatusChange, findApprovalObs } from "@/lib/workspace/approvals";
 import {
   cancelPendingStatusChange,
+  findObsIn,
   notify,
   notifyBoth,
   notifyDeptOfObs,
@@ -45,22 +46,27 @@ export function useApprovalDecisions() {
   const modal = useModal();
   const isHead = effectiveRole(user) === "head_of_audit";
 
-  /** Per-kind decision for every kind except observation_withdraw (which needs a reason dialog). */
-  async function decide(aid: string, approve: boolean): Promise<void> {
+  /** Per-kind decision for every kind except observation_withdraw (which needs a reason dialog).
+   *  `note` is the Head's word to the requester — a raise rejection carries what needs changing,
+   *  or, when `final`, why it is rejected for good. */
+  async function decide(aid: string, approve: boolean, note = "", final = false): Promise<boolean> {
     if (!isHead) {
       toast(`Only the Head of Audit can ${approve ? "approve" : "reject"}.`, "error");
-      return;
+      return false;
     }
     // Warm the directory cache (emails resolve through it) BEFORE touching the workspace —
     // never read db across an await.
     await loadDirectory();
+    let decided = false;
     mutate((d) => {
       const ap = approvals(d).find((x) => x.id === aid);
       if (!ap || ap.status !== "pending") return;
+      decided = true;
       ap.status = approve ? "approved" : "rejected";
       ap.decidedBy = user.id || "";
       ap.decidedByName = user.name || "";
       ap.decidedAt = new Date().toISOString();
+      if (note) ap.headReason = note;
       switch (ap.kind) {
         case "observation_raise": {
           const { o } = findApprovalObs(d, ap);
@@ -81,18 +87,44 @@ export function useApprovalDecisions() {
             }
           } else {
             if (o) {
+              /* Two kinds of rejection. By default it is sent back for rework: Internal Audit can
+                 edit it and send it back (resubmitObs in lib/workspace/approvals.ts). Rejected
+                 for good (`final`), it is closed — the server refuses rework on it — and any
+                 edit request still open on it is settled, since there is nothing left to edit.
+                 Tell whoever raised it, and whoever sent this round if that was someone else. */
               o.obsApproval = "rejected";
-              if (o.raisedBy)
-                notifyBoth(
-                  d,
-                  o.raisedBy,
-                  "obs_rejected",
-                  "Rejected: " + o.title,
-                  "audits",
-                  "AuditLens — observation not approved",
-                  `Your observation "${o.title}" was not approved by the Head of Audit.`,
-                  o.id,
-                );
+              if (final) {
+                o.rejectionFinal = true;
+                ap.final = true;
+                supersedePendingUpdate(d, o.id, user);
+              } else delete o.rejectionFinal;
+              const told = new Set([o.raisedBy, ap.requestedBy].filter(Boolean) as string[]);
+              for (const to of told)
+                if (final)
+                  notifyBoth(
+                    d,
+                    to,
+                    "obs_rejected",
+                    "Rejected: " + o.title,
+                    "audits",
+                    "AuditLens — observation rejected",
+                    `The Head of Audit rejected the observation "${o.title}". It is closed with no further action.` +
+                      (note ? `\n\nReason: ${note}` : ""),
+                    o.id,
+                  );
+                else
+                  notifyBoth(
+                    d,
+                    to,
+                    "obs_rejected",
+                    "Rejected — edit and send back: " + o.title,
+                    "audits",
+                    "AuditLens — observation sent back for changes",
+                    `The Head of Audit rejected the observation "${o.title}".` +
+                      (note ? `\n\nWhat needs to change: ${note}` : "") +
+                      `\n\nOpen it in AuditLens to edit it and send it back for approval.`,
+                    o.id,
+                  );
             }
           }
           break;
@@ -155,8 +187,9 @@ export function useApprovalDecisions() {
                send one back. Approving the rework used to apply the text and leave the finding
                rejected — off the tracker, never sent to its owner — so the Head could not find
                the observation just approved. Approving the rework now approves the finding; the
-               details dialog says so before the decision. */
-            const reinstated = !!o && o.obsApproval === "rejected";
+               details dialog says so before the decision. Not one rejected for good — that is
+               closed, and approving a stray edit to it only applies the text. */
+            const reinstated = !!o && o.obsApproval === "rejected" && !o.rejectionFinal;
             if (o && reinstated) publishObs(d, o);
             notifyBoth(
               d,
@@ -228,6 +261,38 @@ export function useApprovalDecisions() {
         }
       }
     });
+    return decided;
+  }
+
+  /** The Head approving an observation whose raise was rejected — typically after editing it
+   *  rather than waiting for Internal Audit to send it back. No request is open (a rejected
+   *  raise has none until it is resubmitted), so this goes straight to the observation. */
+  async function approveRejected(auditId: string, reportId: string, obsId: string): Promise<boolean> {
+    if (!isHead) {
+      toast("Only the Head of Audit can approve.", "error");
+      return false;
+    }
+    await loadDirectory();
+    let done = false;
+    mutate((d) => {
+      const o = findObsIn(d, auditId, reportId, obsId);
+      if (!o || o.obsApproval !== "rejected") return;
+      done = true;
+      delete o.rejectionFinal;
+      publishObs(d, o);
+      if (o.raisedBy)
+        notifyBoth(
+          d,
+          o.raisedBy,
+          "obs_approved",
+          "Approved: " + o.title,
+          "audits",
+          "AuditLens — observation approved",
+          `Your observation "${o.title}" was approved by the Head of Audit after all, and the action owner has been notified.`,
+          o.id,
+        );
+    });
+    return done;
   }
 
   /** Legacy modalDecideWithdraw — the Head decides a withdrawal with a reason for the owner. */
@@ -334,7 +399,8 @@ export function useApprovalDecisions() {
     await decide(aid, true);
   }
 
-  /** Legacy rejectAny. */
+  /** Legacy rejectAny. A new observation's rejection goes through a dialog: it asks what needs
+   *  changing and says plainly that the observation goes back to be fixed, not away. */
   async function rejectAny(aid: string): Promise<void> {
     const a = approvals(db).find((x) => x.id === aid);
     if (!a) return;
@@ -342,10 +408,162 @@ export function useApprovalDecisions() {
       openDecideWithdraw(aid, "reject");
       return;
     }
+    if (a.kind === "observation_raise" && isHead) {
+      modal.open(<RejectRaiseDialog aid={aid} />);
+      return;
+    }
     await decide(aid, false);
   }
 
-  return { approveAny, rejectAny, finalizeWithdraw };
+  /** The raise-rejection dialog's submit. Returns whether the request was actually decided. */
+  function rejectRaise(aid: string, note: string, final: boolean): Promise<boolean> {
+    return decide(aid, false, note, final);
+  }
+
+  /** The Head reopening an observation rejected for good, so Internal Audit can edit it and send
+   *  it back after all. It stays rejected (off the tracker) until it is approved. */
+  async function reopenRejected(auditId: string, reportId: string, obsId: string): Promise<boolean> {
+    if (!isHead) {
+      toast("Only the Head of Audit can reopen a rejection.", "error");
+      return false;
+    }
+    await loadDirectory();
+    let done = false;
+    mutate((d) => {
+      const o = findObsIn(d, auditId, reportId, obsId);
+      if (!o || o.obsApproval !== "rejected" || !o.rejectionFinal) return;
+      done = true;
+      delete o.rejectionFinal;
+      if (o.raisedBy)
+        notifyBoth(
+          d,
+          o.raisedBy,
+          "obs_rejected",
+          "Reopened for changes: " + o.title,
+          "audits",
+          "AuditLens — rejected observation reopened",
+          `The Head of Audit reopened the rejected observation "${o.title}". You can now edit it and send it back for approval.`,
+          o.id,
+        );
+    });
+    return done;
+  }
+
+  return { approveAny, rejectAny, rejectRaise, approveRejected, reopenRejected, finalizeWithdraw };
+}
+
+/* ---------------- reject a new observation — send it back for changes ---------------- */
+
+export function RejectRaiseDialog({ aid }: { aid: string }) {
+  const { db } = useWorkspace();
+  const modal = useModal();
+  const { rejectRaise } = useApprovalDecisions();
+  const [note, setNote] = useState("");
+  const [final, setFinal] = useState(false);
+  const [err, setErr] = useState("");
+  const ap = approvals(db).find((x) => x.id === aid);
+  const { o } = ap ? findApprovalObs(db, ap) : { o: undefined };
+  const raiser = String(o?.raisedByName || ap?.requestedByName || "the auditor who raised it");
+
+  async function submit() {
+    const trimmed = note.trim();
+    // A final rejection is the record of why a finding was never raised, so it needs a reason.
+    if (final && !trimmed) {
+      setErr("Give the reason for rejecting it for good — it is kept on record.");
+      return;
+    }
+    setErr("");
+    const done = await rejectRaise(aid, trimmed, final);
+    if (!done) return;
+    modal.close();
+    toast(
+      final ? "Rejected for good. No further action is needed." : `Rejected and sent back to ${raiser} for changes.`,
+      "success",
+    );
+  }
+
+  const option = (value: boolean, title: string, body: string) => (
+    <label
+      style={{ display: "flex", gap: 10, alignItems: "flex-start", fontWeight: 400, marginTop: 6, cursor: "pointer" }}
+    >
+      <input
+        type="radio"
+        name="reject-kind"
+        style={{ width: "auto", marginTop: 3 }}
+        checked={final === value}
+        onChange={() => {
+          setFinal(value);
+          setErr("");
+        }}
+      />
+      <span>
+        <b>{title}</b>
+        <span className="hint" style={{ display: "block" }}>
+          {body}
+        </span>
+      </span>
+    </label>
+  );
+
+  return (
+    <ModalFrame
+      title="Reject observation"
+      footer={
+        <>
+          <button className="btn sec" type="button" onClick={modal.close}>
+            Cancel
+          </button>
+          <BusyButton className="btn danger" onClick={submit}>
+            {final ? "Reject for good" : <>Reject &amp; send back</>}
+          </BusyButton>
+        </>
+      }
+    >
+      {o ? (
+        <div className="note" style={{ marginBottom: 10 }}>
+          <b>{o.title}</b>
+        </div>
+      ) : null}
+      <div role="radiogroup" aria-label="Kind of rejection" style={{ marginBottom: 10 }}>
+        {option(
+          false,
+          "Send back for changes",
+          `It goes back to ${raiser}, who can edit it and send it back for your approval. You can also edit it yourself and approve it later.`,
+        )}
+        {option(
+          true,
+          "Reject for good",
+          "No further action. It is closed and kept on record as rejected — it cannot be edited or sent back. You can reopen it later if you change your mind.",
+        )}
+      </div>
+      <label>
+        {final ? (
+          <>
+            Reason <span className="hint">(required — {raiser} sees this)</span>
+          </>
+        ) : (
+          <>
+            What needs to change? <span className="hint">(optional — {raiser} sees this)</span>
+          </>
+        )}
+      </label>
+      <textarea
+        style={{ minHeight: 90 }}
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder={
+          final
+            ? "e.g. Not a finding — the control operated as designed; the exception was an approved waiver."
+            : "e.g. Quantify the exposure and cite the policy clause breached."
+        }
+      />
+      {err ? (
+        <div className="ai-err" style={{ marginTop: 8 }}>
+          {err}
+        </div>
+      ) : null}
+    </ModalFrame>
+  );
 }
 
 /* ---------------- withdraw decision dialog (legacy modalDecideWithdraw) ---------------- */
