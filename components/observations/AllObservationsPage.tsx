@@ -67,25 +67,33 @@ export default function AllObservationsPage() {
     return allObs(db).filter(obsIsApproved);
   }, [db]);
 
-  // Overall totals for KPI strip
+  // Overall totals for KPI strip — overdue and watchlist go through closeBucketOf() so they
+  // reconcile with the Executive dashboard's Overdue / Watchlist tiles (QA-11).
   const totals = useMemo(() => {
-    let critical = 0;
-    let high = 0;
     let overdue = 0;
+    let watchlist = 0;
     let openPending = 0;
     let closed = 0;
+    let repeat = 0;
+    let repeatOpen = 0;
 
     for (const o of allList) {
-      if (o.criticality === "Critical") critical++;
-      if (o.criticality === "High") high++;
+      if (o.isRepeat) {
+        repeat++;
+        if (o.status !== "Closed") repeatOpen++;
+      }
       if (o.status === "Closed") {
         closed++;
       } else {
         openPending++;
-        if (isOverdueObs(o, o._r)) overdue++;
+        const bucket = closeBucketOf(o, o._r);
+        if (bucket === "Overdue") overdue++;
+        else if (bucket === "≤ 2 weeks") watchlist++;
       }
     }
-    return { total: allList.length, critical, high, overdue, openPending, closed };
+    const total = allList.length;
+    const rate = total > 0 ? Math.round((closed / total) * 100) : 0;
+    return { total, overdue, watchlist, openPending, closed, repeat, repeatOpen, rate };
   }, [allList]);
 
   // Criticality live counts (for quick tabs)
@@ -117,7 +125,8 @@ export default function AllObservationsPage() {
         if (timelineFilter === "overdue" || timelineFilter === "Overdue") {
           if (!isOver) return false;
         } else if (timelineFilter === "due_soon" || timelineFilter === "≤ 2 weeks") {
-          if (isOver || days == null || days < 0 || days > 14) return false;
+          // Open items only, same rule as the Watchlist tile — a closed item is not "due".
+          if (o.status === "Closed" || closeBucketOf(o, o._r) !== "≤ 2 weeks") return false;
         } else if (timelineFilter === "on_track") {
           if (isOver || (days != null && days >= 0 && days <= 14)) return false;
         } else if (timelineFilter === "closed" || timelineFilter === "Closed") {
@@ -293,21 +302,14 @@ export default function AllObservationsPage() {
           gap: 12,
         }}
       >
-        <Kpi tone="base" label="Total Observations" value={totals.total} sub="Full register" icon="audit" />
         <Kpi
-          tone="warn"
-          label="Critical"
-          value={totals.critical}
-          sub="Severe risk findings"
-          icon="alert"
+          tone="good"
+          label="Remediation Rate"
+          value={`${totals.rate}%`}
+          sub={`${totals.closed} of ${totals.total} closed`}
+          icon="check"
         />
-        <Kpi
-          tone="accent"
-          label="High Risk"
-          value={totals.high}
-          sub="Priority actions"
-          icon="alert"
-        />
+        <Kpi tone="accent" label="Open Actions" value={totals.openPending} sub="Open & In Progress" icon="obs" />
         <Kpi
           tone={totals.overdue > 0 ? "warn" : "base"}
           label="Overdue Actions"
@@ -315,8 +317,20 @@ export default function AllObservationsPage() {
           sub="Target date passed"
           icon="alert"
         />
-        <Kpi tone="base" label="Pending" value={totals.openPending} sub="Open & In Progress" icon="obs" />
-        <Kpi tone="good" label="Closed" value={totals.closed} sub="Remediated & verified" icon="check" />
+        <Kpi
+          tone="base"
+          label="Repeat Findings"
+          value={totals.repeat}
+          sub={`${totals.repeatOpen} still open`}
+          icon="repeat"
+        />
+        <Kpi
+          tone={totals.watchlist > 0 ? "mid" : "base"}
+          label="Watchlist"
+          value={totals.watchlist}
+          sub="Due within 2 weeks"
+          icon="clock"
+        />
       </div>
 
       {/* Main Register Card */}

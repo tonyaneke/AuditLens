@@ -35,7 +35,7 @@ import {
   validateObservation,
 } from "@/lib/workspace/obs-validation";
 import { approvals, ck, uid } from "@/lib/workspace/selectors";
-import type { EvidenceFile, Observation, WorkspaceDb } from "@/lib/workspace/types";
+import type { EvidenceFile, Observation } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 import TestProgrammeSelect from "./TestProgrammeSelect";
 
@@ -52,13 +52,12 @@ type RaiseFlowDraft = {
   repeatOf: string;
 };
 
-function seedObservation(db: WorkspaceDb, draft: Observation): Observation {
-  const wanted = String(draft.ref || "").trim();
-  const taken = usedObsRefs(db);
-  return {
-    ...draft,
-    ref: wanted && !taken.has(wanted.toLowerCase()) ? wanted : nextObsRef(db),
-  };
+/* The reference is DEPT/YEAR/NNN (nextObsRef), and the department is the primary owner's, which
+   is not chosen until step 3 — so it is assigned in submit(), never taken from the draft. Drafts
+   used to carry one in: the raise-exception path copied the TEST's ref ("T3") and the AI drafter
+   invented its own ("TPRM-2024-001"), and whichever was unused was kept. */
+function seedObservation(draft: Observation): Observation {
+  return { ...draft, ref: "" };
 }
 
 export default function RaiseFlow({
@@ -78,7 +77,7 @@ export default function RaiseFlow({
   const head = isHead(user);
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [o, setO] = useState<Observation>(() => seedObservation(db, draft));
+  const [o, setO] = useState<Observation>(() => seedObservation(draft));
   const [err, setErr] = useState("");
 
   // Step 3 state
@@ -167,6 +166,9 @@ export default function RaiseFlow({
   const audit = (db.audits || []).find((x) => x.id === auditId);
   const report = audit?.reports?.find((x) => x.id === reportId);
   const priors = priorObsForRepeat(db, reportId);
+  const ownerDept = departments(db).find((d) => d.headUserId === ownerId);
+  // A preview only — submit() recomputes it from the workspace as it stands at that moment.
+  const refPreview = ownerId ? nextObsRef(db, ownerDept?.name) : "";
   const [repQ, setRepQ] = useState("");
 
   function next() {
@@ -223,11 +225,13 @@ export default function RaiseFlow({
       );
       return;
     }
+    const dept = departments(db).find((d) => d.headUserId === ownerId);
+    const ref = nextObsRef(db, dept?.name);
     /* QA-9 / QA-10 / QA-22 — reference uniqueness, a target date after the report date, and a
        prior reference on any repeat. The AI repeat scan above can set isRepeat without finding
        a match, which is exactly how a repeat finding ended up with no prior reference. */
     const problems = validateObservation(
-      { ref: String(o.ref || "").trim(), dueDate: due, isRepeat, repeatOf },
+      { ref, dueDate: due, isRepeat, repeatOf },
       { existingRefs: usedObsRefs(db), baseDate: reportBaseDate(report, o.createdAt) },
     );
     if (problems.length) {
@@ -256,12 +260,12 @@ export default function RaiseFlow({
       }
     }
 
-    const dept = departments(db).find((d) => d.headUserId === ownerId);
     const sec2 = ownerId && owner2Id === ownerId ? "" : owner2Id;
     const dept2 = departments(db).find((d) => d.headUserId === sec2);
     const now = new Date().toISOString();
     const finalObs: Observation = {
       ...o,
+      ref,
       timeline,
       dueDate: due || "",
       isRepeat,
@@ -281,6 +285,9 @@ export default function RaiseFlow({
       const a = (d.audits || []).find((x) => x.id === auditId);
       const r = a && (a.reports || []).find((x) => x.id === reportId);
       if (!r) return;
+      // Taken again here: the upload above can run for seconds, and a background re-sync in that
+      // window may have brought in someone else's raise under the number checked before it.
+      finalObs.ref = nextObsRef(d, dept?.name);
       r.observations.push(finalObs);
       if (head) {
         notifyOwnerAssigned(d, finalObs);
@@ -340,10 +347,11 @@ export default function RaiseFlow({
           <div>
             <label>Ref</label>
             <input
-              value={String(o.ref || "")}
+              value={refPreview}
               readOnly
+              placeholder="Set when the owner is assigned"
               className="field-readonly"
-              title="Assigned automatically and unique across all reports"
+              title="Assigned automatically — owner's department / year / number, e.g. FIN/2026/004"
             />
           </div>
           <div>
@@ -428,7 +436,7 @@ export default function RaiseFlow({
         </div>
         <div className="note" style={{ marginBottom: 12 }}>
           <b>
-            {o.ref ? o.ref + " — " : ""}
+            {refPreview ? refPreview + " — " : ""}
             {String(o.title)}
           </b>{" "}
           · <span className={`pill c-${ck(String(o.criticality))}`}>{String(o.criticality)}</span>
@@ -485,7 +493,7 @@ export default function RaiseFlow({
       </div>
       <div className="note" style={{ marginBottom: 10 }}>
         <b>
-          {o.ref ? o.ref + " — " : ""}
+          {refPreview ? refPreview + " — " : ""}
           {String(o.title)}
         </b>{" "}
         · <span className={`pill c-${ck(String(o.criticality))}`}>{String(o.criticality)}</span>
@@ -511,6 +519,11 @@ export default function RaiseFlow({
           owner. An observation cannot be raised without one.
         </div>
       )}
+      {refPreview ? (
+        <div className="hint" style={{ marginTop: 4 }}>
+          Reference <b>{refPreview}</b> — numbered by the owner&apos;s department and year.
+        </div>
+      ) : null}
       <label style={{ marginTop: 8 }}>
         Secondary action owner <span className="hint">(oversight only — optional)</span>
       </label>

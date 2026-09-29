@@ -70,6 +70,46 @@ type ActivityItem = {
   rawItem: UnifiedObservation;
 };
 
+type WatchFilter = "critical" | "overdue" | "due_soon";
+
+const WATCH_FILTERS: {
+  key: WatchFilter;
+  label: string;
+  on: string;
+  offBg: string;
+  offFg: string;
+  href: string;
+  empty: string;
+}[] = [
+  {
+    key: "critical",
+    label: "Critical",
+    on: "#7a0012",
+    offBg: "#f6dde0",
+    offFg: "#7a0012",
+    href: "/observations?crit=Critical",
+    empty: "No open Critical observations.",
+  },
+  {
+    key: "overdue",
+    label: "Overdue",
+    on: "#b00020",
+    offBg: "#fdecef",
+    offFg: "#b00020",
+    href: "/observations?timeline=overdue",
+    empty: "No overdue observations.",
+  },
+  {
+    key: "due_soon",
+    label: "Due ≤ 2 wks",
+    on: "#c98a00",
+    offBg: "#fbf3dd",
+    offFg: "#805b00",
+    href: "/observations?timeline=due_soon",
+    empty: "Nothing due in the next two weeks.",
+  },
+];
+
 function Donut({
   segs,
   total,
@@ -218,56 +258,40 @@ export default function ExecutiveDashboard() {
     });
   }, [approved, db]);
 
-  // Open Critical observations needing executive oversight
-  const [watchTimelineFilter, setWatchTimelineFilter] = useState<"all" | "overdue" | "due_soon" | "on_track">("all");
+  // Priority Watch — open observations needing executive oversight, sliced three ways.
+  // Overdue / due-soon go through closeBucketOf() so they match the posture tiles (QA-11).
+  const [watchFilter, setWatchFilter] = useState<WatchFilter>("critical");
   const [watchPage, setWatchPage] = useState<number>(1);
   const WATCH_PAGE_SIZE = 5;
 
-  const allCriticalObs = useMemo(() => {
-    return allObservations.filter(
-      (o) => o.criticality === "Critical" && o.status !== "Closed",
-    );
+  const watchLists = useMemo(() => {
+    const lists: Record<WatchFilter, UnifiedObservation[]> = { critical: [], overdue: [], due_soon: [] };
+    for (const o of allObservations) {
+      if (o.status === "Closed") continue;
+      if (o.criticality === "Critical") lists.critical.push(o);
+      const bucket = closeBucketOf(o.rawInternal, o.rawInternal._r);
+      if (bucket === "Overdue") lists.overdue.push(o);
+      else if (bucket === "≤ 2 weeks") lists.due_soon.push(o);
+    }
+    // Overdue first, then severity, then longest-overdue / soonest-due.
+    const byPriority = (a: UnifiedObservation, b: UnifiedObservation) =>
+      Number(b.isOverdue) - Number(a.isOverdue) ||
+      CRITS.indexOf(a.rawInternal.criticality) - CRITS.indexOf(b.rawInternal.criticality) ||
+      (a.daysDiff ?? 999) - (b.daysDiff ?? 999);
+    for (const k of WATCH_FILTERS) lists[k.key].sort(byPriority);
+    return lists;
   }, [allObservations]);
 
-  const watchCounts = useMemo(() => {
-    let all = 0;
-    let overdue = 0;
-    let dueSoon = 0;
-    let onTrack = 0;
+  const priorityWatch = watchLists[watchFilter];
+  const activeWatchFilter = WATCH_FILTERS.find((f) => f.key === watchFilter)!;
 
-    for (const o of allCriticalObs) {
-      all++;
-      if (o.isOverdue) overdue++;
-      else if (o.daysDiff != null && o.daysDiff >= 0 && o.daysDiff <= 14) dueSoon++;
-      else onTrack++;
-    }
-    return { all, overdue, dueSoon, onTrack };
-  }, [allCriticalObs]);
-
-  const criticalWatch = useMemo(() => {
-    return allCriticalObs
-      .filter((o) => {
-        if (watchTimelineFilter === "overdue") return o.isOverdue;
-        if (watchTimelineFilter === "due_soon")
-          return !o.isOverdue && o.daysDiff != null && o.daysDiff >= 0 && o.daysDiff <= 14;
-        if (watchTimelineFilter === "on_track")
-          return !o.isOverdue && (o.daysDiff == null || o.daysDiff > 14);
-        return true;
-      })
-      .sort((a, b) => {
-        if (a.isOverdue && !b.isOverdue) return -1;
-        if (!a.isOverdue && b.isOverdue) return 1;
-        return (a.daysDiff ?? 999) - (b.daysDiff ?? 999);
-      });
-  }, [allCriticalObs, watchTimelineFilter]);
-
-  const totalWatchPages = Math.max(1, Math.ceil(criticalWatch.length / WATCH_PAGE_SIZE));
+  const totalWatchPages = Math.max(1, Math.ceil(priorityWatch.length / WATCH_PAGE_SIZE));
   const currentWatchPage = Math.min(watchPage, totalWatchPages);
 
   const paginatedWatch = useMemo(() => {
     const start = (currentWatchPage - 1) * WATCH_PAGE_SIZE;
-    return criticalWatch.slice(start, start + WATCH_PAGE_SIZE);
-  }, [criticalWatch, currentWatchPage]);
+    return priorityWatch.slice(start, start + WATCH_PAGE_SIZE);
+  }, [priorityWatch, currentWatchPage]);
 
   // Ranked departments by pending internal observations
   const rankedDepartments = useMemo(() => {
@@ -462,7 +486,7 @@ export default function ExecutiveDashboard() {
         />
       </div>
 
-      {/* Top 2-Column Section: Left (Criticality Donut + Recent Activity) vs Right (Table Critical Watch) */}
+      {/* Top 2-Column Section: Left (Criticality Donut + Recent Activity) vs Right (Risk spread + Priority Watch) */}
       <div className="dash2" style={{ alignItems: "stretch", marginBottom: 18 }}>
         {/* Left Column: Donut card (fit-content) + Recent Remediation Activity filling below */}
         <div style={{ display: "flex", flexDirection: "column", gap: 18, height: "100%" }}>
@@ -742,7 +766,7 @@ export default function ExecutiveDashboard() {
           </div>
         </div>
 
-        {/* Right Column: Department Risk Exposure (Bar Chart) + Critical & High Priority Watch */}
+        {/* Right Column: Department Risk Exposure (Bar Chart) + Priority Watch */}
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
           {/* Card 1: Department Risk Exposure & Workload (Bar Chart) */}
           <div
@@ -923,7 +947,7 @@ export default function ExecutiveDashboard() {
             </div>
           </div>
 
-          {/* Card 2: Critical & High Priority Watch (Interchanged under Department Risk Exposure) */}
+          {/* Card 2: Priority Watch — Critical / Overdue / Due ≤ 2 wks */}
           <div
             className="card anim-fade-in"
             style={{
@@ -952,19 +976,12 @@ export default function ExecutiveDashboard() {
                   gap: 8,
                 }}
               >
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div className="seclabel" style={{ margin: 0 }}>
-                    Critical Priority Watch
-                  </div>
-                  {watchCounts.all > 0 && (
-                    <span className="pill c-Critical" style={{ fontSize: 10.5, fontWeight: 700 }}>
-                      {watchCounts.all} Active
-                    </span>
-                  )}
+                <div className="seclabel" style={{ margin: 0 }}>
+                  Priority Watch
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <Link
-                    href="/observations?crit=Critical"
+                    href={activeWatchFilter.href}
                     className="btn sec sm"
                     style={{ fontSize: "11px", padding: "3px 9px", height: "auto", textDecoration: "none" }}
                   >
@@ -973,101 +990,41 @@ export default function ExecutiveDashboard() {
                 </div>
               </div>
 
-              {/* Sub-filter timeline buttons */}
+              {/* Filter chips: Critical / Overdue / Due ≤ 2 wks */}
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                <button
-                  type="button"
-                  className={`btn ${watchTimelineFilter === "all" ? "pri" : "ghost"} sm`}
-                  style={{
-                    fontSize: "11.5px",
-                    padding: "3px 10px",
-                    borderRadius: "16px",
-                    height: "auto",
-                    fontWeight: 600,
-                  }}
-                  onClick={() => {
-                    setWatchTimelineFilter("all");
-                    setWatchPage(1);
-                  }}
-                >
-                  All ({watchCounts.all})
-                </button>
-                <button
-                  type="button"
-                  className="btn sm"
-                  style={{
-                    fontSize: "11.5px",
-                    padding: "3px 10px",
-                    borderRadius: "16px",
-                    height: "auto",
-                    fontWeight: 600,
-                    background: watchTimelineFilter === "overdue" ? "#b00020" : "#fdecef",
-                    color: watchTimelineFilter === "overdue" ? "#ffffff" : "#b00020",
-                    border: "none",
-                  }}
-                  onClick={() => {
-                    setWatchTimelineFilter("overdue");
-                    setWatchPage(1);
-                  }}
-                >
-                  Overdue ({watchCounts.overdue})
-                </button>
-                <button
-                  type="button"
-                  className="btn sm"
-                  style={{
-                    fontSize: "11.5px",
-                    padding: "3px 10px",
-                    borderRadius: "16px",
-                    height: "auto",
-                    fontWeight: 600,
-                    background: watchTimelineFilter === "due_soon" ? "#c98a00" : "#fbf3dd",
-                    color: watchTimelineFilter === "due_soon" ? "#ffffff" : "#805b00",
-                    border: "none",
-                  }}
-                  onClick={() => {
-                    setWatchTimelineFilter("due_soon");
-                    setWatchPage(1);
-                  }}
-                >
-                  Due Soon ≤ 2 wks ({watchCounts.dueSoon})
-                </button>
-                <button
-                  type="button"
-                  className="btn sm"
-                  style={{
-                    fontSize: "11.5px",
-                    padding: "3px 10px",
-                    borderRadius: "16px",
-                    height: "auto",
-                    fontWeight: 600,
-                    background: watchTimelineFilter === "on_track" ? "#2e7d32" : "#eaf5eb",
-                    color: watchTimelineFilter === "on_track" ? "#ffffff" : "#2e7d32",
-                    border: "none",
-                  }}
-                  onClick={() => {
-                    setWatchTimelineFilter("on_track");
-                    setWatchPage(1);
-                  }}
-                >
-                  On Track ({watchCounts.onTrack})
-                </button>
+                {WATCH_FILTERS.map((f) => {
+                  const active = watchFilter === f.key;
+                  return (
+                    <button
+                      key={f.key}
+                      type="button"
+                      className="btn sm"
+                      aria-pressed={active}
+                      style={{
+                        fontSize: "11.5px",
+                        padding: "3px 10px",
+                        borderRadius: "16px",
+                        height: "auto",
+                        fontWeight: 600,
+                        background: active ? f.on : f.offBg,
+                        color: active ? "#ffffff" : f.offFg,
+                        border: "none",
+                      }}
+                      onClick={() => {
+                        setWatchFilter(f.key);
+                        setWatchPage(1);
+                      }}
+                    >
+                      {f.label} ({watchLists[f.key].length})
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
-            {!criticalWatch.length ? (
+            {!priorityWatch.length ? (
               <div style={{ padding: 28, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <Empty big="✓">
-                  No Critical observations matching{" "}
-                  {watchTimelineFilter === "overdue"
-                    ? "Overdue"
-                    : watchTimelineFilter === "due_soon"
-                      ? "Due Soon (≤ 2 wks)"
-                      : watchTimelineFilter === "on_track"
-                        ? "On Track"
-                        : "the active filter"}
-                  .
-                </Empty>
+                <Empty big="✓">{activeWatchFilter.empty}</Empty>
               </div>
             ) : (
               <>
@@ -1156,9 +1113,9 @@ export default function ExecutiveDashboard() {
                     Showing{" "}
                     <b style={{ color: "var(--ink)" }}>
                       {(currentWatchPage - 1) * WATCH_PAGE_SIZE + 1}–
-                      {Math.min(currentWatchPage * WATCH_PAGE_SIZE, criticalWatch.length)}
+                      {Math.min(currentWatchPage * WATCH_PAGE_SIZE, priorityWatch.length)}
                     </b>{" "}
-                    of <b style={{ color: "var(--ink)" }}>{criticalWatch.length}</b> critical observation{criticalWatch.length === 1 ? "" : "s"}
+                    of <b style={{ color: "var(--ink)" }}>{priorityWatch.length}</b> observation{priorityWatch.length === 1 ? "" : "s"}
                   </div>
                   {totalWatchPages > 1 && (
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>

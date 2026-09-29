@@ -30,8 +30,8 @@ import {
 
 const NAME = "dedupe-obs-refs";
 
-/** Next free reference following the existing `N.1` counter. Mirrors nextObsRef() in
- * lib/workspace/obs-validation.ts — restated here so the migration has no React dependency. */
+/** Next free reference following the legacy `N.1` counter — what nextObsRef() in
+ * lib/workspace/obs-validation.ts issued before new raises moved to DEPT/YEAR/NNN. */
 function nextRef(used: Set<string>): string {
   let max = 0;
   for (const ref of used) {

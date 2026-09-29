@@ -1842,6 +1842,7 @@ td.timeline-cell {
 .kpi.base .kpi-icon { background: rgba(13, 90, 71, 0.1); color: var(--brand-700); }
 .kpi.warn .kpi-icon { background: rgba(176, 0, 32, 0.1); color: var(--crit); }
 .kpi.good .kpi-icon { background: rgba(46, 125, 50, 0.12); color: var(--low); }
+.kpi.mid .kpi-icon { background: rgba(201, 138, 0, 0.14); color: #a15c00; }
 
 .kpi .lab {
   margin: 0;

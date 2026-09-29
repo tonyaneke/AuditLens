@@ -24,6 +24,7 @@ import {
   procList,
   type RawProcAnalysis,
 } from "@/lib/workspace/process";
+import { nextObsRef } from "@/lib/workspace/obs-validation";
 import { departments, notifyOwnerAssigned } from "@/lib/workspace/observations";
 import { uid } from "@/lib/workspace/selectors";
 import type { ProcessReview } from "@/lib/workspace/types";
@@ -465,7 +466,8 @@ export function RaiseProcFindingDialog({ pid, fid }: { pid: string; fid: string 
             ] || "Moderate";
           const obs = {
             id: uid(),
-            ref: "",
+            // Was "" — and a blank ref fails validation, so the observation couldn't then be edited.
+            ref: nextObsRef(d, dept?.name),
             title: cf.title,
             category: cf.category,
             description: cf.detail,

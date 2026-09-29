@@ -181,7 +181,8 @@ export default function TrackerPage() {
       (a, b) =>
         String(a._a.name || "").localeCompare(String(b._a.name || "")) ||
         String(a._r.title || "").localeCompare(String(b._r.title || "")) ||
-        String(a.ref || "").localeCompare(String(b.ref || "")),
+        // numeric: 8.1 before 10.1 — a plain string sort put every 1x.1 ahead of 2.1.
+        String(a.ref || "").localeCompare(String(b.ref || ""), undefined, { numeric: true }),
     );
     if (!list.length) {
       toast("No observations to export.");
@@ -416,7 +417,7 @@ export default function TrackerPage() {
       (a, b) =>
         String(a._a.name || "").localeCompare(String(b._a.name || "")) ||
         String(a._r.title || "").localeCompare(String(b._r.title || "")) ||
-        String(a.ref || "").localeCompare(String(b.ref || "")),
+        String(a.ref || "").localeCompare(String(b.ref || ""), undefined, { numeric: true }),
     );
     if (!list.length) {
       toast("No observations match the current filters.");

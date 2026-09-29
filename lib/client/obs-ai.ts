@@ -20,7 +20,6 @@ Process / audit area: ${ctx || "(not specified)"}
 
 Return ONLY a JSON object (no commentary) with these exact keys — every field must be populated with substantive content:
 {
-  "ref": "observation reference e.g. 1.1",
   "title": "concise observation title",
   "category": "control theme, e.g. Credit risk / Segregation of duties",
   "description": "detailed condition — what was observed, with specifics",

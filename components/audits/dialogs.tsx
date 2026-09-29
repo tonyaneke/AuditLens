@@ -955,8 +955,8 @@ export function ModalRaiseExceptionDialog({ auditId, testId }: { auditId: string
       return;
     }
     // Port of doRaiseException — AI draft plus test enrichment, then the raise wizard.
+    // No ref from the test or the AI — RaiseFlow numbers it; the test's ref is kept as sourceTestRef.
     const obs = obsFromAi(d);
-    if (!d.ref && t.ref) obs.ref = t.ref;
     if ((!d.title || d.title === "(untitled)") && testTitle(t)) obs.title = testTitle(t);
     if (!d.category && testControl(t)) obs.category = testControl(t);
     obs.sourceTest = t.id;
@@ -976,7 +976,6 @@ export function ModalRaiseExceptionDialog({ auditId, testId }: { auditId: string
       return;
     }
     const obs = blankObservation();
-    if (t.ref) obs.ref = t.ref;
     obs.sourceTest = t.id;
     obs.sourceTestRef = t.ref || "";
     obs.sourceTestTitle = testTitle(t);
@@ -1400,7 +1399,8 @@ const CSV_HEADERS = [
   "Timeline", "DueDate", "Status", "IsRepeat", "RepeatOf",
 ];
 const CSV_EXAMPLE = [
-  "Credit Operations Audit 2025", "Process", "Credit Operations", "Loan Origination Controls Review", "1.1",
+  // Ref left blank: the import numbers it (CRD/2026/NNN). Fill it only for findings already cited.
+  "Credit Operations Audit 2025", "Process", "Credit Operations", "Loan Origination Controls Review", "",
   "Loan disbursements approved without credit committee sign-off", "High", "Authorisation",
   "Funds were released without documented Credit Committee approval for sampled disbursements.",
   "Credit Policy requires committee approval before disbursement.",
@@ -1514,13 +1514,14 @@ export function ModalBulkImportDialog() {
           continue;
         }
 
-        // QA-9 — a blank or already-used reference is generated rather than imported as-is.
+        // QA-9 — a blank or already-used reference is generated rather than imported as-is. A
+        // supplied one is kept: an import is usually historical findings already cited by it.
         let ref = g("ref");
         if (!ref) {
-          ref = nextObsRef(d);
+          ref = nextObsRef(d, g("area"));
           warnings.push(`Row ${r + 1}: no reference supplied — assigned ${ref}`);
         } else if (takenRefs.has(ref.toLowerCase())) {
-          const replacement = nextObsRef(d);
+          const replacement = nextObsRef(d, g("area"));
           warnings.push(`Row ${r + 1}: reference "${ref}" already in use — assigned ${replacement}`);
           ref = replacement;
         }

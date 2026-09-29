@@ -8,6 +8,7 @@
 // Everything here is pure — no workspace mutation, no React — so the same rules apply to the
 // observation dialogs, the raise flow and the CSV import path without being written three times.
 
+import { normalizeDept } from "@/lib/dept-scope";
 import type { Observation, Report, WorkspaceDb } from "./types";
 
 /* ------------------------------------------------------------------------------ references */
@@ -16,9 +17,9 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Every observation reference currently in use, anywhere in the workspace.
  *
- * Deliberately workspace-wide rather than per-report: the existing scheme is a global running
- * counter (1.1, 2.1, … 86.1), references are cited in Board papers without their report, and a
- * duplicate across two reports is exactly as ambiguous as one within a report. */
+ * Deliberately workspace-wide rather than per-report: references are cited in Board papers
+ * without their report, and a duplicate across two reports is exactly as ambiguous as one within
+ * a report. */
 export function usedObsRefs(db: WorkspaceDb, exceptObsId?: string): Set<string> {
   const used = new Set<string>();
   (db.audits || []).forEach((a) =>
@@ -33,23 +34,65 @@ export function usedObsRefs(db: WorkspaceDb, exceptObsId?: string): Set<string> 
   return used;
 }
 
-/** Next free observation reference, following the existing `N.1` counter.
+/* Reference prefix per department, keyed by the normalised name from lib/dept-scope.ts — so
+   "Finance", "Finance Department" and "Finance & Accounts" all number from the one FIN sequence,
+   and a department with several workspace records (one per action owner) still has one counter.
+
+   Changing a code here only affects references issued afterwards: the next observation starts a
+   fresh sequence under the new code, and every reference already issued keeps the one it has. */
+const DEPT_REF_CODES: Record<string, string> = {
+  administration: "ADM",
+  "corporate communications": "COM",
+  "credit operations": "CRD",
+  finance: "FIN",
+  "impact and sustainability": "IMS",
+  it: "IT",
+  legal: "LEG",
+  "office of the managing director": "OMD",
+  "people and culture": "PNC",
+  procurement: "PRC",
+  "risk management": "RSK",
+  strategy: "STR",
+  // Not "IA" — that is the report reference prefix (IA/2026/001).
+  "internal audit": "IAD",
+};
+
+/** The department part of an observation reference. A department missing from the table gets its
+ *  initials (or the first three letters of a one-word name) rather than failing the raise. */
+export function obsRefCode(department: unknown): string {
+  const key = normalizeDept(department);
+  if (DEPT_REF_CODES[key]) return DEPT_REF_CODES[key];
+  const words = key.split(" ").filter((w) => w && !["and", "of", "the"].includes(w));
+  if (!words.length) return "GEN";
+  const code = (words.length === 1 ? words[0].slice(0, 3) : words.map((w) => w[0]).join("").slice(0, 3)).toUpperCase();
+  return code === "IA" ? "IAD" : code;
+}
+
+/** Next free observation reference: DEPT/YEAR/NNN, e.g. FIN/2026/004.
  *
- * Modelled on nextReportRef() / extNextRef(), both of which already generate with a collision
- * loop. Observations were the one entity still typed by hand — with `e.g. 1.1` as the
- * placeholder, which is how "1.1" ended up used eleven times. */
-export function nextObsRef(db: WorkspaceDb): string {
+ * Sequential per department per year, starting again at 001 each January. The department is the
+ * primary action owner's — the one the finding is raised against. References issued under the
+ * earlier schemes (the 1.1 … 105.1 counter, test refs) are left as they are and simply don't match
+ * the pattern, so they neither advance nor block the new sequence.
+ *
+ * Deleted observations are stripped before the workspace reaches the browser, so deleting the
+ * latest one frees its number for the next raise. Nothing restores a deleted observation, so the
+ * number can never be live twice. */
+export function nextObsRef(db: WorkspaceDb, department: unknown, year = new Date().getFullYear()): string {
   const used = usedObsRefs(db);
+  const code = obsRefCode(department);
+  const prefix = `${code}/${year}/`.toLowerCase();
   let max = 0;
   for (const ref of used) {
-    const m = ref.match(/^(\d{1,5})\.\d+$/);
-    if (m) max = Math.max(max, Number(m[1]));
+    if (!ref.startsWith(prefix)) continue;
+    const n = Number(ref.slice(prefix.length));
+    if (Number.isInteger(n) && n > max) max = n;
   }
   let n = max;
   let ref = "";
   do {
     n++;
-    ref = `${n}.1`;
+    ref = `${code}/${year}/${String(n).padStart(3, "0")}`;
   } while (used.has(ref.toLowerCase()) && n < 99999);
   return ref;
 }
