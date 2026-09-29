@@ -105,9 +105,11 @@ export function ApprovalDetailsDialog({ aid }: { aid: string }) {
     const nb = ap.changes;
     const cur = (o || {}) as Record<string, unknown>;
     // Only what the proposal carries — approving applies just those keys (a proposal on an
-    // assigned observation leaves `owner` out; Reassign owner is how that changes).
+    // assigned observation leaves `owner` out; Reassign owner is how that changes). Never `ref`:
+    // an older proposal may carry one, but approving does not apply it (decisions.tsx).
     const changed = OBS_FIELD_LABELS.filter(
       ([k]) =>
+        k !== "ref" &&
         Object.prototype.hasOwnProperty.call(nb, k) &&
         String(nb[k] == null ? "" : nb[k]) !== String(cur[k] == null ? "" : cur[k]),
     );

@@ -112,7 +112,7 @@ export default function ReportDetailPage({ auditId, reportId }: { auditId: strin
     if (statusFilter !== "All" && (o.status || "Open") !== statusFilter) return false;
     const q = search.toLowerCase().trim();
     if (q) {
-      const hay = `${o.title} ${o.ref || ""} ${o.category || ""} ${o.description || ""}`.toLowerCase();
+      const hay = `${o.title} ${o.ref || ""} ${o.legacyRef || ""} ${o.category || ""} ${o.description || ""}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;

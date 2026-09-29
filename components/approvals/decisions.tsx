@@ -176,7 +176,11 @@ export function useApprovalDecisions() {
           const { o } = findApprovalObs(d, ap);
           if (approve) {
             if (o && ap.changes) {
-              const nb = ap.changes;
+              /* The reference is system-assigned, never an edit. Proposals made before the edit
+                 form stopped sending it carry the ref as it stood then, and applying one would
+                 undo any renumbering since. */
+              const nb = { ...ap.changes };
+              delete nb.ref;
               stampClosed(o, (nb.status as string) || (o.status as string));
               Object.assign(o, nb);
               if (((nb.status as string) || o.status) === "Closed" && nb.closedDateISO)

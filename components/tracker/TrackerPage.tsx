@@ -72,9 +72,10 @@ type TrackerFilter = { crit: string; tl: string; status: string; dept: string; o
 const NO_FILTER: TrackerFilter = { crit: "All", tl: "All", status: "All", dept: "All", owner: "All", quarter: "All", repeat: false };
 
 /** Header search: everything a tracker row shows (title, recommendation, audit, report, owner),
- *  plus the ref, co-owner, department and description auditors quote from memory. */
+ *  plus the ref (and the one it had before renumbering, which older Board papers quote),
+ *  co-owner, department and description auditors quote from memory. */
 function matchesSearch(db: WorkspaceDb, o: ObsWithContext, needle: string): boolean {
-  return [o.title, o.ref, o.owner, o.secondaryOwner, deptNameOf(db, o), o._a.name, o._r.title, o.recommendation, o.description].some(
+  return [o.title, o.ref, o.legacyRef, o.owner, o.secondaryOwner, deptNameOf(db, o), o._a.name, o._r.title, o.recommendation, o.description].some(
     (v) => String(v || "").toLowerCase().includes(needle),
   );
 }
@@ -176,7 +177,7 @@ export default function TrackerPage() {
       "In Progress": ["#fff3e6", "#a15c00"],
       Closed: ["#eaf5eb", "#2e7d32"],
     };
-    const headers = ["Audit","Area / Department","Report","Ref","Observation","Criticality","Category","Description","Criteria","Risk / Impact","Root cause","Recommendation","Proposed SOP update","Management response","Owner","Timeline","Expected close","Actual close","Status","Overdue","Repeat","Repeat of","Raised by","Created"];
+    const headers = ["Audit","Area / Department","Report","Ref","Former ref","Observation","Criticality","Category","Description","Criteria","Risk / Impact","Root cause","Recommendation","Proposed SOP update","Management response","Owner","Timeline","Expected close","Actual close","Status","Overdue","Repeat","Repeat of","Raised by","Created"];
     const list = allObsRaw(db).sort(
       (a, b) =>
         String(a._a.name || "").localeCompare(String(b._a.name || "")) ||
@@ -200,6 +201,7 @@ export default function TrackerPage() {
           cell((o._a.area as string) || ""),
           cell(o._r.title || ""),
           cell(o.ref || ""),
+          cell(o.legacyRef || ""),
           cell(o.title || "", "font-weight:bold"),
           cell(o.criticality || "", `background:${cb[0]};color:${cb[1]};font-weight:bold;text-align:center`),
           cell(o.category || ""),
@@ -446,7 +448,7 @@ export default function TrackerPage() {
     if (filter.repeat) parts.push("Repeats only");
     if (needle) parts.push(`matching “${query.trim()}”`);
     const subtitle = parts.length ? parts.join(" · ") : "All";
-    const headers = ["Audit","Area / Department","Report","Ref","Observation","Criticality","Category","Description","Criteria","Risk / Impact","Root cause","Recommendation","Proposed SOP update","Management response","Owner","Timeline","Expected close","Actual close","Status","Overdue","Repeat","Repeat of","Raised by","Created"];
+    const headers = ["Audit","Area / Department","Report","Ref","Former ref","Observation","Criticality","Category","Description","Criteria","Risk / Impact","Root cause","Recommendation","Proposed SOP update","Management response","Owner","Timeline","Expected close","Actual close","Status","Overdue","Repeat","Repeat of","Raised by","Created"];
     const cell = (v: string, style = "") => `<td${style ? ` style="${style}"` : ""}>${esc(v)}</td>`;
     const rowsHtml = list
       .map((o) => {
@@ -459,6 +461,7 @@ export default function TrackerPage() {
           cell((o._a.area as string) || ""),
           cell(o._r.title || ""),
           cell(o.ref || ""),
+          cell(o.legacyRef || ""),
           cell(o.title || "", "font-weight:bold"),
           cell(o.criticality || "", `background:${cb[0]};color:${cb[1]};font-weight:bold;text-align:center`),
           cell(o.category || ""),

@@ -48,6 +48,9 @@ export type ClosureRejection = {
 export type Observation = {
   id: string;
   ref?: string;
+  /** The reference it had before scripts/renumber-obs-refs.mts moved it to DEPT/YEAR/NNN — kept
+   *  because issued reports and Board papers still cite it. Shown and searchable; never edited. */
+  legacyRef?: string;
   title: string;
   category?: string;
   description?: string;

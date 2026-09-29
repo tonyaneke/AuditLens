@@ -242,6 +242,11 @@ export default function ObsDetailPage({
             <span className="tag">{deptLabel(deptNameOf(db, o))}</span>
           ) : null}
           {o.category ? <span className="tag">{String(o.category)}</span> : null}
+          {o.legacyRef ? (
+            <span className="tag" title="Its reference before renumbering — reports and Board papers issued earlier cite this one">
+              formerly {o.legacyRef}
+            </span>
+          ) : null}
           {obsWithdrawStage(o) ? <span className={`pill ${ck(o.criticality)}`}>under review</span> : null}
         </div>
         <h2 className="obs-detail-title">

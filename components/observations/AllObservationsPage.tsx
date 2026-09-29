@@ -140,7 +140,8 @@ export default function AllObservationsPage() {
       // 4. Search query
       if (query) {
         const matchTitle = (o.title || "").toLowerCase().includes(query);
-        const matchRef = (o.ref || "").toLowerCase().includes(query);
+        // The pre-renumbering ref too — issued reports and Board papers still quote it.
+        const matchRef = `${o.ref || ""} ${o.legacyRef || ""}`.toLowerCase().includes(query);
         const matchOwner = (o.owner || "").toLowerCase().includes(query);
         const matchDesc = (o.description || "").toLowerCase().includes(query);
         const matchDept = (deptNameOf(db, o) || "").toLowerCase().includes(query);
@@ -203,6 +204,7 @@ export default function AllObservationsPage() {
     };
     const headers = [
       "Ref",
+      "Former ref",
       "Severity",
       "Observation",
       "Department",
@@ -226,6 +228,7 @@ export default function AllObservationsPage() {
         const dept = deptLabel(deptNameOf(db, o)) || "—";
         return `<tr>${[
           cell(o.ref || ""),
+          cell(o.legacyRef || ""),
           cell(o.criticality || "", `background:${cb[0]};color:${cb[1]};font-weight:bold;text-align:center`),
           cell(o.title || "", "font-weight:bold"),
           cell(dept),

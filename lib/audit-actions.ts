@@ -97,6 +97,7 @@ export const ACTION_GROUPS: ActionGroup[] = [
       ["obs.delete_requested", "Deletion requested"],
       ["obs.delete_approved", "Deletion approved"],
       ["obs.delete_rejected", "Deletion rejected"],
+      ["obs.refs_renumbered", "Observation references renumbered"],
     ],
   },
   {
@@ -202,6 +203,8 @@ export const ACTION_GROUPS: ActionGroup[] = [
     label: "Exports, e-mails & AI",
     actions: [
       ["data.audit_log_export", "Audit log exported"],
+      ["data.backup_saved", "Database backup saved to SharePoint"],
+      ["data.workspace_restored", "Workspace restored from a backup"],
       ["obs.bulk_reminder", "Observation reminders e-mailed"],
       ["ext.bulk_reminder", "External finding reminders e-mailed"],
       ["workspace.plan_generated", "Audit programme generated with AI"],

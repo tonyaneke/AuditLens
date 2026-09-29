@@ -1862,8 +1862,10 @@ export function ModalObsDialog({
   const r = a && (a.reports || []).find((x) => x.id === reportId);
   const o = r && (r.observations || []).find((x) => x.id === obsId);
 
-  // QA-9 — read-only: the reference is system-assigned, so there is no setter.
-  const [ref] = useState(String(o?.ref || ""));
+  /* QA-9 — read-only and system-assigned, so it is read live and never saved from here. It used to
+     be held from when the form opened and written back on save — in the Head's edit and in a staff
+     member's proposal alike — which would quietly undo any renumbering done in between. */
+  const ref = String(o?.ref || "");
   const [crit, setCrit] = useState(String(o?.criticality || "Moderate"));
   const [status, setStatus] = useState(String(o?.status || "Open"));
   const [title, setTitle] = useState(String(o?.title || ""));
@@ -1989,7 +1991,6 @@ Management's current draft response: ${mgmt || "(none provided — draft an appr
       return;
     }
     const data: Partial<Observation> = {
-      ref: ref.trim(),
       title: title.trim(),
       category: cat.trim(),
       description: desc.trim(),
@@ -2020,7 +2021,7 @@ Management's current draft response: ${mgmt || "(none provided — draft an appr
 
     if (rework) {
       // Content only. Status and closure are the Head's; the server would put them back anyway.
-      for (const k of ["ref", "status", "closedDateISO", "verifiedBy", "closureEvidence", "closureNote"] as const)
+      for (const k of ["status", "closedDateISO", "verifiedBy", "closureEvidence", "closureNote"] as const)
         delete data[k];
       mutate((d) => {
         const cur = findObsIn(d, auditId, reportId, obsId);

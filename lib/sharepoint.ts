@@ -195,19 +195,14 @@ async function uploadInChunks(uploadUrl: string, data: ArrayBuffer): Promise<Upl
   return item;
 }
 
-export async function uploadToSharePoint(opts: {
-  obsId: string;
-  fileName: string;
-  contentType: string;
-  data: ArrayBuffer;
-}): Promise<UploadedFile> {
+/** Put a file this process holds whole at `path` in the library. */
+async function putFile(path: string, contentType: string, data: ArrayBuffer): Promise<UploadedFile> {
   const token = await getToken();
   const base = await driveBase(token);
-  const path = uploadPath(opts.obsId, opts.fileName);
 
-  if (opts.data.byteLength >= SIMPLE_UPLOAD_MAX) {
+  if (data.byteLength >= SIMPLE_UPLOAD_MAX) {
     const uploadUrl = await createUploadSession(token, base, path);
-    return uploadInChunks(uploadUrl, opts.data);
+    return uploadInChunks(uploadUrl, data);
   }
 
   const res = await fetch(
@@ -216,9 +211,9 @@ export async function uploadToSharePoint(opts: {
       method: "PUT",
       headers: {
         Authorization: `Bearer ${token}`,
-        "Content-Type": opts.contentType || "application/octet-stream",
+        "Content-Type": contentType || "application/octet-stream",
       },
-      body: opts.data,
+      body: data,
     },
   );
   if (!res.ok) {
@@ -227,6 +222,91 @@ export async function uploadToSharePoint(opts: {
   }
   const json = (await res.json()) as DriveItem;
   return { itemId: json.id, webUrl: json.webUrl, name: json.name, size: json.size };
+}
+
+export async function uploadToSharePoint(opts: {
+  obsId: string;
+  fileName: string;
+  contentType: string;
+  data: ArrayBuffer;
+}): Promise<UploadedFile> {
+  return putFile(uploadPath(opts.obsId, opts.fileName), opts.contentType, opts.data);
+}
+
+/* ---------------- database backups ----------------
+
+   Kept beside the evidence, in their own folder of the same library. Nothing in the app links to
+   them: /api/files serves only files attached to a record the viewer can see, so a backup's item id
+   opens nothing there. Settings lists them for the Head of Audit, and scripts/restore-workspace.mts
+   fetches one by name. */
+
+const BACKUP_FOLDER = "AuditLens/Backups";
+
+export type BackupFile = {
+  itemId: string;
+  name: string;
+  size: number;
+  webUrl: string;
+  createdAt: string;
+};
+
+export async function uploadBackupToSharePoint(fileName: string, data: ArrayBuffer): Promise<UploadedFile> {
+  return putFile(`${BACKUP_FOLDER}/${safeName(fileName)}`, "application/zip", data);
+}
+
+/** The backups in the folder, newest first. An absent folder (no backup yet) is an empty list. */
+export async function listSharePointBackups(limit = 10): Promise<BackupFile[]> {
+  const token = await getToken();
+  const base = await driveBase(token);
+  const files: BackupFile[] = [];
+  let next: string | undefined =
+    `${GRAPH}${base}/root:/${encodeURI(BACKUP_FOLDER)}:/children` +
+    `?$select=id,name,size,webUrl,createdDateTime,file&$top=200`;
+  // Paged, and capped: the list is for spotting the recent ones, not an archive browser.
+  for (let page = 0; next && page < 10; page++) {
+    const res: Response = await fetch(next, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 404) return [];
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      throw new Error(`Graph backup listing ${res.status}: ${t.slice(0, 200)}`);
+    }
+    const json = (await res.json()) as {
+      value?: (DriveItem & { createdDateTime?: string; file?: unknown })[];
+      "@odata.nextLink"?: string;
+    };
+    for (const it of json.value || []) {
+      if (!it.file || !/\.zip$/i.test(it.name)) continue;
+      files.push({
+        itemId: it.id,
+        name: it.name,
+        size: it.size,
+        webUrl: it.webUrl,
+        createdAt: it.createdDateTime || "",
+      });
+    }
+    next = json["@odata.nextLink"];
+  }
+  return files.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, limit);
+}
+
+/** One backup's bytes, by file name — or the newest when `name` is "latest". For the restore
+ *  script, which runs outside the app with the same Graph credentials. */
+export async function fetchSharePointBackup(name: string): Promise<{ name: string; data: Buffer }> {
+  let target = name;
+  if (name === "latest") {
+    const [newest] = await listSharePointBackups(1);
+    if (!newest) throw new Error(`There are no backups in ${BACKUP_FOLDER} yet.`);
+    target = newest.name;
+  }
+  const token = await getToken();
+  const base = await driveBase(token);
+  const res = await fetch(
+    `${GRAPH}${base}/root:/${encodeURI(`${BACKUP_FOLDER}/${safeName(target)}`)}:/content`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (res.status === 404) throw new Error(`No backup named "${target}" in ${BACKUP_FOLDER}.`);
+  if (!res.ok) throw new Error(`Graph backup download ${res.status}`);
+  return { name: target, data: Buffer.from(await res.arrayBuffer()) };
 }
 
 export async function downloadFromSharePoint(itemId: string): Promise<{

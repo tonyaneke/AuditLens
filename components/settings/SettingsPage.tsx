@@ -8,12 +8,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useUser } from "@/components/chrome/UserContext";
+import BusyButton from "@/components/feedback/BusyButton";
 import { toast } from "@/components/feedback/ToastHost";
 import { useModal } from "@/components/modals/ModalProvider";
 import { Avatar, Empty, RowOpen } from "@/components/ui";
+import type { BackupContents } from "@/lib/backup";
 import { loadDirectory, type DirectoryUser } from "@/lib/client/directory";
 import { MANUALS } from "@/lib/manuals";
 import { effectiveRole } from "@/lib/permissions";
+import type { BackupFile } from "@/lib/sharepoint";
+import { fmtDateTime } from "@/lib/workspace/selectors";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 import {
   DeleteUserDialog,
@@ -55,6 +59,31 @@ export default function SettingsPage() {
     const t = setTimeout(() => void reload(), 0);
     return () => clearTimeout(t);
   }, [reload]);
+
+  // Backups in SharePoint. null = still loading.
+  const [backups, setBackups] = useState<{ configured: boolean; list: BackupFile[]; error?: string } | null>(null);
+  const [lastBackup, setLastBackup] = useState<BackupContents | null>(null);
+  const headViewer = effectiveRole(me) === "head_of_audit";
+
+  const loadBackups = useCallback(async () => {
+    try {
+      const res = await fetch("/api/backup", { cache: "no-store" });
+      const j = await res.json().catch(() => null);
+      setBackups({
+        configured: j?.configured !== false,
+        list: Array.isArray(j?.backups) ? j.backups : [],
+        error: res.ok ? undefined : j?.error || "Could not load the list of backups.",
+      });
+    } catch {
+      setBackups({ configured: true, list: [], error: "Could not load the list of backups." });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!headViewer) return;
+    const t = setTimeout(() => void loadBackups(), 0);
+    return () => clearTimeout(t);
+  }, [headViewer, loadBackups]);
 
   usePageChrome({ title: "Settings" });
 
@@ -394,6 +423,24 @@ export default function SettingsPage() {
         }
       },
     });
+  }
+
+  /* ---- Back up now: the server builds the backup and saves it straight to SharePoint ---- */
+  async function backUpNow() {
+    try {
+      const res = await fetch("/api/backup", { method: "POST" });
+      const j = await res.json().catch(() => null);
+      if (!res.ok || !j?.backup) {
+        toast(String(j?.error || "The backup failed, so nothing was saved."), "error");
+        return;
+      }
+      setLastBackup(j.contents || null);
+      setBackups((cur) => ({ configured: true, list: [j.backup as BackupFile, ...(cur?.list || [])].slice(0, 10) }));
+      toast(`Backup saved to SharePoint: ${j.backup.name}`, "success");
+    } catch {
+      // The request may still have finished on the server — say so rather than inviting a duplicate.
+      toast("Network error — the backup may or may not have been saved. Refresh this page to check the list.", "error");
+    }
   }
 
   return (
@@ -828,6 +875,82 @@ export default function SettingsPage() {
                     </tr>
                   );
                 })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      {/* ---- Data backup ---- */}
+      <div className="card">
+        <div className="row">
+          <h3 style={{ margin: 0 }}>Data backup</h3>
+          <div className="spacer" />
+          <BusyButton
+            className="btn sm"
+            busyLabel="Backing up…"
+            disabled={backups?.configured === false}
+            onClick={backUpNow}
+          >
+            Back up now
+          </BusyButton>
+        </div>
+        <div className="hint" style={{ marginTop: 4 }}>
+          Saves a complete copy of the database to SharePoint (<b>AuditLens › Backups</b>): every
+          audit, report and observation with its owner responses, comments and closure details,
+          external findings, the fraud register, approvals, user accounts and the full audit trail.
+          Evidence files are already in SharePoint and stay where they are. Take one before any data
+          migration.
+        </div>
+        {lastBackup ? (
+          <div className="note" style={{ marginTop: 10 }}>
+            <b>Backed up:</b> {lastBackup.observations} observations ({lastBackup.closedObservations}{" "}
+            closed), {lastBackup.responsesAndComments} owner responses &amp; comments,{" "}
+            {lastBackup.externalFindings} external findings, {lastBackup.fraudRisks} fraud risks,{" "}
+            {lastBackup.approvals} approval requests, {lastBackup.users} users and{" "}
+            {lastBackup.auditTrailEntries} audit-trail entries.
+          </div>
+        ) : null}
+        <div style={{ marginTop: 12 }}>
+          {backups === null ? (
+            <div className="hint">Loading backups…</div>
+          ) : backups.configured === false ? (
+            <Empty>SharePoint is not configured on this server, so there is nowhere to keep a backup.</Empty>
+          ) : backups.error ? (
+            <div className="hint" style={{ color: "var(--crit)" }}>
+              {backups.error}
+            </div>
+          ) : !backups.list.length ? (
+            <Empty>No backups yet.</Empty>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Backup</th>
+                  <th scope="col">Taken</th>
+                  <th scope="col">Size</th>
+                  <th scope="col"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {backups.list.map((b) => (
+                  <tr key={b.itemId}>
+                    <td>
+                      <b>{b.name}</b>
+                    </td>
+                    <td>{fmtDateTime(b.createdAt) || "—"}</td>
+                    <td>
+                      {b.size >= 1024 * 1024
+                        ? (b.size / (1024 * 1024)).toFixed(1) + " MB"
+                        : Math.max(1, Math.round(b.size / 1024)) + " KB"}
+                    </td>
+                    <td>
+                      <a href={b.webUrl} target="_blank" rel="noopener noreferrer">
+                        Open in SharePoint ↗
+                      </a>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           )}
