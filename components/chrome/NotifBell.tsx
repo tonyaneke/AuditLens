@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { hrefForView, isLegacyPath } from "@/lib/routes";
 import type { ViewKey } from "@/lib/routes";
+import { auditRequestHref, portalRequestHref } from "@/lib/workspace/audit-comms";
 import {
   extList,
   fmtDateTime,
@@ -57,6 +58,12 @@ export default function NotifBell() {
         navigate(hrefForView("extfinding", { ext: n.obsId }));
         return;
       }
+    }
+    // Audit communications: the engagement (Internal Audit) or the portal's Audits tab (the
+    // department), opened on the request itself when there is one.
+    if (n.auditId) {
+      navigate(n.link === "audit" ? auditRequestHref(n.auditId, n.requestId) : portalRequestHref(n.requestId));
+      return;
     }
     const view = (({ observation: "audits", tracker: "tracker" }) as Record<string, string>)[n.link] || n.link;
     if (view) navigate(hrefForView(view as ViewKey));

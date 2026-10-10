@@ -53,6 +53,7 @@ function allIds(db: Workspace): Set<string> {
   for (const f of arr(db.extFindings)) ids.add(`ext:${f.id}`);
   for (const f of arr(db.fraudRisks)) ids.add(`fraud:${f.id}`);
   for (const a of arr(db.approvals)) ids.add(`approval:${a.id}`);
+  for (const r of arr(db.auditRequests)) ids.add(`request:${r.id}`);
   return ids;
 }
 

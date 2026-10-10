@@ -28,6 +28,7 @@ export type ViewKey =
   | "myobs"
   | "myext"
   | "myfraud"
+  | "myaudits"
   | "settings"
   | "auditlog"
   | "guide"
@@ -79,6 +80,7 @@ export const MIGRATED_VIEWS: ReadonlySet<ViewKey> = new Set<ViewKey>([
   "myobs",
   "myext",
   "myfraud",
+  "myaudits",
   "settings",
   "newobs",
   "departments",
@@ -142,6 +144,8 @@ export function urlForView(view: ViewKey, opts: ViewOpts = {}): string {
       return "/portal/external";
     case "myfraud":
       return "/portal/fraud";
+    case "myaudits":
+      return "/portal/audits";
     case "settings":
       return "/settings";
     case "auditlog":
@@ -212,7 +216,13 @@ export function viewForPathname(pathname: string): ViewKey | null {
     case "exco":
       return "exco";
     case "portal":
-      return seg[1] === "external" ? "myext" : seg[1] === "fraud" ? "myfraud" : "myobs";
+      return seg[1] === "external"
+        ? "myext"
+        : seg[1] === "fraud"
+          ? "myfraud"
+          : seg[1] === "audits"
+            ? "myaudits"
+            : "myobs";
     case "settings":
       return "settings";
     case "audit-log":

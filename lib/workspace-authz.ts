@@ -2,6 +2,9 @@ import type { WorkspaceDb } from "./db-data";
 import { slimForClient } from "./workspace-payload";
 import { FRAUD_VALIDATED, fraudActionDone } from "./workspace/fraud";
 import {
+  auditNoticedToViewer,
+  auditsById,
+  canSeeAuditRequest,
   canSeeExt,
   canSeeFraudAction,
   canSeeFraudRisk,
@@ -11,6 +14,7 @@ import {
   visibleObsIds,
   type Viewer,
 } from "./workspace-scope";
+import { normalizeDept } from "./dept-scope";
 
 // Server-side authorization for writes to the shared workspace document (/api/data PUT).
 //
@@ -50,6 +54,7 @@ const NON_HEAD_WRITABLE_SECTIONS = new Set([
   "fraudRisks",
   "iaSAList",
   "iaSAUserCurrent",
+  "auditRequests",
 ]);
 
 // The implementation-progress surface of a fraud prevention action — what an assigned action
@@ -213,6 +218,14 @@ export function authorizeWorkspaceWrite(
     viewer,
     violations,
   );
+  next.auditRequests = reconcileAuditRequests(
+    asArray(cur.auditRequests),
+    asArray(inc.auditRequests),
+    current,
+    userId,
+    viewer,
+    violations,
+  );
 
   // Audit staff maintain fraud plan narrative and BAC quarterly updates alongside the register.
   if (effective === STAFF_ROLE) {
@@ -327,7 +340,8 @@ function noteGovernanceChanges(curA: Obj, incA: Obj, notices: string[]): void {
  *  of the document they were served, so its absence from their save is a deletion attempt. */
 function auditIsVisible(curA: Obj, viewer: Viewer): boolean {
   if (isFullScope(viewer)) return true;
-  return asArray(curA.reports).some((r) => reportIsVisible(r, viewer));
+  // An engagement noticed to their department is served too (scopeWorkspace / noticeOnlyAudit).
+  return asArray(curA.reports).some((r) => reportIsVisible(r, viewer)) || auditNoticedToViewer(curA, viewer);
 }
 
 function reportIsVisible(curR: Obj, viewer: Viewer): boolean {
@@ -740,6 +754,201 @@ function reconcileNotifications(
   // its own). graftServerHeld() re-seeds other users' rows on top of this.
   for (const cur of curNotifs) {
     if (cur && cur.id && !seen.has(String(cur.id))) out.push(cur);
+  }
+  return out;
+}
+
+/* Audit communications — the information and clarification requests raised during an engagement
+   (lib/workspace/audit-comms.ts). New with this section, so it is reconciled from the start rather
+   than taken wholesale and tightened after a finding.
+
+   The thread is the record of what Internal Audit asked for and what the department supplied, so
+   it is APPEND-ONLY for every non-head writer: a stored message is never rewritten or dropped, and
+   a new one must be written as the caller, with the side (Internal Audit / department) it came
+   from stamped here from the session's role rather than taken from the client.
+
+     audit staff    raise information requests, reply, close / reopen any request, and withdraw
+                    one (soft-deleted by retainDeleted()). Who raised a request, what kind it is
+                    and which audit it belongs to are fixed once stored.
+     action owner   only on requests addressed to a department the engagement notice reached
+                    (canSeeAuditRequest): reply, raise a clarification on such an engagement, and
+                    close / reopen the clarifications their side raised. Nothing else.
+     executive      read-only.
+
+   Whose move it is next is derived from the thread on the client (requestAwaiting), so there is no
+   status field here for anyone to forge. */
+const OWNER_ROLE = "action_owner";
+const REQUEST_PROVENANCE = ["auditId", "kind", "raisedBy", "raisedByName", "side", "raisedAt"];
+const REQUEST_CLOSE_FIELDS = ["closedAt", "closedBy", "closedByName"];
+/** Per save, across all requests — a reply is one message; a few dozen is already abuse. */
+const MAX_NEW_REQUEST_MESSAGES = 50;
+
+function reconcileAuditRequests(
+  curReqs: Obj[],
+  incReqs: Obj[],
+  current: WorkspaceDb,
+  userId: string,
+  viewer: Viewer,
+  violations: string[],
+): Obj[] {
+  const role = viewer.role;
+  const side = role === STAFF_ROLE ? "ia" : "dept";
+  const audits = auditsById(current);
+  const budget = { left: MAX_NEW_REQUEST_MESSAGES };
+  const incById = new Map(incReqs.map((r) => [String(r.id), r]));
+  const curIds = new Set(curReqs.map((r) => String(r.id)));
+  const out: Obj[] = [];
+
+  for (const curR of curReqs) {
+    const id = String(curR.id);
+    const visible = canSeeAuditRequest(curR, audits, viewer);
+    const incR = incById.get(id);
+    if (!incR) {
+      // Staff may withdraw a request; retainDeleted() keeps the stored row, flagged as deleted.
+      if (role === STAFF_ROLE) continue;
+      if (visible) violations.push(`request_delete_blocked:${id}`);
+      out.push(curR);
+      continue;
+    }
+    if (!visible) {
+      violations.push(`out_of_scope_write:request:${id}`);
+      out.push(curR);
+      continue;
+    }
+    if (role !== STAFF_ROLE && role !== OWNER_ROLE) {
+      if (!jsonEq(incR, curR)) violations.push(`request_write_blocked:${id}`);
+      out.push(curR);
+      continue;
+    }
+
+    let next: Obj;
+    if (role === STAFF_ROLE) {
+      next = { ...incR, id: curR.id };
+      for (const f of REQUEST_PROVENANCE) {
+        if (!jsonEq(incR[f], curR[f])) violations.push(`request_field:${id}:${f}`);
+        forceField(next, f, curR[f]);
+      }
+      applyRequestClose(curR, incR, next, userId);
+    } else {
+      next = { ...curR };
+      const keys = new Set([...Object.keys(curR), ...Object.keys(incR)]);
+      for (const f of keys) {
+        if (f === "messages" || REQUEST_CLOSE_FIELDS.includes(f)) continue;
+        if (!jsonEq(incR[f], curR[f])) violations.push(`request_field:${id}:${f}`);
+      }
+      // A department closes (or reopens) only the clarifications it raised itself.
+      const closing = !jsonEq(incR.closedAt, curR.closedAt);
+      if (closing && curR.kind === "clarification" && curR.side === "dept") {
+        applyRequestClose(curR, incR, next, userId);
+      } else if (closing) {
+        violations.push(`request_close_blocked:${id}`);
+      }
+    }
+    next.messages = mergeRequestMessages(
+      asArray(curR.messages),
+      asArray(incR.messages),
+      id,
+      userId,
+      side,
+      budget,
+      violations,
+    );
+    out.push(next);
+  }
+
+  for (const incR of incReqs) {
+    const id = String(incR.id);
+    if (curIds.has(id)) continue;
+    const created = sanitizeNewRequest(incR, audits, userId, viewer, violations);
+    if (!created) continue;
+    created.messages = mergeRequestMessages([], asArray(incR.messages), id, userId, side, budget, violations);
+    out.push(created);
+  }
+  return out;
+}
+
+/** Close or reopen: closedAt moves as sent; the closer is always the caller. */
+function applyRequestClose(curR: Obj, incR: Obj, next: Obj, userId: string): void {
+  if (incR.closedAt && !curR.closedAt) {
+    next.closedAt = incR.closedAt;
+    next.closedBy = userId;
+    next.closedByName = incR.closedByName;
+  } else if (!incR.closedAt && curR.closedAt) {
+    for (const f of REQUEST_CLOSE_FIELDS) delete next[f];
+  } else {
+    for (const f of REQUEST_CLOSE_FIELDS) forceField(next, f, curR[f]);
+  }
+}
+
+/** A request someone is raising in this save, or null when they may not raise it. */
+function sanitizeNewRequest(
+  incR: Obj,
+  audits: ReadonlyMap<string, Obj>,
+  userId: string,
+  viewer: Viewer,
+  violations: string[],
+): Obj | null {
+  const id = String(incR.id);
+  const role = viewer.role;
+  const audit = audits.get(String(incR.auditId));
+  if (!audit || incR.raisedBy !== userId) {
+    violations.push(`request_create_blocked:${id}`);
+    return null;
+  }
+  if (role === STAFF_ROLE) {
+    // Internal Audit asks for information; clarifications are the department's to raise.
+    if (incR.kind !== "information") violations.push(`request_kind:${id}`);
+    const next: Obj = { ...incR, kind: "information", side: "ia" };
+    for (const f of REQUEST_CLOSE_FIELDS) delete next[f];
+    return next;
+  }
+  if (role === OWNER_ROLE) {
+    // Only a clarification, only on an engagement noticed to the department it names, and only
+    // for one of the caller's own departments — the same predicate the read path serves by.
+    const next: Obj = { ...incR, kind: "clarification", side: "dept" };
+    for (const f of REQUEST_CLOSE_FIELDS) delete next[f];
+    if (incR.kind !== "clarification" || !normalizeDept(incR.department) || !canSeeAuditRequest(next, audits, viewer)) {
+      violations.push(`request_create_blocked:${id}`);
+      return null;
+    }
+    return next;
+  }
+  violations.push(`request_create_blocked:${id}`);
+  return null;
+}
+
+/** The thread, append-only: stored messages stand as stored; new ones must be the caller's own and
+ *  carry the side the server says they write from. */
+function mergeRequestMessages(
+  curMsgs: Obj[],
+  incMsgs: Obj[],
+  reqId: string,
+  userId: string,
+  side: string,
+  budget: { left: number },
+  violations: string[],
+): Obj[] {
+  const incById = new Map(incMsgs.filter((m) => m && m.id).map((m) => [String(m.id), m]));
+  const out: Obj[] = curMsgs.map((m) => {
+    const inc = incById.get(String(m.id));
+    if (!inc) violations.push(`request_message_delete_blocked:${reqId}:${m.id}`);
+    else if (!jsonEq(inc, m)) violations.push(`request_message_edit_blocked:${reqId}:${m.id}`);
+    return m;
+  });
+  const seen = new Set(curMsgs.map((m) => String(m.id)));
+  for (const m of incMsgs) {
+    if (!m || typeof m.id !== "string" || !m.id || seen.has(m.id)) continue;
+    seen.add(m.id);
+    if (m.by !== userId) {
+      violations.push(`request_message_forged:${reqId}:${m.id}`);
+      continue;
+    }
+    if (budget.left <= 0) {
+      violations.push(`request_message_flood_blocked:${reqId}`);
+      continue;
+    }
+    budget.left--;
+    out.push({ ...m, side });
   }
   return out;
 }

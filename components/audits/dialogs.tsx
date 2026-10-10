@@ -32,6 +32,7 @@ import { dl } from "@/lib/client/exports";
 import { generateObsDraft } from "@/lib/client/obs-ai";
 import { useDirectoryUsers } from "@/components/external/use-directory";
 import { exportTORWord } from "@/lib/client/word";
+import NoticeComposer from "@/components/comms/NoticeComposer";
 import {
   AUDIT_STATUS,
   ASSURANCE,
@@ -354,20 +355,20 @@ export function ModalTORDialog({ auditId }: { auditId: string }) {
   const [infoRequired, setInfoRequired] = useState(tor.infoRequired || "");
   const [reportingTo, setReportingTo] = useState(tor.reportingTo || "");
 
+  const torFields = () => ({
+    addressee,
+    date,
+    timing,
+    background,
+    outOfScope,
+    infoRequired,
+    reportingTo,
+  });
+
   function save() {
     mutate((d) => {
       const cur = (d.audits || []).find((x) => x.id === auditId);
-      if (cur) {
-        cur.tor = {
-          addressee,
-          date,
-          timing,
-          background,
-          outOfScope,
-          infoRequired,
-          reportingTo,
-        };
-      }
+      if (cur) cur.tor = torFields();
     });
     toast("Terms of Reference saved", "success");
     modal.close();
@@ -421,6 +422,14 @@ export function ModalTORDialog({ auditId }: { auditId: string }) {
         <label>Reporting Channel</label>
         <input type="text" placeholder="e.g. Executive Management & Board Audit Committee" value={reportingTo} onChange={(e) => setReportingTo(e.target.value)} />
       </div>
+      {/* The notice that tells the department the audit is commencing — issuing it also saves the
+          fields above, so nothing typed here is lost by issuing first and closing after. */}
+      <NoticeComposer
+        auditId={auditId}
+        beforeIssue={(cur) => {
+          cur.tor = torFields();
+        }}
+      />
     </ModalFrame>
   );
 }

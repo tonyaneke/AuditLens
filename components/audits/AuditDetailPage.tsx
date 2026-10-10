@@ -22,6 +22,7 @@ import {
 } from "@/lib/workspace/observations";
 import type { AuditPlan, AuditTest, Report } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
+import { AuditCommsCard } from "@/components/comms/AuditComms";
 import RaisedPill from "./RaisedPill";
 import ReportStatusPill from "./ReportStatusPill";
 import ResultPill from "./ResultPill";
@@ -48,7 +49,7 @@ export default function AuditDetailPage({ auditId }: { auditId: string }) {
         <Link href="/audits" className="btn sec sm">
           ← Back to List
         </Link>
-        <button className="btn sec sm" onClick={() => modal.open(<ModalTORDialog auditId={a.id} />)}>
+        <button className="btn sec sm" onClick={() => modal.open(<ModalTORDialog auditId={a.id} />, { wide: true })}>
           📄 Terms of Reference
         </button>
         <button className="btn sec sm" onClick={() => modal.open(<ModalAuditDialog auditId={a.id} />)}>
@@ -149,6 +150,8 @@ export default function AuditDetailPage({ auditId }: { auditId: string }) {
           </div>
         </div>
       </div>
+
+      <AuditCommsCard audit={a} />
 
       {/* Audit Planning — Scope & Test Programme (legacy planCard/planHTML) */}
       <div className="card" style={{ marginBottom: 20 }}>

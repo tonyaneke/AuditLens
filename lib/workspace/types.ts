@@ -178,6 +178,24 @@ export type AuditPlan = {
   [k: string]: unknown;
 };
 
+/** The engagement notice — the message that tells a department an audit of it is commencing,
+ *  with the objectives and scope from the audit programme. Composed in the Terms of Reference and
+ *  stored only once issued: the text is a snapshot of what was actually communicated, so a later
+ *  edit to the plan does not rewrite what the department was told. Issuing it is also what makes
+ *  the audit visible to those departments (lib/audit-comms-scope.ts). */
+export type AuditNotice = {
+  text: string;
+  /** Department names (components/settings/staff.ts DEPARTMENTS), matched normalised. */
+  departments: string[];
+  issuedAt: string;
+  issuedBy?: string;
+  issuedByName?: string;
+  /** Set when the notice is re-issued after its first issue (issuedAt keeps the first). */
+  revisedAt?: string;
+  revisedBy?: string;
+  revisedByName?: string;
+};
+
 export type Audit = {
   id: string;
   name: string;
@@ -191,6 +209,48 @@ export type Audit = {
   reports: Report[];
   plan?: AuditPlan;
   tor?: Record<string, string | undefined>;
+  notice?: AuditNotice;
+  [k: string]: unknown;
+};
+
+/** Which side of an engagement a person writes from: Internal Audit, or the audited department. */
+export type AuditSide = "ia" | "dept";
+
+export type AuditRequestMessage = {
+  id: string;
+  by: string;
+  byName: string;
+  /** Stamped by the server from the writer's role — never trusted from the client. */
+  side: AuditSide;
+  at: string;
+  text: string;
+  evidence?: EvidenceFile[];
+};
+
+/** A request raised during an engagement. Internal Audit asks the department for information
+ *  ("information"), or the department asks Internal Audit for clarification ("clarification").
+ *  Whose move it is next is derived from the thread (requestAwaiting), not stored. */
+export type AuditRequest = {
+  id: string;
+  auditId: string;
+  /** IR-01 for an information request, CR-01 for a clarification — numbered per audit. */
+  ref?: string;
+  kind: "information" | "clarification";
+  /** The department the request is addressed to / raised by. */
+  department: string;
+  subject: string;
+  text: string;
+  evidence?: EvidenceFile[];
+  /** Information requests: when Internal Audit needs it by (YYYY-MM-DD). */
+  dueDate?: string;
+  raisedBy: string;
+  raisedByName: string;
+  side: AuditSide;
+  raisedAt: string;
+  messages?: AuditRequestMessage[];
+  closedAt?: string;
+  closedBy?: string;
+  closedByName?: string;
   [k: string]: unknown;
 };
 
@@ -497,6 +557,9 @@ export type NotificationItem = {
   link: string;
   /** Deep-link target: internal observation id or external finding id. */
   obsId?: string;
+  /** Deep-link target for audit communications: the audit, and the request within it. */
+  auditId?: string;
+  requestId?: string;
   read: boolean;
   at: string;
 };
@@ -559,6 +622,8 @@ export type WorkspaceDb = {
   strictClosureCheck?: boolean;
   notifications?: NotificationItem[];
   approvals?: Approval[];
+  /** Information / clarification requests raised during engagements (audit communications). */
+  auditRequests?: AuditRequest[];
   exco?: ExcoMeta;
   caeReport?: { period?: string; commentary?: string };
   [k: string]: unknown;

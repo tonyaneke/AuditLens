@@ -51,6 +51,20 @@ export const ACTION_GROUPS: ActionGroup[] = [
     ],
   },
   {
+    label: "Audit communications",
+    actions: [
+      ["comms.notice_issued", "Engagement notice issued"],
+      ["comms.notice_reissued", "Engagement notice re-issued"],
+      ["comms.request_raised", "Information requested"],
+      ["comms.clarification_raised", "Clarification requested"],
+      ["comms.request_reply", "Request answered"],
+      ["comms.request_closed", "Request closed"],
+      ["comms.request_reopened", "Request reopened"],
+      ["comms.request_updated", "Request edited"],
+      ["comms.request_deleted", "Request withdrawn"],
+    ],
+  },
+  {
     label: "Reports",
     actions: [
       ["report.created", "Report created"],

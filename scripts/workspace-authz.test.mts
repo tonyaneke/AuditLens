@@ -1018,6 +1018,167 @@ console.log("\n== Department aliases resolve to one department ==");
   for (const [a, b] of distinct) ok(normalizeDept(a) !== normalizeDept(b), `${a} is not ${b}`);
 }
 
+/* ================= audit communications (2026-10-10) =================
+   An engagement reaches a department through its NOTICE, issued from the Terms of Reference; the
+   information / clarification requests on it are append-only threads (lib/audit-comms-scope.ts,
+   reconcileAuditRequests). a3 is noticed to Credit and holds no observations; a4 is noticed to
+   nobody yet. */
+function commsWorkspace(): any {
+  const w = baseWorkspace();
+  w.audits.push(
+    {
+      id: "a3", name: "Disbursement Process Audit", type: "process", area: "Credit", status: "In progress",
+      leadAuditorId: "staff1", leadAuditor: "Sam",
+      plan: {
+        scope: "Disbursements Jan–Sep", objectives: ["Confirm approvals"], keyRisks: ["Override"],
+        tests: [{ id: "t9", ref: "T9", title: "Sample 40 disbursements", evidenceFiles: [{ itemId: "wp9", name: "wp.xlsx" }] }],
+      },
+      tor: { timing: "October", infoRequired: "Disbursement listing" },
+      notice: { text: "The Disbursement Process Audit is commencing.", departments: ["Credit Department"], issuedAt: "2026-10-01T09:00:00.000Z", issuedBy: "staff1", issuedByName: "Sam" },
+      reports: [],
+    },
+    { id: "a4", name: "Draft Audit", type: "process", area: "Credit", status: "In progress", plan: { scope: "x" }, reports: [] },
+  );
+  w.auditRequests = [
+    {
+      id: "rq1", auditId: "a3", ref: "IR-01", kind: "information", department: "Credit", subject: "Disbursement listing",
+      text: "Please send the Q3 listing.", evidence: [{ itemId: "rqf1", name: "template.xlsx" }],
+      raisedBy: "staff1", raisedByName: "Sam", side: "ia", raisedAt: "2026-10-02T09:00:00.000Z",
+      messages: [{ id: "m1", by: "staff1", byName: "Sam", side: "ia", at: "2026-10-02T10:00:00.000Z", text: "Excel please." }],
+    },
+    // Same engagement, a department the notice never went to.
+    { id: "rq2", auditId: "a3", kind: "information", department: "Legal", subject: "Contracts", text: "t", raisedBy: "staff1", raisedByName: "Sam", side: "ia", raisedAt: "2026-10-02T09:00:00.000Z", messages: [] },
+    // Credit's department, but on an engagement whose notice has not gone to Credit.
+    { id: "rq3", auditId: "a2", kind: "information", department: "Credit", subject: "Nostro", text: "t", raisedBy: "staff1", raisedByName: "Sam", side: "ia", raisedAt: "2026-10-02T09:00:00.000Z", messages: [] },
+  ];
+  return w;
+}
+const findReq = (w: any, id: string) => (w.auditRequests || []).find((r: any) => r.id === id);
+const COL = { role: "action_owner", id: "col1", department: "Credit" };
+const serveCol = (cur: any) => clone(slimForClient(cur, viewerFor(COL, cur)));
+const asCol = (cur: any, inc: any) => authorizeWorkspaceWrite(COL.role, COL.id, cur, inc, undefined, COL.department);
+
+console.log("\n== Audit comms: what a department is served ==");
+{
+  const cur = commsWorkspace();
+  const mine = serveCol(cur);
+  const a3 = mine.audits.find((a: any) => a.id === "a3");
+  ok(!!a3, "an engagement noticed to the department is served though it holds none of their observations");
+  ok(!!a3 && a3.plan.scope === "Disbursements Jan–Sep" && a3.plan.objectives.length === 1, "…with its scope and objectives");
+  ok(!!a3 && !a3.plan.tests && !a3.plan.keyRisks, "…but never the test programme or key risks");
+  ok(!mine.audits.some((a: any) => a.id === "a4"), "an engagement whose notice is not issued is withheld");
+  ok(!!findReq(mine, "rq1"), "the department's own request is served");
+  ok(!findReq(mine, "rq2"), "a request to a department the notice never reached is withheld");
+  ok(!findReq(mine, "rq3"), "a request on an engagement not noticed to the department is withheld");
+  const legal = scopeWorkspace(cur, viewerFor({ role: "action_owner", id: "lg1", department: "Legal" }, cur)) as any;
+  ok(!legal.audits.some((a: any) => a.id === "a3") && !findReq(legal, "rq2"), "a department the notice did not name sees nothing");
+  ok(fileVisibleTo(cur, viewerFor(COL, cur), "rqf1"), "a request's attachment is downloadable by the department");
+  ok(!fileVisibleTo(cur, viewerFor(COL, cur), "wp9"), "a test working paper on a noticed engagement is not");
+}
+
+console.log("\n== Audit comms: a department's ordinary save round-trips ==");
+{
+  const cur = commsWorkspace();
+  const r = asCol(cur, serveCol(cur));
+  ok(r.violations.length === 0, "no violations from an unchanged save");
+  ok(findReq(r.data, "rq2") && findReq(r.data, "rq3"), "requests they were never sent survive");
+  ok((r.data as any).audits.find((a: any) => a.id === "a3").plan.tests.length === 1, "the withheld test programme survives");
+}
+
+console.log("\n== Audit comms: the department replies, append-only ==");
+{
+  const cur = commsWorkspace();
+  const inc = serveCol(cur);
+  findReq(inc, "rq1").messages.push({ id: "m2", by: "col1", byName: "Col", side: "ia", at: "2026-10-03T09:00:00.000Z", text: "Attached." });
+  findReq(inc, "rq1").messages.push({ id: "m3", by: "staff1", byName: "Sam", side: "ia", at: "2026-10-03T09:00:00.000Z", text: "Thanks, closing." });
+  findReq(inc, "rq1").messages[0].text = "Rewritten by the department";
+  findReq(inc, "rq1").subject = "Changed subject";
+  findReq(inc, "rq1").closedAt = "2026-10-03T09:00:00.000Z";
+  const r = asCol(cur, inc);
+  const out = findReq(r.data, "rq1");
+  const m2 = out.messages.find((m: any) => m.id === "m2");
+  ok(!!m2 && m2.side === "dept", "their reply is kept, with the side stamped by the server (not the client's 'ia')");
+  ok(!out.messages.some((m: any) => m.id === "m3"), "a message written as somebody else is dropped");
+  ok(r.violations.includes("request_message_forged:rq1:m3"), "…and recorded");
+  ok(out.messages[0].text === "Excel please.", "an existing message cannot be rewritten");
+  ok(r.violations.includes("request_message_edit_blocked:rq1:m1"), "…and the attempt is recorded");
+  ok(out.subject === "Disbursement listing" && r.violations.includes("request_field:rq1:subject"), "the request itself is Internal Audit's");
+  ok(!out.closedAt && r.violations.includes("request_close_blocked:rq1"), "the department cannot close Internal Audit's request");
+}
+
+console.log("\n== Audit comms: the department raises a clarification ==");
+{
+  const cur = commsWorkspace();
+  const base = { text: "Which branches?", raisedBy: "col1", raisedByName: "Col", raisedAt: "2026-10-03T09:00:00.000Z", messages: [] };
+  const inc = serveCol(cur);
+  inc.auditRequests.push(
+    { ...base, id: "c1", auditId: "a3", kind: "clarification", department: "Credit", subject: "Sample", side: "ia" },
+    { ...base, id: "c2", auditId: "a4", kind: "clarification", department: "Credit", subject: "Not noticed" },
+    { ...base, id: "c3", auditId: "a3", kind: "clarification", department: "Legal", subject: "Not my department" },
+    { ...base, id: "c4", auditId: "a3", kind: "information", department: "Credit", subject: "Wrong kind" },
+    { ...base, id: "c5", auditId: "a3", kind: "clarification", department: "Credit", subject: "As someone else", raisedBy: "own1" },
+  );
+  const r = asCol(cur, inc);
+  const c1 = findReq(r.data, "c1");
+  ok(!!c1 && c1.side === "dept" && c1.kind === "clarification", "a clarification on a noticed engagement is accepted, side stamped");
+  ok(["c2", "c3", "c4", "c5"].every((id) => !findReq(r.data, id)), "not noticed / other department / wrong kind / as someone else: all refused");
+  ok(["c2", "c3", "c4", "c5"].every((id) => r.violations.includes(`request_create_blocked:${id}`)), "…each recorded");
+
+  // …and may close and reopen the clarification their side raised.
+  const cur2 = clone(r.data);
+  const inc2 = serveCol(cur2);
+  findReq(inc2, "c1").closedAt = "2026-10-04T09:00:00.000Z";
+  findReq(inc2, "c1").closedBy = "staff1";
+  const r2 = asCol(cur2, inc2);
+  ok(findReq(r2.data, "c1").closedAt && findReq(r2.data, "c1").closedBy === "col1", "the department closes its own clarification (closer = the caller)");
+  ok(r2.violations.length === 0, "…without violations");
+}
+
+console.log("\n== Audit comms: a department cannot delete or notice ==");
+{
+  const cur = commsWorkspace();
+  const inc = serveCol(cur);
+  inc.auditRequests = [];
+  inc.audits.find((a: any) => a.id === "a3").notice.departments.push("Legal");
+  const r = asCol(cur, inc);
+  ok(!!findReq(r.data, "rq1") && r.violations.includes("request_delete_blocked:rq1"), "deleting a request is refused");
+  ok((r.data as any).audits.find((a: any) => a.id === "a3").notice.departments.length === 1, "the notice is Internal Audit's");
+}
+
+console.log("\n== Audit comms: Internal Audit staff ==");
+{
+  const cur = commsWorkspace();
+  const inc = clone(slimForClient(cur, { id: STAFF.id, role: "audit_staff" } as any));
+  inc.auditRequests.push({ id: "n1", auditId: "a3", kind: "information", department: "Credit", subject: "Policies", text: "Send them", raisedBy: "staff1", raisedByName: "Sam", side: "dept", raisedAt: "2026-10-03T09:00:00.000Z" });
+  findReq(inc, "rq1").raisedBy = "staff2";
+  findReq(inc, "rq1").subject = "Disbursement listing (Q3)";
+  findReq(inc, "rq1").closedAt = "2026-10-03T09:00:00.000Z";
+  inc.auditRequests = inc.auditRequests.filter((x: any) => x.id !== "rq2");
+  const r = authorizeWorkspaceWrite(STAFF.role, STAFF.id, cur, inc);
+  ok(findReq(r.data, "n1")?.side === "ia", "staff raise an information request (side stamped 'ia')");
+  ok(findReq(r.data, "rq1").raisedBy === "staff1" && r.violations.includes("request_field:rq1:raisedBy"), "who raised a request is fixed");
+  ok(findReq(r.data, "rq1").subject === "Disbursement listing (Q3)", "staff may edit a request's wording");
+  ok(findReq(r.data, "rq1").closedBy === "staff1", "staff close it, as themselves");
+  ok(!findReq(r.data, "rq2"), "staff may withdraw a request (retainDeleted keeps the stored row)");
+
+  // The department's words are not Internal Audit's to edit.
+  const cur2 = commsWorkspace();
+  findReq(cur2, "rq1").messages.push({ id: "d1", by: "col1", byName: "Col", side: "dept", at: "2026-10-03T09:00:00.000Z", text: "Here it is." });
+  const inc2 = clone(slimForClient(cur2, { id: STAFF.id, role: "audit_staff" } as any));
+  findReq(inc2, "rq1").messages[1].text = "Edited by IA";
+  const r2 = authorizeWorkspaceWrite(STAFF.role, STAFF.id, cur2, inc2);
+  ok(findReq(r2.data, "rq1").messages[1].text === "Here it is.", "staff cannot rewrite the department's reply");
+}
+
+console.log("\n== Audit comms: executives read only ==");
+{
+  const cur = commsWorkspace();
+  const inc = clone(cur);
+  findReq(inc, "rq1").messages.push({ id: "x1", by: "ex1", byName: "Exec", side: "ia", at: "2026-10-03T09:00:00.000Z", text: "?" });
+  const r = authorizeWorkspaceWrite("executive", "ex1", cur, inc);
+  ok(findReq(r.data, "rq1").messages.length === 1 && r.violations.includes("request_write_blocked:rq1"), "an executive cannot post on a request");
+}
+
 console.log("\n----------------------------------------");
 console.log(`${pass}/${pass + fail} assertions passed` + (fail ? `, ${fail} FAILED` : ""));
 process.exit(fail ? 1 : 0);

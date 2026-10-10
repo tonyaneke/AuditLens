@@ -313,6 +313,7 @@ export function describeWorkspaceChanges(
     ["process reviews", () => diffProcessReviews(b, a, out)],
     ["self-assessments", () => diffSelfAssessments(b, a, out)],
     ["approvals", () => diffApprovals(b, a, out)],
+    ["audit communications", () => diffAuditRequests(b, a, out)],
     ["departments", () => diffDepartments(b, a, out)],
     ["executive brief", () => diffExco(b, a, out)],
     ["settings", () => diffSettings(b, a, out)],
@@ -369,7 +370,7 @@ function indexTree(db: Obj): Tree {
   return t;
 }
 
-const AUDIT_IGNORE = new Set(["id", "reports", "plan", "tor", "createdAt"]);
+const AUDIT_IGNORE = new Set(["id", "reports", "plan", "tor", "notice", "createdAt"]);
 const REPORT_IGNORE = new Set(["id", "observations", "createdAt"]);
 
 function diffAuditTree(b: Obj, a: Obj, dept: (id: unknown) => string, out: Draft[]): void {
@@ -518,6 +519,20 @@ function auditUpdated(prev: Obj, audit: Obj, meta: Obj, out: Draft[]): void {
       action: "audit.tor_updated",
       summary: `Updated the terms of reference for ${name}: ${clip(torFields.map(label).join(", "), 200)}`,
       metadata: { ...meta, changes: d.changes },
+    });
+  }
+
+  /* The engagement notice is a communication, not an edit: it is recorded as sent, with who it went
+     to, and the text kept in full — it is what the department was told the audit would cover. */
+  const noticeB = isObj(prev.notice) ? prev.notice : {};
+  const noticeA = isObj(audit.notice) ? audit.notice : {};
+  if (str(noticeA.issuedAt) && !same(noticeB, noticeA)) {
+    const depts = (Array.isArray(noticeA.departments) ? noticeA.departments : []).map(str).filter(Boolean);
+    const again = !!str(noticeB.issuedAt);
+    out.push({
+      action: again ? "comms.notice_reissued" : "comms.notice_issued",
+      summary: `${again ? "Re-issued" : "Issued"} the engagement notice for ${name} to ${depts.length ? clip(depts.join(", "), 200) : "no department"}`,
+      metadata: { ...meta, departments: depts, text: clip(str(noticeA.text), 4000) },
     });
   }
 
@@ -1283,6 +1298,72 @@ function diffApprovals(b: Obj, a: Obj, out: Draft[]): void {
   }
 }
 
+/* ------------------------------------------------------------------ audit communications */
+
+/* Information and clarification requests (lib/workspace/audit-comms.ts). The thread is append-only
+   for everyone but the Head (lib/workspace-authz.ts), so a reply is the one event worth naming
+   message by message; edits to a request's own wording are folded into one entry. */
+const REQUEST_IGNORE = new Set(["id", "messages", "closedAt", "closedBy", "closedByName"]);
+
+function diffAuditRequests(b: Obj, a: Obj, out: Draft[]): void {
+  const B = byId(arr(b.auditRequests));
+  const A = byId(arr(a.auditRequests));
+  const audits = byId([...arr(b.audits), ...arr(a.audits)]);
+  const what = (r: Obj) => {
+    const ref = clip(str(r.ref), 12);
+    const subject = named(r.subject, "(no subject)");
+    return ref ? `${ref} ${subject}` : subject;
+  };
+  const metaOf = (r: Obj) => ({
+    entity: "auditRequest",
+    requestId: str(r.id),
+    auditId: str(r.auditId),
+    title: str(r.subject),
+    kind: str(r.kind),
+    department: str(r.department),
+  });
+  const auditName = (r: Obj) => named(audits.get(str(r.auditId))?.name, "an audit");
+
+  for (const [id, r] of A) {
+    const prev = B.get(id);
+    const meta = metaOf(r);
+    if (!prev) {
+      const clar = str(r.kind) === "clarification";
+      out.push({
+        action: clar ? "comms.clarification_raised" : "comms.request_raised",
+        summary:
+          `${clar ? `${str(r.department) || "A department"} asked Internal Audit for clarification` : `Requested information from ${str(r.department) || "a department"}`}` +
+          ` on ${auditName(r)}: ${what(r)}${attached(arr(r.evidence))}`,
+        metadata: { ...meta, text: clip(str(r.text), 2000) },
+      });
+    } else {
+      const fields = changedFields(prev, r, REQUEST_IGNORE);
+      if (fields.length) {
+        const d = describeFields(prev, r, fields);
+        out.push({ action: "comms.request_updated", summary: `Edited request ${what(r)}: ${d.text}`, metadata: { ...meta, changes: d.changes } });
+      }
+    }
+    const before = new Set(arr(prev?.messages).map((m) => str(m.id)));
+    for (const m of arr(r.messages)) {
+      if (before.has(str(m.id))) continue;
+      out.push({
+        action: "comms.request_reply",
+        summary: `Replied on ${what(r)}${excerpt(m.text)}${attached(arr(m.evidence))}`,
+        metadata: { ...meta, messageId: str(m.id), side: str(m.side), text: clip(str(m.text), 2000) },
+      });
+    }
+    if (prev && !str(prev.closedAt) && str(r.closedAt)) {
+      out.push({ action: "comms.request_closed", summary: `Closed request ${what(r)}`, metadata: meta });
+    } else if (prev && str(prev.closedAt) && !str(r.closedAt)) {
+      out.push({ action: "comms.request_reopened", summary: `Reopened request ${what(r)}`, metadata: meta });
+    }
+  }
+  for (const [id, r] of B) {
+    if (A.has(id)) continue;
+    out.push({ action: "comms.request_deleted", summary: `Withdrew request ${what(r)} on ${auditName(r)}`, metadata: metaOf(r) });
+  }
+}
+
 /* ------------------------------------------------------------------ departments */
 
 function diffDepartments(b: Obj, a: Obj, out: Draft[]): void {
@@ -1411,7 +1492,7 @@ function diffExco(b: Obj, a: Obj, out: Draft[]): void {
 
 const TOP_HANDLED = new Set([
   "audits", "extFindings", "fraudRisks", "auditUniverse", "processReviews", "iaSAList",
-  "approvals", "departments", "exco", "planYears",
+  "approvals", "auditRequests", "departments", "exco", "planYears",
 ]);
 /* View state and bookkeeping that live in the document without being part of the record: which
    plan year and which self-assessment are on screen, notification read flags, the migrated

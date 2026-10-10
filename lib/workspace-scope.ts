@@ -1,3 +1,4 @@
+import { auditNoticedTo, requestReaches } from "./audit-comms-scope";
 import {
   deptScopeFor,
   inDeptScope,
@@ -167,6 +168,44 @@ function asArray(v: unknown): Obj[] {
   return Array.isArray(v) ? (v as Obj[]) : [];
 }
 
+/** An engagement whose notice reached the viewer's department (lib/audit-comms-scope.ts). It is
+ *  served even when none of its observations are visible — that is the portal's Audits tab — but
+ *  only as the notice-level view built by noticeOnlyAudit(). */
+export function auditNoticedToViewer(a: Obj, viewer: Viewer): boolean {
+  if (isFullScope(viewer)) return true;
+  return auditNoticedTo(a, viewer.dept);
+}
+
+/** An information / clarification request this viewer may see: addressed to their department,
+ *  on an engagement whose notice reached that department. `auditsById` resolves its audit. */
+export function canSeeAuditRequest(
+  req: Obj,
+  auditsById: ReadonlyMap<string, Obj>,
+  viewer: Viewer,
+): boolean {
+  if (isFullScope(viewer)) return true;
+  return requestReaches(req, auditsById.get(String(req.auditId)), viewer.dept);
+}
+
+export function auditsById(db: WorkspaceDb): Map<string, Obj> {
+  return new Map(asArray(db.audits).map((a) => [String(a.id), a]));
+}
+
+/* What a department sees of an audit it holds no observations in yet: the engagement as the
+   notice describes it — name, type, area, period, lead auditor, the terms of reference and the
+   plan's scope and objectives. NOT the test programme, its results or the key-risk list: those are
+   Internal Audit's working papers, and handing the auditee the test plan before fieldwork would
+   tell them exactly what is going to be sampled. Reports are empty by construction (any report
+   holding a visible observation would have put the audit on the ordinary path). */
+function noticeOnlyAudit(a: Obj): Obj {
+  const plan = a.plan && typeof a.plan === "object" ? (a.plan as Obj) : {};
+  return {
+    ...a,
+    reports: [],
+    plan: { scope: plan.scope, objectives: plan.objectives },
+  };
+}
+
 /** Every observation id this viewer can see — used to scope the approvals queue, and by the
  *  write path to resolve approvals that reference an observation. */
 export function visibleObsIds(db: WorkspaceDb, viewer: Viewer): Set<string> {
@@ -203,8 +242,9 @@ const OWNER_KEPT_SCALARS = ["org", "signOffName", "signOffTitle", "planYear", "s
  * Full-scope roles get the document unchanged. An action owner gets: the audits/reports skeleton
  * for the observations assigned to them OR raised against their department (the shell needs
  * `_a`/`_r` context and the audit/report ids to build observation URLs), their own external
- * findings, the fraud risks they implement actions on, approvals that concern them, and
- * department names.
+ * findings, the fraud risks they implement actions on, approvals that concern them, the
+ * engagements whose notice was issued to their department (notice-level view only) with the
+ * information / clarification requests on them, and department names.
  */
 export function scopeWorkspace(db: WorkspaceDb, viewer: Viewer): WorkspaceDb {
   if (isFullScope(viewer)) return db;
@@ -230,8 +270,13 @@ export function scopeWorkspace(db: WorkspaceDb, viewer: Viewer): WorkspaceDb {
       reports.push({ ...restReport, observations });
     }
     if (reports.length) audits.push({ ...a, reports });
+    else if (auditNoticedToViewer(a, viewer)) audits.push(noticeOnlyAudit(a));
   }
   out.audits = audits;
+
+  // Requests ride with the engagement notice: the department's own, on audits noticed to it.
+  const byId = auditsById(db);
+  out.auditRequests = asArray(src.auditRequests).filter((r) => canSeeAuditRequest(r, byId, viewer));
 
   out.extFindings = asArray(src.extFindings).filter((f) => canSeeExt(f, viewer));
 

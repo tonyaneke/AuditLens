@@ -9,6 +9,7 @@ import {
   Alert02Icon,
   Analytics01Icon,
   ArrowRight01Icon,
+  Audit01Icon,
   BookOpen01Icon,
   Building01Icon,
   CheckmarkBadge01Icon,
@@ -33,6 +34,7 @@ import {
   myFraudPendingCount,
   myObsPendingCount,
 } from "@/lib/workspace/portal";
+import { myAuditRequestsPendingCount } from "@/lib/workspace/audit-comms";
 import { pendingApprovalCount } from "@/lib/workspace/selectors";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 import RoleSwitcher from "./RoleSwitcher";
@@ -46,7 +48,7 @@ import {
 const ICON_SIZE = 20;
 
 // Portal items that carry an outstanding-work dot (shown to whoever owns the items).
-const PORTAL_DOT_VIEWS: ReadonlySet<ViewKey> = new Set<ViewKey>(["myobs", "myext", "myfraud"]);
+const PORTAL_DOT_VIEWS: ReadonlySet<ViewKey> = new Set<ViewKey>(["myaudits", "myobs", "myext", "myfraud"]);
 
 type NavItem = {
   view: ViewKey;
@@ -83,6 +85,7 @@ const SECTIONS: { label: string; items: NavItem[] }[] = [
   {
     label: "Portal",
     items: [
+      { view: "myaudits", label: "Audits", icon: Audit01Icon },
       { view: "myobs", label: "Internal Observations", icon: Folder01Icon },
       { view: "myext", label: "External Observations", icon: BookOpen01Icon },
       { view: "myfraud", label: "Fraud Risk Control Tracker", icon: Alert02Icon },
@@ -265,12 +268,16 @@ function PendingDot({ view, user }: { view: ViewKey; user: SessionUser }) {
         ? myExtPendingCount(db, user)
         : view === "myfraud"
           ? myFraudPendingCount(db, user.id)
-          : 0;
+          : view === "myaudits"
+            ? myAuditRequestsPendingCount(db, user)
+            : 0;
   if (!n) return null;
   const label =
     view === "myfraud"
       ? `${n} open item${n === 1 ? "" : "s"} awaiting your response`
-      : `${n} open item${n === 1 ? "" : "s"} awaiting a response from your department`;
+      : view === "myaudits"
+        ? `${n} audit request${n === 1 ? "" : "s"} awaiting a response from your department`
+        : `${n} open item${n === 1 ? "" : "s"} awaiting a response from your department`;
   return (
     <span className="nav-badge" title={label} aria-label={label}>
       {n}

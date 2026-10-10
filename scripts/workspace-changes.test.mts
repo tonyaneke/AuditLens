@@ -576,6 +576,53 @@ console.log("\n== Real document (local snapshots, if present) ==");
   }
 }
 
+console.log("\n== Audit communications ==");
+{
+  const notice = { text: "The Credit Audit is commencing.", departments: ["Credit"], issuedAt: "2026-10-01T09:00:00.000Z", issuedByName: "Sade" };
+  const issued = after((db) => (db.audits[0].notice = clone(notice)));
+  ok(sameList(issued.actions, ["comms.notice_issued"]), "issuing the notice → comms.notice_issued, not audit.updated", issued.actions);
+  ok(/to Credit/.test(issued.events[0].summary), "…naming who it went to", issued.events[0].summary);
+
+  const withNotice = base();
+  withNotice.audits[0].notice = clone(notice);
+  const again = after((db) => Object.assign(db.audits[0].notice, { departments: ["Credit", "Legal"], revisedAt: "2026-10-05T09:00:00.000Z" }), withNotice);
+  ok(sameList(again.actions, ["comms.notice_reissued"]), "re-issuing → comms.notice_reissued", again.actions);
+
+  const req = {
+    id: "rq1", auditId: withNotice.audits[0].id, ref: "IR-01", kind: "information", department: "Credit", subject: "Listing",
+    text: "Send it", raisedBy: "staff1", raisedByName: "Sade", side: "ia", raisedAt: "2026-10-02T09:00:00.000Z", messages: [],
+  };
+  const raised = after((db) => (db.auditRequests = [clone(req)]), withNotice);
+  ok(sameList(raised.actions, ["comms.request_raised"]), "raising an information request → comms.request_raised", raised.actions);
+
+  const withReq = clone(withNotice);
+  withReq.auditRequests = [clone(req)];
+  const replied = after((db) => {
+    db.auditRequests[0].messages.push({ id: "m1", by: "own1", byName: "Ola", side: "dept", at: "2026-10-03T09:00:00.000Z", text: "Attached", evidence: [{ itemId: "f1", name: "q3.xlsx" }] });
+  }, withReq);
+  ok(sameList(replied.actions, ["comms.request_reply"]), "a reply → one comms.request_reply", replied.actions);
+  ok(/1 file attached/.test(replied.events[0].summary), "…saying a file came with it", replied.events[0].summary);
+
+  const closed = after((db) => Object.assign(db.auditRequests[0], { closedAt: "2026-10-04T09:00:00.000Z", closedBy: "staff1", closedByName: "Sade" }), withReq);
+  ok(sameList(closed.actions, ["comms.request_closed"]), "closing → comms.request_closed, its stamps not reported as edits", closed.actions);
+
+  const withdrawn = after((db) => (db.auditRequests = []), withReq);
+  ok(sameList(withdrawn.actions, ["comms.request_deleted"]), "withdrawing → comms.request_deleted", withdrawn.actions);
+
+  // Through the real save path: a withdrawn request is kept in storage, flagged, and no longer served.
+  const s = save(withReq, STAFF, (doc) => (doc.auditRequests = []));
+  ok(sameList(s.actions, ["comms.request_deleted"]), "a staff withdrawal through the PUT path → comms.request_deleted", s.actions);
+  ok(s.payload.auditRequests.length === 1 && !!s.payload.auditRequests[0].deletedAt, "…the request is retained, stamped deleted");
+  ok(withoutDeleted(s.payload).auditRequests.length === 0, "…and withheld from every payload");
+
+  // The department's reply through the same path is recorded once, and an unchanged save records nothing.
+  const reply = save(withReq, OWNER1, (doc) => {
+    doc.auditRequests[0].messages.push({ id: "m9", by: "own1", byName: "Ola", side: "dept", at: "2026-10-03T09:00:00.000Z", text: "Done" });
+  });
+  ok(sameList(reply.actions, ["comms.request_reply"]), "a department reply through the PUT path → one comms.request_reply", reply.actions);
+  ok(save(withReq, OWNER1).events.length === 0, "a department's unchanged save on a noticed engagement records nothing");
+}
+
 console.log("\n----------------------------------------");
 console.log(`${pass}/${pass + fail} assertions passed` + (fail ? `, ${fail} FAILED` : ""));
 process.exit(fail ? 1 : 0);

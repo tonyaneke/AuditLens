@@ -48,6 +48,7 @@ const COLLECTIONS: Collection[] = [
     ],
   },
   { path: ["extFindings"], kind: "extFinding" },
+  { path: ["auditRequests"], kind: "auditRequest" },
   { path: ["fraudRisks"], kind: "fraudRisk", children: [{ path: ["actions"], kind: "fraudAction" }] },
   {
     path: ["processReviews"],

@@ -16,6 +16,7 @@ export const OVERSIGHT_VIEWS = ["approvals", "exco"] as const;
 // Views available to a department-head "action owner" (their remediation portal).
 export const OWNER_VIEWS = [
   "dashboard",
+  "myaudits",
   "myobs",
   "myext",
   "myfraud",
@@ -243,7 +244,7 @@ export function allowedViews(user: SessionUser): string[] {
 // Sidebar sections a user actually sees (nav only — detail views are reached from lists).
 export function visibleViews(user: SessionUser): string[] {
   const role = effectiveRole(user);
-  if (role === "action_owner") return ["dashboard", "myobs", "myext", "myfraud"];
+  if (role === "action_owner") return ["dashboard", "myaudits", "myobs", "myext", "myfraud"];
   if (role === "executive") return ["dashboard", "allobs", "exco", "departments"];
   if (role === "head_of_audit") {
     return [...MAIN_VIEWS, ...ASSESSMENT_VIEWS, ...OVERSIGHT_VIEWS];
