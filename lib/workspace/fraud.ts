@@ -38,6 +38,9 @@ export const DEPARTMENTS = [
   "Operations Department",
   "Administration Department",
   "Office of the Managing Director",
+  // Spelled exactly as the roster in components/settings/staff.ts.
+  "Impact & Sustainability",
+  "IT",
 ] as const;
 
 /* ---------------- 

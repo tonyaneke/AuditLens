@@ -308,10 +308,9 @@ export default function FraudPage() {
 
   const bandOpts = [...BANDS].reverse().map((b) => [b, b] as [string, string]);
   const deptVals = en.map((f) => f.process || "");
-  const deptOpts: Array<[string, string]> = withExtras(
-    DEPARTMENTS.filter((d) => deptVals.includes(d)),
-    deptVals,
-  ).map((d) => [d, d]);
+  // Every canonical department is offered, even one with no risks yet, so the filter always
+  // matches the Department picker in the add/edit dialog.
+  const deptOpts: Array<[string, string]> = withExtras(DEPARTMENTS, deptVals).map((d) => [d, d]);
   if (deptVals.includes("") || flt.dept === NO_DEPT) deptOpts.push([NO_DEPT, "No department"]);
   const shown = en.filter(
     (f) =>
@@ -327,14 +326,30 @@ export default function FraudPage() {
   const allActs = en.flatMap((f) => fraudActions(f));
   const implN = allActs.filter((a) => fraudActionDone(a.status)).length;
   const validatedN = allActs.filter((a) => a.status === FRAUD_VALIDATED).length;
+  const mitigatingN = en.filter((f) => f.status === "Mitigating").length;
+  // A risk is "Validated" only once Internal Audit has signed off every one of its actions — the
+  // rollup calls a risk "Mitigated" as soon as the owners have marked everything Implemented.
+  const validatedRiskN = en.filter((f) => {
+    const a = fraudActions(f);
+    return a.length > 0 && a.every((x) => x.status === FRAUD_VALIDATED);
+  }).length;
+  const awaitingSignOffN = en.filter(
+    (f) => f.status === "Mitigated" && fraudActions(f).some((x) => x.status === "Implemented"),
+  ).length;
   const planRanked = en.slice().sort((a, b) => bandRank(b.res) - bandRank(a.res));
 
   return (
     <>
-      <div className="dash-kpis" style={{ gridTemplateColumns: "repeat(4,1fr)" }}>
+      <div className="dash-kpis" style={{ gridTemplateColumns: "repeat(5,1fr)" }}>
         <Kpi tone="warn" label="Extreme / High" value={byBand.Extreme + byBand.High} sub="residual fraud exposure" />
         <Kpi tone="base" label="Total risks" value={F.length} sub="in the register" />
-        <Kpi tone="good" label="Mitigated" value={en.filter((f) => f.status === "Mitigated").length} sub="response complete" />
+        <Kpi tone="mid" label="Mitigating" value={mitigatingN} sub="mitigation in progress" />
+        <Kpi
+          tone="good"
+          label="Validated"
+          value={validatedRiskN}
+          sub={awaitingSignOffN ? `${awaitingSignOffN} more mitigated, awaiting sign-off` : "signed off by Internal Audit"}
+        />
         <Kpi tone="accent" label="Open actions" value={en.filter((f) => f.status !== "Mitigated").length} sub="in prevention plan" />
       </div>
 
