@@ -8,6 +8,21 @@ import {
 
 // Best-effort email notifications (assignment, approval-needed, update-requested).
 // In-app notifications are stored in the workspace; this only fans out email.
+
+/* Development never e-mails anyone — except the addresses in NOTIFY_DEV_ALLOW (comma-separated,
+   e.g. in .env.local). That is what lets a developer test a flow end to end against their own
+   inbox while every other recipient of the same send stays suppressed: the list FILTERS the
+   recipients, it does not switch suppression off. Ignored outside development. */
+function devAllowList(): Set<string> | null {
+  if (process.env.NODE_ENV !== "development") return null;
+  return new Set(
+    String(process.env.NOTIFY_DEV_ALLOW || "")
+      .split(/[,;\s]+/)
+      .map((x) => x.trim().toLowerCase())
+      .filter((x) => x.includes("@")),
+  );
+}
+
 export async function POST(request: Request) {
   try {
     await requireActiveSession();
@@ -17,10 +32,12 @@ export async function POST(request: Request) {
 
   // Development: never send real email. Every notify flow still runs (and the in-app bell
   // notifications live in the workspace, untouched by this) — only the email fan-out is
-  // suppressed so test data doesn't hit real inboxes.
-  if (process.env.NODE_ENV === "development") {
+  // suppressed so test data doesn't hit real inboxes. Allow-listed addresses are the one exception.
+  const allow = devAllowList();
+  if (allow && !allow.size) {
     return NextResponse.json({ sent: false, suppressed: "development" });
   }
+  const permitted = (address: string) => !allow || allow.has(address.trim().toLowerCase());
 
   let body: {
     to?: unknown;
@@ -50,6 +67,7 @@ export async function POST(request: Request) {
         : [];
     const to = typeof cons.to === "string" && cons.to.includes("@") ? cons.to : "";
     if (!to) return NextResponse.json({ sent: false, error: "Recipient required." });
+    if (!permitted(to)) return NextResponse.json({ sent: false, suppressed: "development" });
     const result = await sendAdminConsolidatedEmail({
       to,
       name: String(cons.name || ""),
@@ -59,9 +77,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ sent: result.sent, error: result.sent ? undefined : result.error });
   }
 
-  const to = Array.isArray(body.to)
+  const requested = Array.isArray(body.to)
     ? body.to.filter((x): x is string => typeof x === "string" && x.includes("@"))
     : [];
+  const to = requested.filter(permitted);
+  if (requested.length && !to.length) return NextResponse.json({ sent: false, suppressed: "development" });
   const subject = typeof body.subject === "string" ? body.subject : "AuditLens notification";
   const text = typeof body.text === "string" ? body.text : "";
   const ctaUrl = typeof body.ctaUrl === "string" ? body.ctaUrl : undefined;

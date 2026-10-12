@@ -1,6 +1,6 @@
 "use client";
 
-// Audit domain dialogs: Audit edit, Report edit, Terms of Reference, Audit Plan & Tests,
+// Audit domain dialogs: Audit edit, Report edit, Audit Plan & Tests,
 // Executive Summary edit — plus the restored legacy AI flows: Generate audit plan
 // (modalPlanPrompt/doImportPlan), Edit plan meta (modalEditPlan), Raise exception from a test
 // (modalRaiseException/generateException), Generate observation from a one-liner
@@ -31,8 +31,6 @@ import {
 import { dl } from "@/lib/client/exports";
 import { generateObsDraft } from "@/lib/client/obs-ai";
 import { useDirectoryUsers } from "@/components/external/use-directory";
-import { exportTORWord } from "@/lib/client/word";
-import NoticeComposer from "@/components/comms/NoticeComposer";
 import {
   AUDIT_STATUS,
   ASSURANCE,
@@ -339,101 +337,6 @@ export function ModalReportDialog({ auditId, reportId }: { auditId: string; repo
   );
 }
 
-/* ---------------- Terms of Reference Modal ---------------- */
-
-export function ModalTORDialog({ auditId }: { auditId: string }) {
-  const { db, mutate } = useWorkspace();
-  const modal = useModal();
-  const a = (db.audits || []).find((x) => x.id === auditId);
-  const tor = (a?.tor || {}) as Record<string, string>;
-
-  const [addressee, setAddressee] = useState(tor.addressee || "");
-  const [date, setDate] = useState(tor.date || new Date().toISOString().slice(0, 10));
-  const [timing, setTiming] = useState(tor.timing || "");
-  const [background, setBackground] = useState(tor.background || "");
-  const [outOfScope, setOutOfScope] = useState(tor.outOfScope || "");
-  const [infoRequired, setInfoRequired] = useState(tor.infoRequired || "");
-  const [reportingTo, setReportingTo] = useState(tor.reportingTo || "");
-
-  const torFields = () => ({
-    addressee,
-    date,
-    timing,
-    background,
-    outOfScope,
-    infoRequired,
-    reportingTo,
-  });
-
-  function save() {
-    mutate((d) => {
-      const cur = (d.audits || []).find((x) => x.id === auditId);
-      if (cur) cur.tor = torFields();
-    });
-    toast("Terms of Reference saved", "success");
-    modal.close();
-  }
-
-  return (
-    <ModalFrame
-      title="Terms of Reference (TOR)"
-      footer={
-        <>
-          <button className="btn sec" type="button" onClick={() => exportTORWord(db, a!)}>
-            ⤓ Export TOR (Word)
-          </button>
-          <div className="spacer" />
-          <button className="btn sec" type="button" onClick={modal.close}>
-            Cancel
-          </button>
-          <button className="btn pri" type="button" onClick={save}>
-            Save TOR
-          </button>
-        </>
-      }
-    >
-      <div className="f2">
-        <div>
-          <label>Addressed To</label>
-          <input type="text" placeholder="e.g. Managing Director / Head of Ops" value={addressee} onChange={(e) => setAddressee(e.target.value)} />
-        </div>
-        <div>
-          <label>Date</label>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-        </div>
-      </div>
-      <div style={{ marginTop: 10 }}>
-        <label>Planned Timing</label>
-        <input type="text" placeholder="e.g. October 15 – November 15, 2024" value={timing} onChange={(e) => setTiming(e.target.value)} />
-      </div>
-      <div style={{ marginTop: 10 }}>
-        <label>Background &amp; Purpose</label>
-        <textarea rows={3} value={background} onChange={(e) => setBackground(e.target.value)} />
-      </div>
-      <div style={{ marginTop: 10 }}>
-        <label>Out of Scope Areas</label>
-        <textarea rows={2} value={outOfScope} onChange={(e) => setOutOfScope(e.target.value)} />
-      </div>
-      <div style={{ marginTop: 10 }}>
-        <label>Information &amp; Access Required</label>
-        <textarea rows={2} value={infoRequired} onChange={(e) => setInfoRequired(e.target.value)} />
-      </div>
-      <div style={{ marginTop: 10 }}>
-        <label>Reporting Channel</label>
-        <input type="text" placeholder="e.g. Executive Management & Board Audit Committee" value={reportingTo} onChange={(e) => setReportingTo(e.target.value)} />
-      </div>
-      {/* The notice that tells the department the audit is commencing — issuing it also saves the
-          fields above, so nothing typed here is lost by issuing first and closing after. */}
-      <NoticeComposer
-        auditId={auditId}
-        beforeIssue={(cur) => {
-          cur.tor = torFields();
-        }}
-      />
-    </ModalFrame>
-  );
-}
-
 /* ---------------- Audit Planning Test Modal ---------------- */
 
 export function ModalTestDialog({ auditId, testId }: { auditId: string; testId?: string }) {
@@ -725,6 +628,9 @@ Return ONLY a JSON object (no commentary) with these exact keys:
   "scope": "concise scope statement — what the audit will and will not cover",
   "objectives": ["audit objective 1", "audit objective 2"],
   "keyRisks": ["key risk 1", "key risk 2"],
+  "background": "one or two short paragraphs for the Terms of Reference: why this engagement is being performed and what it gives management assurance over",
+  "outOfScope": ["an area deliberately excluded from this engagement"],
+  "infoRequired": ["a document, report, data extract or system access the audit team will need from management"],
   "tests": [
     {
       "ref": "T1",
@@ -745,6 +651,10 @@ type AiPlan = {
   objectives?: unknown;
   keyRisks?: unknown;
   tests?: unknown;
+  /* Terms of Reference fields — drafted with the plan so the TOR fills itself (NoticeDialog). */
+  background?: unknown;
+  outOfScope?: unknown;
+  infoRequired?: unknown;
 };
 
 export function ModalPlanPromptDialog({ auditId }: { auditId: string }) {
@@ -778,6 +688,18 @@ export function ModalPlanPromptDialog({ auditId }: { auditId: string }) {
       if (obj.scope != null) plan.scope = String(obj.scope);
       if (Array.isArray(obj.objectives)) plan.objectives = obj.objectives.map(String);
       if (Array.isArray(obj.keyRisks)) plan.keyRisks = obj.keyRisks.map(String);
+      /* The Terms of Reference's judgement fields, drafted alongside — into EMPTY fields only: what
+         an auditor has written is never replaced by a regenerated plan. */
+      const tor = (cur.tor = { ...(cur.tor || {}) });
+      const lines = (v: unknown) =>
+        Array.isArray(v) ? v.map((x) => String(x).trim()).filter(Boolean).join("\n") : String(v || "").trim();
+      for (const [field, value] of [
+        ["background", obj.background],
+        ["outOfScope", obj.outOfScope],
+        ["infoRequired", obj.infoRequired],
+      ] as const) {
+        if (!String(tor[field] || "").trim() && lines(value)) tor[field] = lines(value);
+      }
       plan.tests = plan.tests || [];
       const tests = Array.isArray(obj.tests) ? obj.tests : [];
       tests.forEach((raw) => {

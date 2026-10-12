@@ -142,7 +142,7 @@ export function CloseoutView({ closeout }: { closeout: AuditCloseout }) {
 /** "Issued 3 Oct 2026 by Sade · re-issued 9 Oct 2026 to Credit, Finance" */
 function issuedLine(
   what: string,
-  c: { issuedAt: string; issuedByName?: string; revisedAt?: string; departments: string[] },
+  c: { issuedAt?: string; issuedByName?: string; revisedAt?: string; departments: string[] },
 ) {
   return (
     <>
@@ -183,7 +183,7 @@ export function AuditCommsCard({ audit }: { audit: Audit }) {
         ) : null}
         <div className="spacer" style={{ flex: 1 }} />
         <button className="btn ghost sm" type="button" onClick={() => modal.open(<ModalTORDialog auditId={audit.id} />, { wide: true })}>
-          {issued ? "Engagement notice" : "Compose engagement notice"}
+          {issued ? "Notice & TOR" : "Issue notice"}
         </button>
         <button
           className="btn ghost sm"
@@ -220,9 +220,9 @@ export function AuditCommsCard({ audit }: { audit: Audit }) {
         </div>
       ) : (
         <p className="hint" style={{ marginBottom: 0 }}>
-          No engagement notice yet. Compose it in the Terms of Reference — it is filled from this
-          audit&apos;s objectives and scope. The department sees the engagement on its Audits tab,
-          and can exchange requests with you, once the notice is issued.
+          No notice yet. <b>Issue notice</b> opens the Terms of Reference with the notice, filled from
+          this audit&apos;s plan — choose the department it is addressed to and issue. The department
+          sees the engagement on its Audits tab, and can exchange requests with you, once it is issued.
         </p>
       )}
 

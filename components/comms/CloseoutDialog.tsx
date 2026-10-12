@@ -8,7 +8,7 @@
    report is the one place they are edited (the executive summary's Edit / Generate), so this dialog
    only previews them. Re-issue after editing the report to send the revised summary.
 
-   The confirmation is inline, as in NoticeComposer: modal.confirm() would unmount this dialog. */
+   The confirmation is inline, as in NoticeDialog: modal.confirm() would unmount this dialog. */
 
 import { useState } from "react";
 import { useUser } from "@/components/chrome/UserContext";

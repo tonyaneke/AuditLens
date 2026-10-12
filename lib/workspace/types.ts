@@ -179,15 +179,16 @@ export type AuditPlan = {
 };
 
 /** The engagement notice — the message that tells a department an audit of it is commencing,
- *  with the objectives and scope from the audit programme. Composed in the Terms of Reference and
- *  stored only once issued: the text is a snapshot of what was actually communicated, so a later
- *  edit to the plan does not rewrite what the department was told. Issuing it is also what makes
- *  the audit visible to those departments (lib/audit-comms-scope.ts). */
+ *  with the objectives and scope from the audit programme. Composed with the Terms of Reference
+ *  (one dialog: issuing the notice saves the TOR). Without `issuedAt` it is a DRAFT — saved but
+ *  sent to nobody and visible to nobody outside Internal Audit (lib/audit-comms-scope.ts reads only
+ *  issued notices, and lib/workspace-scope.ts strips it from everyone else's payload). Once issued,
+ *  the text is a snapshot of what was actually communicated. */
 export type AuditNotice = {
   text: string;
-  /** Department names (components/settings/staff.ts DEPARTMENTS), matched normalised. */
+  /** Department names (the TOR's "Addressed to"), matched normalised. */
   departments: string[];
-  issuedAt: string;
+  issuedAt?: string;
   issuedBy?: string;
   issuedByName?: string;
   /** Set when the notice is re-issued after its first issue (issuedAt keeps the first). */

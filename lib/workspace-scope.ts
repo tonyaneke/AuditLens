@@ -191,18 +191,19 @@ export function auditsById(db: WorkspaceDb): Map<string, Obj> {
   return new Map(asArray(db.audits).map((a) => [String(a.id), a]));
 }
 
-/* What a department sees of an audit it holds no observations in: the engagement as its
-   communications describe it — name, type, area, period, lead auditor, the terms of reference and
-   the plan's scope and objectives. NOT the test programme, its results or the key-risk list: those
-   are Internal Audit's working papers, and handing the auditee the test plan before fieldwork would
-   tell them exactly what is going to be sampled. Reports are empty by construction (any report
-   holding a visible observation would have put the audit on the ordinary path). */
+/* What a department sees of an audit it holds no observations in: the engagement as its Terms of
+   Reference describe it — name, type, area, period, lead auditor, the TOR itself, and the plan's
+   scope, objectives and key risks (the TOR export has always listed "Key Risks to be Assessed" for
+   management). NOT the test programme or its results: those are Internal Audit's working papers,
+   and handing the auditee the test plan before fieldwork would tell them exactly what is going to
+   be sampled. Reports are empty by construction (any report holding a visible observation would
+   have put the audit on the ordinary path). */
 function engagementOnlyAudit(a: Obj): Obj {
   const plan = a.plan && typeof a.plan === "object" ? (a.plan as Obj) : {};
   return {
     ...a,
     reports: [],
-    plan: { scope: plan.scope, objectives: plan.objectives },
+    plan: { scope: plan.scope, objectives: plan.objectives, keyRisks: plan.keyRisks },
   };
 }
 

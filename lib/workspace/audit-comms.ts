@@ -26,8 +26,17 @@ import { directory, headUsers, ownerEmailFor } from "@/lib/client/directory";
 import { emailNotify } from "@/lib/client/notify";
 import type { SessionUser } from "@/lib/permissions";
 import { isInternalAudit } from "./observations";
-import { uid } from "./selectors";
-import type { Audit, AuditCloseout, AuditRequest, AuditSide, Report, WorkspaceDb } from "./types";
+import { raLinkIds } from "./ra";
+import { fmtDate, uid } from "./selectors";
+import type {
+  Audit,
+  AuditCloseout,
+  AuditRequest,
+  AuditSide,
+  AuditUniverseUnit,
+  Report,
+  WorkspaceDb,
+} from "./types";
 
 /* ---------------- the engagement notice ---------------- */
 
@@ -69,6 +78,104 @@ export function programmeIsEmpty(a: Audit): boolean {
 
 export function noticeIssued(a: Audit | undefined): boolean {
   return !!a?.notice?.issuedAt;
+}
+
+/* ---------------- terms of reference: what fills itself ----------------
+   The Terms of Reference and the notice are one dialog: issuing the notice is saving the TOR. Most
+   of the TOR can be filled from what the system already knows, so the auditor reviews rather than
+   types:
+     addressed to       the departments the notice goes to (one picker for both)
+     planned timing     the audit's own quarter ("Q2 2027" → 1 Apr – 30 Jun 2027) until narrowed
+     background         the annual plan's rationale for the engagement this audit belongs to
+     reporting channel  the house default below
+     out of scope /     drafted by AI with the audit plan, or from it later (torDraftPrompt) —
+     information needed nothing deterministic knows them */
+
+/** Who the final report goes to unless the auditor says otherwise — the wording the TOR export
+ *  has always fallen back to. */
+export const DEFAULT_REPORTING_TO = "Executive Management and the Board Audit Committee";
+
+/** "Q2 2027" (or "… - Q2" with a year elsewhere in the text) → the quarter's first and last day. */
+export function quarterRange(period: unknown): { from: string; to: string } | null {
+  const s = String(period || "");
+  const q = /Q([1-4])/i.exec(s);
+  const y = /(20\d{2})/.exec(s);
+  if (!q || !y) return null;
+  const n = Number(q[1]);
+  const year = Number(y[1]);
+  const pad = (v: number) => String(v).padStart(2, "0");
+  const lastDay = new Date(Date.UTC(year, n * 3, 0)).getUTCDate();
+  return { from: `${year}-${pad(n * 3 - 2)}-01`, to: `${year}-${pad(n * 3)}-${pad(lastDay)}` };
+}
+
+/** "10 Jan 2027 – 20 Jan 2027", or whichever end is known. */
+export function formatTiming(from: string | undefined, to: string | undefined): string {
+  const f = from ? fmtDate(from) : "";
+  const t = to ? fmtDate(to) : "";
+  return f && t ? `${f} – ${t}` : f ? `From ${f}` : t ? `Until ${t}` : "";
+}
+
+/** The annual-plan engagement (Audit Risk Assessment) this audit was created under, if linked. */
+export function planUnitFor(db: WorkspaceDb, a: Audit): AuditUniverseUnit | undefined {
+  return (db.auditUniverse || []).find((u) => !u.deletedAt && raLinkIds(u).includes(a.id));
+}
+
+/** Background & purpose from the annual plan: why the engagement is in the plan, in the plan's own
+ *  words. Empty when the audit is not linked to the plan — then AI drafting fills it. */
+export function defaultBackground(db: WorkspaceDb, a: Audit): string {
+  const u = planUnitFor(db, a);
+  const why = String(u?.rationale || "").trim();
+  if (!u || !why) return "";
+  const year = /20\d{2}/.exec(String(a.period || ""))?.[0] || String(db.planYear || "");
+  return `This engagement forms part of the ${year ? year + " " : ""}risk-based internal audit plan ("${u.name}"). ${why}`;
+}
+
+/** The department addressed in the TOR export: "Head of Department — Finance, IT". */
+export function addressedToLine(departments: readonly string[]): string {
+  return departments.length ? `Head of Department — ${departments.map(deptLabel).join(", ")}` : "";
+}
+
+export type TorDraft = { background: string; outOfScope: string; infoRequired: string };
+
+/** The AI brief for the TOR's three judgement fields, from everything the audit already knows. */
+export function torDraftPrompt(db: WorkspaceDb, a: Audit): string {
+  const plan = a.plan || {};
+  const unit = planUnitFor(db, a);
+  const tests = (plan.tests || [])
+    .slice(0, 25)
+    .map((t) => `- ${String(t.title || t.name || "")}${t.population ? ` (population: ${String(t.population)})` : ""}`)
+    .join("\n");
+  return `Act as the internal audit function of ${String(db.org || "the organisation")}. Draft three sections of the Terms of Reference for the engagement below. Write for the management of the audited department: plain, professional, specific to this engagement.
+
+Audit: ${a.name}
+Basis: ${auditTypeLabel(a)}
+Process / Department: ${a.area || "(not specified)"}
+Period: ${a.period || "(not specified)"}
+Annual plan rationale: ${String(unit?.rationale || "(none)")}
+Scope: ${String(plan.scope || "(not yet defined)")}
+Objectives:
+${(plan.objectives || []).map((o) => `- ${o}`).join("\n") || "(none)"}
+Key risks:
+${(plan.keyRisks || []).map((r) => `- ${r}`).join("\n") || "(none)"}
+Planned tests:
+${tests || "(none)"}
+
+Return ONLY a JSON object (no commentary) with these exact keys:
+{
+  "background": "one or two short paragraphs: why this engagement is being performed and what it aims to give management assurance over",
+  "outOfScope": ["an area deliberately excluded from this engagement", "another"],
+  "infoRequired": ["a document, report, data extract or system access the audit team will need from management", "another"]
+}`;
+}
+
+/** The AI's answer as the dialog's three text fields — lists become one item per line. */
+export function parseTorDraft(raw: unknown): TorDraft | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const lines = (v: unknown) =>
+    Array.isArray(v) ? v.map((x) => String(x).trim()).filter(Boolean).join("\n") : String(v || "").trim();
+  const draft = { background: lines(o.background), outOfScope: lines(o.outOfScope), infoRequired: lines(o.infoRequired) };
+  return draft.background || draft.outOfScope || draft.infoRequired ? draft : null;
 }
 
 /** What a notice or conclusion can be addressed to: the roster first, then any department someone
@@ -284,8 +391,9 @@ function origin(): string {
   }
 }
 
-export function portalRequestHref(requestId?: string): string {
-  return `/portal/audits${requestId ? `?request=${encodeURIComponent(requestId)}` : ""}`;
+/** The engagement's page on the department's portal, opened on a request when there is one. */
+export function portalAuditHref(auditId: string, requestId?: string): string {
+  return `/portal/audits/${encodeURIComponent(auditId)}${requestId ? `?request=${encodeURIComponent(requestId)}` : ""}`;
 }
 
 export function auditRequestHref(auditId: string, requestId?: string): string {
@@ -348,7 +456,7 @@ function notifyDepartments(
     for (const u of members) bell(db, u.id, kind, bellText, "myaudits", a.id);
     const heads = deptHeadIds(db, dept);
     const to = emailsFor(db, heads.length ? heads : members.map((u) => u.id));
-    if (to.length) void emailNotify(to, subject, body, origin() + portalRequestHref(), "View the engagement in AuditLens");
+    if (to.length) void emailNotify(to, subject, body, origin() + portalAuditHref(a.id), "View the engagement in AuditLens");
   }
 }
 
@@ -433,7 +541,7 @@ export function notifyRequestActivity(
     const p = deptParticipants(db, r);
     for (const id of p.bell) if (id !== actorId) bell(db, id, "audit_request", line, "myaudits", r.auditId, r.id);
     const to = emailsFor(db, p.email.filter((id) => id !== actorId));
-    if (to.length) void emailNotify(to, subject, body, origin() + portalRequestHref(r.id), "Open the request");
+    if (to.length) void emailNotify(to, subject, body, origin() + portalAuditHref(r.auditId, r.id), "Open the request");
   } else {
     const ids = iaParticipants(a, r).filter((id) => id !== actorId);
     for (const id of ids) bell(db, id, "audit_request", line, "audit", r.auditId, r.id);
