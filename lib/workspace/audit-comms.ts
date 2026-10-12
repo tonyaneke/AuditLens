@@ -344,12 +344,6 @@ export function requestAwaiting(r: AuditRequest): Awaiting {
   return last === "ia" ? "dept" : "ia";
 }
 
-export function awaitingLabel(r: AuditRequest): string {
-  const w = requestAwaiting(r);
-  if (w === "closed") return "Closed";
-  return w === "dept" ? `Awaiting ${deptLabel(r.department) || "department"}` : "Awaiting Internal Audit";
-}
-
 export function lastActivity(r: AuditRequest): string {
   const msgs = r.messages || [];
   return msgs.length ? msgs[msgs.length - 1].at : r.raisedAt;
@@ -510,40 +504,58 @@ function deptParticipants(db: WorkspaceDb, r: AuditRequest): { bell: string[]; e
   return { bell: members, email: heads.length ? heads : members };
 }
 
-/** Tell the OTHER side about a new request, a reply, or a close / reopen. The actor is never
- *  notified about their own action. */
+/** Tell the OTHER side about a new request, a response, or a close / reopen — in the app (bell)
+ *  AND by e-mail, the e-mail carrying what was said and the names of any files that came with it,
+ *  so a response is known about without opening AuditLens to look for it.
+ *
+ *  Recipients are always the other side's people, so the actor is not normally among them. The one
+ *  person who can be is someone holding both roles — an admin, who acts on one side and is told on
+ *  the other. They are notified like anyone else on that side: excluding them by id is what left a
+ *  tester playing both parts never seeing a response arrive. */
 export function notifyRequestActivity(
   db: WorkspaceDb,
   a: Audit | undefined,
   r: AuditRequest,
-  actor: { id: string; side: AuditSide },
+  actor: { id: string; side: AuditSide; name?: string },
   event: "raised" | "reply" | "closed" | "reopened",
 ): void {
-  const actorId = actor.id;
   const auditName = a?.name || "an audit";
   const what = `${r.ref ? r.ref + " " : ""}“${r.subject}”`;
   const msgs = r.messages || [];
-  const lastText = event === "reply" ? msgs[msgs.length - 1]?.text || "" : event === "raised" ? r.text : "";
+  const last = event === "reply" ? msgs[msgs.length - 1] : undefined;
+  const said = event === "reply" ? last?.text || "" : event === "raised" ? r.text : "";
+  const files = (event === "reply" ? last?.evidence : event === "raised" ? r.evidence : undefined) || [];
+  const dept = deptLabel(r.department) || "the department";
+  const who = actor.side === "ia" ? `Internal Audit${actor.name ? ` (${actor.name})` : ""}` : `${actor.name || "The department"} (${dept})`;
   const toDept = actor.side === "ia";
 
   const line =
     event === "raised"
       ? r.kind === "information"
         ? `Information requested on ${auditName}: ${what}`
-        : `Comment from ${deptLabel(r.department) || "the department"} on ${auditName}: ${what}`
+        : `Comment from ${dept} on ${auditName}: ${what}`
       : event === "reply"
-        ? `New reply on ${what} (${auditName})`
+        ? `New response from ${who} on ${what}`
         : `${what} on ${auditName} was ${event}`;
   const subject = `AuditLens — ${line}`;
-  const body = [line, lastText ? `\n${lastText}` : "", r.dueDate && event === "raised" ? `\nRequired by: ${r.dueDate}` : ""].join("");
+  const body = [
+    event === "reply" ? `${who} responded on ${what} — ${auditName}:` : line,
+    said,
+    files.length
+      ? `Attached (${files.length}): ${files.map((f) => f.name).join(", ")} — open the request in AuditLens to download.`
+      : "",
+    r.dueDate && event === "raised" ? `Required by: ${fmtDate(r.dueDate)}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 
   if (toDept) {
     const p = deptParticipants(db, r);
-    for (const id of p.bell) if (id !== actorId) bell(db, id, "audit_request", line, "myaudits", r.auditId, r.id);
-    const to = emailsFor(db, p.email.filter((id) => id !== actorId));
+    for (const id of p.bell) bell(db, id, "audit_request", line, "myaudits", r.auditId, r.id);
+    const to = emailsFor(db, p.email);
     if (to.length) void emailNotify(to, subject, body, origin() + portalAuditHref(r.auditId, r.id), "Open the request");
   } else {
-    const ids = iaParticipants(a, r).filter((id) => id !== actorId);
+    const ids = iaParticipants(a, r);
     for (const id of ids) bell(db, id, "audit_request", line, "audit", r.auditId, r.id);
     const to = emailsFor(db, ids);
     if (to.length) void emailNotify(to, subject, body, origin() + auditRequestHref(r.auditId, r.id), "Open the request");

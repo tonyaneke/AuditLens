@@ -27,9 +27,12 @@ import { fmtDate, fmtDateTime } from "@/lib/workspace/selectors";
 import type { Audit, AuditCloseout, AuditRequest } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 import { CloseoutDialog, NewRequestDialog, RequestThreadDialog } from "./lazy";
-import { AwaitingPill, KindTag } from "./pills";
+import { KindTag } from "./pills";
 
-/* ---------------- request table (both sides) ---------------- */
+/* ---------------- request table (both sides) ----------------
+   No status column: what matters is that a response came in, and from whom — the bell and the
+   e-mail say so, and "Last activity" shows who wrote last and when. A closed thread is marked in its
+   subtitle. */
 
 export function RequestTable({
   requests,
@@ -48,34 +51,36 @@ export function RequestTable({
           <th scope="col">Subject</th>
           {showDepartment ? <th scope="col">Department</th> : null}
           <th scope="col">Type</th>
-          <th scope="col">Status</th>
           <th scope="col">Last activity</th>
         </tr>
       </thead>
       <tbody>
         {requests.map((r) => {
-          const n = (r.messages || []).length;
+          const msgs = r.messages || [];
+          const n = msgs.length;
+          const lastBy = n ? msgs[n - 1].byName : r.raisedByName;
           return (
             <tr key={r.id} className="row-link" onClick={() => open(r)}>
               <td style={{ whiteSpace: "nowrap" }}>{r.ref || "—"}</td>
               <td>
-                <RowOpen onOpen={() => open(r)} label={`Open request: ${r.subject}`}>
+                <RowOpen onOpen={() => open(r)} label={`Open ${r.kind === "information" ? "request" : "comment"}: ${r.subject}`}>
                   <b>{r.subject}</b>
                 </RowOpen>
                 <div className="hint">
                   {r.raisedByName ? `Raised by ${r.raisedByName}` : ""}
                   {r.dueDate ? ` · required by ${fmtDate(r.dueDate)}` : ""}
                   {n ? ` · ${n} repl${n === 1 ? "y" : "ies"}` : ""}
+                  {r.closedAt ? " · closed" : ""}
                 </div>
               </td>
               {showDepartment ? <td>{deptLabel(r.department)}</td> : null}
               <td>
                 <KindTag r={r} />
               </td>
-              <td>
-                <AwaitingPill r={r} />
+              <td style={{ whiteSpace: "nowrap" }}>
+                {fmtDateTime(lastActivity(r))}
+                {lastBy ? <div className="hint">by {lastBy}</div> : null}
               </td>
-              <td style={{ whiteSpace: "nowrap" }}>{fmtDateTime(lastActivity(r))}</td>
             </tr>
           );
         })}

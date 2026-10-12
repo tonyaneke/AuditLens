@@ -19,7 +19,7 @@ import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import { Avatar } from "@/components/ui";
 import RichText from "@/components/ui/RichText";
 import { FilePickMulti, MAX_UPLOAD_BYTES, tooLarge, uploadAllEvidence } from "@/components/audits/attach";
-import { dirUser } from "@/lib/client/directory";
+import { dirUser, loadDirectory } from "@/lib/client/directory";
 import { deptLabel } from "@/lib/dept-scope";
 import {
   canCloseRequest,
@@ -30,7 +30,7 @@ import {
 import { fmtDate, fmtDateTime, uid } from "@/lib/workspace/selectors";
 import type { AuditRequest, AuditSide, EvidenceFile } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
-import { AwaitingPill, KindTag } from "./pills";
+import { KindTag } from "./pills";
 
 const MB =Math.round(MAX_UPLOAD_BYTES / (1024 * 1024));
 
@@ -137,6 +137,7 @@ export function NewRequestDialog({
     setErr("");
     const evidence = await uploadOrError(id, files);
     if (typeof evidence === "string") return setErr(evidence);
+    await loadDirectory();
 
     mutate((d) => {
       const req: AuditRequest = {
@@ -158,7 +159,7 @@ export function NewRequestDialog({
       d.auditRequests = d.auditRequests || [];
       d.auditRequests.push(req);
       const a = (d.audits || []).find((x) => x.id === auditId);
-      notifyRequestActivity(d, a, req, { id: user.id, side }, "raised");
+      notifyRequestActivity(d, a, req, { id: user.id, side, name: user.name }, "raised");
     });
     modal.close();
     toast(kind === "information" ? "Information request sent to the department." : "Comment sent to Internal Audit.", "success");
@@ -236,7 +237,6 @@ export function NewRequestDialog({
 
 export function RequestThreadDialog({ requestId }: { requestId: string }) {
   const { db, mutate } = useWorkspace();
-  const modal = useModal();
   const user = useUser();
   const side = viewerSide(user);
   const r = (db.auditRequests || []).find((x) => x.id === requestId);
@@ -256,6 +256,7 @@ export function RequestThreadDialog({ requestId }: { requestId: string }) {
   const req = r;
   const closed = !!req.closedAt;
   const mayClose = canCloseRequest(req, side);
+  const noun = req.kind === "information" ? "request" : "comment";
 
   async function reply() {
     const body = text.trim();
@@ -263,6 +264,7 @@ export function RequestThreadDialog({ requestId }: { requestId: string }) {
     setErr("");
     const evidence = await uploadOrError(req.id, files);
     if (typeof evidence === "string") return setErr(evidence);
+    await loadDirectory();
     mutate((d) => {
       const cur = (d.auditRequests || []).find((x) => x.id === req.id);
       if (!cur) return;
@@ -277,14 +279,15 @@ export function RequestThreadDialog({ requestId }: { requestId: string }) {
         evidence,
       });
       const a = (d.audits || []).find((x) => x.id === cur.auditId);
-      notifyRequestActivity(d, a, cur, { id: user.id, side }, "reply");
+      notifyRequestActivity(d, a, cur, { id: user.id, side, name: user.name }, "reply");
     });
     setText("");
     setFiles([]);
     toast("Reply sent.", "success");
   }
 
-  function setClosed(close: boolean) {
+  async function setClosed(close: boolean) {
+    await loadDirectory();
     mutate((d) => {
       const cur = (d.auditRequests || []).find((x) => x.id === req.id);
       if (!cur) return;
@@ -298,9 +301,9 @@ export function RequestThreadDialog({ requestId }: { requestId: string }) {
         delete cur.closedByName;
       }
       const a = (d.audits || []).find((x) => x.id === cur.auditId);
-      notifyRequestActivity(d, a, cur, { id: user.id, side }, close ? "closed" : "reopened");
+      notifyRequestActivity(d, a, cur, { id: user.id, side, name: user.name }, close ? "closed" : "reopened");
     });
-    toast(close ? "Request closed." : "Request reopened.", "success");
+    toast(`${noun === "request" ? "Request" : "Comment"} ${close ? "closed" : "reopened"}.`, "success");
   }
 
   return (
@@ -311,33 +314,33 @@ export function RequestThreadDialog({ requestId }: { requestId: string }) {
           {req.subject}
         </>
       }
+      /* No "Done": it only dismissed the dialog (× does that) and read like "mark this done" beside
+         Close. The footer is left out entirely when there is nothing to do in it. */
       footer={
-        <>
-          {mayClose ? (
-            <button className="btn ghost" type="button" onClick={() => setClosed(!closed)}>
-              {closed ? "Reopen request" : "Close request"}
-            </button>
-          ) : null}
-          <div className="spacer" style={{ flex: 1 }} />
-          <button className="btn sec" type="button" onClick={modal.close}>
-            Done
-          </button>
-          {!closed ? (
-            <BusyButton
-              className="btn pri"
-              busyLabel={files.length ? "Uploading…" : "Sending…"}
-              disabled={!text.trim() && !files.length}
-              onClick={reply}
-            >
-              Send reply
-            </BusyButton>
-          ) : null}
-        </>
+        mayClose || !closed ? (
+          <>
+            {mayClose ? (
+              <button className="btn ghost" type="button" onClick={() => void setClosed(!closed)}>
+                {`${closed ? "Reopen" : "Close"} ${noun}`}
+              </button>
+            ) : null}
+            <div className="spacer" style={{ flex: 1 }} />
+            {!closed ? (
+              <BusyButton
+                className="btn pri"
+                busyLabel={files.length ? "Uploading…" : "Sending…"}
+                disabled={!text.trim() && !files.length}
+                onClick={reply}
+              >
+                Send reply
+              </BusyButton>
+            ) : null}
+          </>
+        ) : undefined
       }
     >
       <div className="row" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
         <KindTag r={req} />
-        <AwaitingPill r={req} />
         <span className="hint">
           {audit?.name || "Audit engagement"} · {req.department}
           {req.dueDate ? ` · required by ${fmtDate(req.dueDate)}` : ""}
