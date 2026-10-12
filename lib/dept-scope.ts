@@ -44,8 +44,9 @@ export type DeptScoped = {
   secondaryOwnerUserId?: unknown;
 };
 
-/** Anything that carries department membership — a session, a directory row, a user record. */
-export type DeptMember = { department?: unknown; extraDepartments?: unknown };
+/** Anything that carries department membership — a session, a directory row, a user record.
+ *  `activeDepartment` is only ever on an admin's session, viewing as one department's action owner. */
+export type DeptMember = { department?: unknown; extraDepartments?: unknown; activeDepartment?: unknown };
 
 export type DeptScope = {
   /** Normalised department keys. Empty when the viewer has no department — then nothing is in scope. */
@@ -139,7 +140,13 @@ function asArray(v: unknown): Obj[] {
    dropdown sets) and `extraDepartments` carries any others. Both confer identical access; the
    split exists so one field stays a single value for display. */
 
-/** Every department key a member belongs to. */
+/** Every department key a member belongs to.
+ *
+ *  An admin viewing as an action owner carries the department they picked as `activeDepartment`
+ *  (lib/auth.ts sets it only in that view), and it REPLACES their own membership: the point of the
+ *  view is to see exactly what that department sees. This is the single place the override is
+ *  honoured, which is what keeps the server's payload trim, its write reconciler and the client's
+ *  portal in agreement about it. */
 export function deptKeysOf(member: DeptMember | null | undefined): Set<string> {
   const keys = new Set<string>();
   if (!member) return keys;
@@ -147,6 +154,10 @@ export function deptKeysOf(member: DeptMember | null | undefined): Set<string> {
     const k = normalizeDept(v);
     if (k) keys.add(k);
   };
+  if (member.activeDepartment) {
+    add(member.activeDepartment);
+    return keys;
+  }
   add(member.department);
   if (Array.isArray(member.extraDepartments)) member.extraDepartments.forEach(add);
   return keys;

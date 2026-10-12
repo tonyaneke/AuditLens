@@ -5,7 +5,7 @@
 import { useRouter } from "next/navigation";
 import { useUser } from "@/components/chrome/UserContext";
 import { CritPill, Empty, Kpi, RowOpen, StatusPill } from "@/components/ui";
-import { displayRoleLabel } from "@/lib/permissions";
+import { actingDepartment, displayRoleLabel } from "@/lib/permissions";
 import { hrefForView, isLegacyPath } from "@/lib/routes";
 import {
   daysBetween,
@@ -110,7 +110,7 @@ export default function OwnerDashboard() {
               replaced the role entirely, so this screen never agreed with the sidebar. */}
           <p className="dash-welcome-role">
             {displayRoleLabel(user)}
-            {user.department ? ` · ${user.department}` : ""}
+            {actingDepartment(user) ? ` · ${actingDepartment(user)}` : ""}
           </p>
         </div>
         <div className="spacer" />

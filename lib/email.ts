@@ -61,10 +61,18 @@ function brandedEmail(opts: {
   </div>`.trim();
 }
 
+/* An address on the reserved .invalid TLD (RFC 2606) belongs to an account with no mailbox — the
+   Admin profile (scripts/seed-admin-profile.mts). It is a Head-level recipient, so the fan-out
+   reaches it; sending would only bounce and count against the sender's reputation. */
+function deliverable(email: string | null | undefined): boolean {
+  return !!email && !/\.invalid$/i.test(email.trim());
+}
+
 export async function sendWelcomeEmail(params: WelcomeEmailParams) {
   const apiKey = process.env.SENDGRID_API_KEY?.trim();
   const from = SENDER_EMAIL;
 
+  if (!deliverable(params.to)) return { sent: false as const, error: "No mailbox for this account." };
   if (!apiKey) {
     return {
       sent: false as const,
@@ -220,7 +228,7 @@ export async function sendNotificationEmail(params: {
 }) {
   const apiKey = process.env.SENDGRID_API_KEY?.trim();
   const from = SENDER_EMAIL;
-  const recipients = params.to.filter(Boolean);
+  const recipients = params.to.filter(deliverable);
   if (!apiKey) {
     return { sent: false as const, error: "Email is not configured." };
   }
@@ -299,6 +307,7 @@ export async function sendAdminConsolidatedEmail(params: {
   const apiKey = process.env.SENDGRID_API_KEY?.trim();
   const from = SENDER_EMAIL;
 
+  if (!deliverable(params.to)) return { sent: false as const, error: "No mailbox for this account." };
   if (!apiKey) {
     return { sent: false as const, error: "Email is not configured." };
   }

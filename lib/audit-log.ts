@@ -101,7 +101,8 @@ function identity(user: AuditActor | null | undefined, prov: Provenance) {
   const fallback =
     prov.authMethod === "script" ? "Maintenance script" : prov.authMethod === "system" ? "Scheduled job" : "System";
   return {
-    userId: user?.id ?? null,
+    // `||`: a refused sign-in names who it claimed to be but has no account id to record.
+    userId: user?.id || null,
     userName: user?.name?.trim() || fallback,
     userEmail: user?.email?.trim() || "",
   };

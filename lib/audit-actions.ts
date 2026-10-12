@@ -20,6 +20,8 @@ export const ACTION_GROUPS: ActionGroup[] = [
       ["auth.login", "Signed in"],
       ["auth.logout", "Signed out"],
       ["auth.login_blocked", "Sign-in blocked"],
+      ["auth.login_failed", "Sign-in failed"],
+      ["auth.account_locked", "Account locked"],
       ["auth.role_switched", "Admin switched view"],
     ],
   },
@@ -309,6 +311,8 @@ export function isClientAuditAction(action: string): boolean {
 export const AUTH_METHOD_LABELS: Record<string, string> = {
   sso: "Microsoft sign-in",
   dev: "Developer sign-in",
+  // The Admin profile's password sign-in (lib/admin-credential.ts) — no MFA, so worth telling apart.
+  local: "Admin password",
   system: "Scheduled job",
   script: "Maintenance script",
 };

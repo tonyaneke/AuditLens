@@ -290,7 +290,9 @@ export function isDeptViewer(
   db: WorkspaceDb,
 ): boolean {
   if (!o || isOwnerViewer(user, o)) return false;
-  return inDeptScope(o, deptScopeFor(db, user.department));
+  // The whole user, not user.department: the server scopes by extraDepartments and an admin's
+  // acting department too, and the response controls must agree with what it served.
+  return inDeptScope(o, deptScopeFor(db, user));
 }
 /* Gates the owner-side view: private notes, the composer, the Ready-for-Closure button, the
    oversight copy.

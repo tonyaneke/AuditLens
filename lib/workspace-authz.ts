@@ -157,6 +157,7 @@ export function authorizeWorkspaceWrite(
   activeRole?: string,
   department?: string,
   extraDepartments?: string[],
+  activeDepartment?: string,
 ): AuthzResult {
   /* Effective role and visibility come from one place each: effectiveRole() via viewerFor()
      (an admin acts as their switched activeRole, defaulting to head until they pick one). This
@@ -165,7 +166,7 @@ export function authorizeWorkspaceWrite(
      by is the one the server already served on GET — a client cannot widen its own scope by
      inventing department records in the document it sends back (`departments` is a locked
      section anyway, but the ordering is what makes that guarantee unconditional). */
-  const viewer = viewerFor({ id: userId, role, activeRole, department, extraDepartments }, current);
+  const viewer = viewerFor({ id: userId, role, activeRole, department, extraDepartments, activeDepartment }, current);
   const effective = viewer.role;
 
   // The Head of Audit is fully trusted with the workspace document.

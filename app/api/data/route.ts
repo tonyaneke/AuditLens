@@ -165,6 +165,7 @@ export async function PUT(request: Request) {
     session.activeRole,
     session.department,
     session.extraDepartments,
+    session.activeDepartment,
   );
 
   const payload = retainDeleted(current, graftServerHeld(served, authorized, session.id), {

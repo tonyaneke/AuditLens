@@ -75,7 +75,7 @@ export function myWithdrawnObs(db: WorkspaceDb, userId: string | undefined): Obs
    something the client was legitimately given. Kept separate from myObsList so the card can still
    say which ones are assigned to the person reading it. */
 
-export type PortalUser = { id: string; department?: string; extraDepartments?: string[] };
+export type PortalUser = { id: string; department?: string; extraDepartments?: string[]; activeDepartment?: string };
 
 function scopeOf(db: WorkspaceDb, user: PortalUser | undefined): DeptScope {
   return deptScopeFor(db, user);

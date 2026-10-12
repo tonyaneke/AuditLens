@@ -247,7 +247,7 @@ export function closeoutIssued(a: Audit | undefined): boolean {
 
 /* ---------------- who sees what ---------------- */
 
-type PortalUser = { id: string; department?: string; extraDepartments?: string[] };
+type PortalUser = { id: string; department?: string; extraDepartments?: string[]; activeDepartment?: string };
 
 /** When the department last heard about this engagement — the sort key for the Audits tab. */
 function lastCommunicated(a: Audit): string {

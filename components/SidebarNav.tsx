@@ -401,7 +401,8 @@ export default function SidebarNav({ user, shell = "legacy" }: SidebarNavProps) 
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } finally {
-      window.location.href = "/login";
+      // The Admin profile signs in with its password, which /login (Microsoft only) does not offer.
+      window.location.href = user.authMethod === "local" ? "/admin/login" : "/login";
     }
   }
 

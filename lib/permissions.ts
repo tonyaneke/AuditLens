@@ -172,6 +172,11 @@ export type SessionUser = {
   photo?: string | null;
   // For admin users: the role they are currently viewing as (head_of_audit, audit_staff, action_owner)
   activeRole?: string;
+  /** For an admin viewing as an action owner: the department that view acts for. While set it
+   *  REPLACES department + extraDepartments for scope (lib/dept-scope.ts deptKeysOf) — the admin
+   *  sees exactly what that department sees, not their own department's records as well. JWT-only,
+   *  like activeRole; lib/auth.ts drops it in any other view. */
+  activeDepartment?: string;
   /* Facts about the SESSION rather than the user, carried in the JWT and stamped on every audit
      entry the session writes. They are what separates a person from someone signed in as them:
      the developer sign-in (app/api/auth/dev-login) issues a session for another user's account,
@@ -182,7 +187,16 @@ export type SessionUser = {
   authMethod?: string;
   /** For a developer sign-in: who was actually operating it. */
   operator?: string;
+  /** For an Admin password session ("local"): its fixed deadline, epoch seconds. Re-signing the
+   *  cookie keeps it, so the 8-hour limit cannot be extended. Unset for every other session. */
+  expiresAt?: number;
 };
+
+/** The department a user is acting for — what to print beside their role. An admin viewing as an
+ *  action owner acts for the department they picked; everyone else for their own. */
+export function actingDepartment(user: SessionUser): string {
+  return user.activeDepartment || user.department;
+}
 
 /** Additional departments, cleaned for storage and for the JWT. Deduplicated and trimmed; the
  *  home department is not filtered out here because callers pass it separately and a duplicate is

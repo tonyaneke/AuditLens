@@ -8,16 +8,23 @@ import {
   type SessionUser,
 } from "./permissions";
 import { photoUrlFor } from "./photo-url";
+import { ADMIN_AUTH_METHOD, ADMIN_SESSION_MAX_AGE, adminLoginEnabled } from "./admin-credential";
 
-/* SEC-03 — this app authenticates through Microsoft Entra SSO only. There is no local password.
+/* SEC-03 — people authenticate through Microsoft Entra SSO only. No member of staff has a password.
  *
  * It used to carry the remains of one: a `passwordHash` column filled with an unusable random
  * value, a `mustChangePassword` flag nothing could ever clear through the UI, and
  * hashPassword/verifyPassword/generateTempPassword helpers with no call sites. The audit read
  * that surface — correctly — as evidence of a second authentication path that would bypass
  * conditional access and MFA, and spent review effort proving it was not live. Dead code that
- * misleads an incident responder is a finding in its own right, so it is gone: sign-in is
- * app/api/auth/azure/start → app/api/auth/callback, and nothing else. */
+ * misleads an incident responder is a finding in its own right, so it is gone: a person signs in
+ * through app/api/auth/azure/start → app/api/auth/callback, and nothing else.
+ *
+ * THE ONE EXCEPTION, added 2026-10-12 at the Head of Audit's request and knowingly: the dedicated
+ * Admin profile, which belongs to no person and has no Microsoft account, signs in with a password
+ * at /admin/login (authMethod "local"). It is live code with its own table (AdminCredential), not
+ * a remnant, and every limit on it is listed in lib/admin-credential.ts. The checks below that
+ * mention ADMIN_AUTH_METHOD are what make those limits hold on every request, not just at sign-in. */
 
 const SESSION_COOKIE = "ams_session";
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
@@ -37,8 +44,18 @@ export function newSessionId(): string {
 /** The facts that belong to a session rather than to its user. Re-signing the cookie for a changed
  *  user (switching view, editing your own account) must keep them: dropping them would make a
  *  developer sign-in look like the real person's own from that request on. */
-export function sessionFacts(s: SessionUser): Pick<SessionUser, "sessionId" | "authMethod" | "operator"> {
-  return { sessionId: s.sessionId, authMethod: s.authMethod, operator: s.operator };
+export function sessionFacts(
+  s: SessionUser,
+): Pick<SessionUser, "sessionId" | "authMethod" | "operator" | "expiresAt"> {
+  return { sessionId: s.sessionId, authMethod: s.authMethod, operator: s.operator, expiresAt: s.expiresAt };
+}
+
+/** Seconds this session has left — what both the JWT and the cookie are given. A password session
+ *  keeps the deadline it was issued with (`expiresAt`) however often it is re-signed; otherwise
+ *  switching view every few hours would keep a stolen cookie alive past its 8 hours. */
+export function sessionLifetime(user: SessionUser): number {
+  if (user.expiresAt) return Math.max(0, user.expiresAt - Math.floor(Date.now() / 1000));
+  return user.authMethod === ADMIN_AUTH_METHOD ? ADMIN_SESSION_MAX_AGE : SESSION_MAX_AGE;
 }
 
 // Signs a session JWT for the user. Use this when you need to set the cookie yourself
@@ -53,13 +70,14 @@ export async function signSessionToken(user: SessionUser): Promise<string> {
     role: user.role,
     sidebarAccess: user.sidebarAccess,
     activeRole: user.activeRole || "",
+    adept: user.activeDepartment || "",
     sid: user.sessionId || "",
     amr: user.authMethod || "",
     op: user.operator || "",
   })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime(`${SESSION_MAX_AGE}s`)
+    .setExpirationTime(Math.floor(Date.now() / 1000) + sessionLifetime(user))
     .sign(authSecret());
 }
 
@@ -71,7 +89,7 @@ export async function createSession(user: SessionUser) {
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: SESSION_MAX_AGE,
+    maxAge: sessionLifetime(user),
   });
 }
 
@@ -87,6 +105,12 @@ export async function clearSession() {
 }
 
 export async function getSession(): Promise<SessionUser | null> {
+  return (await readSession())?.session ?? null;
+}
+
+/** The session plus when its token was signed — getSessionWithFlags() needs the latter to void a
+ *  password session issued before the password last changed. */
+async function readSession(): Promise<{ session: SessionUser; issuedAt: number } | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE)?.value;
   if (!token) return null;
@@ -96,6 +120,8 @@ export async function getSession(): Promise<SessionUser | null> {
     const id = payload.sub;
     if (!id || typeof id !== "string") return null;
     const amr = String(payload.amr || "");
+    // Turning the Admin password sign-in off signs out every session it issued, from the next request.
+    if (amr === ADMIN_AUTH_METHOD && !adminLoginEnabled()) return null;
     if (process.env.NODE_ENV === "production") {
       /* Production never honours a developer sign-in. The route is disabled here, but a token
          minted by a local dev server is signed with AUTH_SECRET — and if that secret matches
@@ -109,7 +135,7 @@ export async function getSession(): Promise<SessionUser | null> {
       return null;
     }
 
-    return {
+    const session: SessionUser = {
       id,
       name: String(payload.name || ""),
       email: String(payload.email || ""),
@@ -118,29 +144,52 @@ export async function getSession(): Promise<SessionUser | null> {
       role: String(payload.role || "audit_staff"),
       sidebarAccess: normalizeSidebarAccess(payload.sidebarAccess),
       activeRole: String(payload.activeRole || "") || undefined,
+      activeDepartment: String(payload.adept || "") || undefined,
       // Absent on cookies issued before these claims existed; such a session simply has no
       // recorded provenance until it signs in again.
       sessionId: String(payload.sid || "") || undefined,
-      authMethod: String(payload.amr || "") || undefined,
+      authMethod: amr || undefined,
       operator: String(payload.op || "") || undefined,
+      expiresAt: amr === ADMIN_AUTH_METHOD && typeof payload.exp === "number" ? payload.exp : undefined,
     };
+    return { session, issuedAt: typeof payload.iat === "number" ? payload.iat : 0 };
   } catch {
     return null;
   }
 }
 
 export async function getSessionWithFlags(): Promise<SessionUser | null> {
-  const session = await getSession();
-  if (!session) return null;
+  const read = await readSession();
+  if (!read) return null;
+  const { session, issuedAt } = read;
 
   const user = await prisma.user.findUnique({ where: { id: session.id } });
   // A deactivated user's existing session is invalid immediately — same as a deleted one.
   if (!user || user.active === false) return null;
 
+  /* A password session is the Admin profile's and nobody else's: void it the moment the account
+     stops being an admin, loses its credential, or has its password changed after the session was
+     signed (seconds, because that is the resolution of a JWT's iat). */
+  if (session.authMethod === ADMIN_AUTH_METHOD) {
+    if (user.role !== "admin") return null;
+    const cred = await prisma.adminCredential.findUnique({
+      where: { userId: user.id },
+      select: { passwordChangedAt: true },
+    });
+    if (!cred || Math.floor(cred.passwordChangedAt.getTime() / 1000) > issuedAt) return null;
+  }
+
   // activeRole lives only in the JWT (it's a per-session view state, not a DB fact) — carry it
-  // over from the token, but only while the DB still says the user is an admin.
+  // over from the token, but only while the DB still says the user is an admin. activeDepartment
+  // likewise, and only while the view is the action owner's: it is the department that view acts
+  // for, and means nothing in any other.
   const fresh: SessionUser = { ...userToSession(user), ...sessionFacts(session) };
-  if (user.role === "admin" && session.activeRole) fresh.activeRole = session.activeRole;
+  if (user.role === "admin" && session.activeRole) {
+    fresh.activeRole = session.activeRole;
+    if (session.activeRole === "action_owner" && session.activeDepartment) {
+      fresh.activeDepartment = session.activeDepartment;
+    }
+  }
   return fresh;
 }
 

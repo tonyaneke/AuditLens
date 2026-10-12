@@ -39,6 +39,28 @@ model User {
   // Audit making them active is what releases the email, and this column is what stops a later
   // deactivate/reactivate cycle from sending it a second time.
   welcomeEmailSentAt DateTime?
+
+  adminCredential AdminCredential?
+}
+
+// The ONE exception to Microsoft-only sign-in (SEC-03): a password for the dedicated Admin
+// profile, so it can be signed into without a Microsoft account of its own. Only an account whose
+// role is "admin" can sign in with it, and never while ADMIN_LOGIN_ENABLED=false — see
+// lib/admin-credential.ts. Seeded by scripts/seed-admin-profile.mts; never written by the app
+// except to count failed attempts and stamp the last sign-in.
+model AdminCredential {
+  id                String    @id @default(cuid())
+  userId            String    @unique
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  username          String    @unique // stored lower-case
+  passwordHash      String    // scrypt — the format is documented in lib/admin-credential.ts
+  failedAttempts    Int       @default(0)
+  lockedUntil       DateTime?
+  lastLoginAt       DateTime?
+  // A session issued before this is void: rotating the password signs every existing session out.
+  passwordChangedAt DateTime  @default(now())
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 }
 
 model WorkspaceData {

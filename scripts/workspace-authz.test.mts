@@ -995,6 +995,33 @@ console.log("\n== A person in two departments sees both ==");
   ok(r.violations.length === 0, "a two-department payload round-trips cleanly");
 }
 
+/* ================= admin acting for one department (2026-10-12) =================
+   The Admin profile views as any department's action owner, picked in the role switcher. The
+   picked department REPLACES the admin's own membership — the view exists to see exactly what that
+   department sees — and the write path must judge their save by the same scope it was served. */
+console.log("\n== Admin viewing as one department's action owner ==");
+{
+  const cur = baseWorkspace();
+  cur.departments.push({ id: "d2", name: "Legal", headUserId: "own2" });
+  const admin = {
+    id: "adm1", role: "admin", activeRole: "action_owner",
+    department: "Credit", extraDepartments: ["Treasury"], activeDepartment: "Legal department",
+  };
+
+  const view = scopeWorkspace(cur, viewerFor(admin, cur)) as any;
+  ok(!!findObs(view, "o2"), "the picked department's observations are served (name matched loosely)");
+  ok(!findObs(view, "o1"), "the admin's own department is NOT mixed in");
+
+  const served = clone(slimForClient(cur, viewerFor(admin, cur)));
+  const r = authorizeWorkspaceWrite("admin", "adm1", cur, served, "action_owner", "Credit", ["Treasury"], "Legal department");
+  ok(r.violations.length === 0, "the acting department's payload round-trips cleanly");
+
+  // Outside the action owner's view the acting department is meaningless; lib/auth.ts drops it, and
+  // the Head's view is fully trusted whatever it says.
+  const asHead = scopeWorkspace(cur, viewerFor({ ...admin, activeRole: "head_of_audit" }, cur)) as any;
+  ok(!!findObs(asHead, "o1") && !!findObs(asHead, "o2"), "the Head's view still sees everything");
+}
+
 /* The alias table folds names no rule could infer. Each of these is a live case: the roster calls
    a department something the workspace record does not. */
 console.log("\n== Department aliases resolve to one department ==");

@@ -71,6 +71,8 @@ export function viewerFor(
     activeRole?: string;
     department?: string;
     extraDepartments?: unknown;
+    // An admin viewing as one department's action owner — deptScopeFor() honours it.
+    activeDepartment?: string;
   },
   db?: DeptSource,
 ): Viewer {
