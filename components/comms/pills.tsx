@@ -11,5 +11,6 @@ export function AwaitingPill({ r }: { r: AuditRequest }) {
 }
 
 export function KindTag({ r }: { r: AuditRequest }) {
-  return <span className="tag">{r.kind === "information" ? "Information request" : "Clarification"}</span>;
+  // A department's thread is stored as kind "clarification" and shown as what it is to them: a comment.
+  return <span className="tag">{r.kind === "information" ? "Information request" : "Comment"}</span>;
 }

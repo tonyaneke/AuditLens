@@ -530,7 +530,7 @@ export function notifyRequestActivity(
     event === "raised"
       ? r.kind === "information"
         ? `Information requested on ${auditName}: ${what}`
-        : `Clarification requested on ${auditName}: ${what}`
+        : `Comment from ${deptLabel(r.department) || "the department"} on ${auditName}: ${what}`
       : event === "reply"
         ? `New reply on ${what} (${auditName})`
         : `${what} on ${auditName} was ${event}`;

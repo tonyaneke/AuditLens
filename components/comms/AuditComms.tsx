@@ -253,7 +253,7 @@ export function AuditCommsCard({ audit }: { audit: Audit }) {
           <RequestTable requests={requests} showDepartment={depts.length > 1} />
         ) : (
           <Empty>
-            No information or clarification requests yet.
+            No information requests or comments yet.
           </Empty>
         )
       ) : null}

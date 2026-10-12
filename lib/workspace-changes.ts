@@ -1344,7 +1344,7 @@ function diffAuditRequests(b: Obj, a: Obj, out: Draft[]): void {
       out.push({
         action: clar ? "comms.clarification_raised" : "comms.request_raised",
         summary:
-          `${clar ? `${str(r.department) || "A department"} asked Internal Audit for clarification` : `Requested information from ${str(r.department) || "a department"}`}` +
+          `${clar ? `${str(r.department) || "A department"} sent Internal Audit a comment` : `Requested information from ${str(r.department) || "a department"}`}` +
           ` on ${auditName(r)}: ${what(r)}${attached(arr(r.evidence))}`,
         metadata: { ...meta, text: clip(str(r.text), 2000) },
       });

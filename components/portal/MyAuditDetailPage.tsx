@@ -6,7 +6,7 @@
    components/audits/detail-parts.tsx, so an engagement reads like everything else in the portal.
 
    Order: the conclusion first once there is one (it is the latest word on the engagement), then the
-   notice and the Terms of Reference as issued, then the requests exchanged with the audit team. */
+   Terms of Reference, then the requests exchanged with the audit team. */
 
 import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useUser } from "@/components/chrome/UserContext";
@@ -109,7 +109,7 @@ export default function MyAuditDetailPage({ auditId }: { auditId: string }) {
         <Meta label="Period under review">{a.period}</Meta>
         <Meta label="Lead auditor">{a.leadAuditor}</Meta>
         <Meta label="Planned timing">{tor.timing}</Meta>
-        <Meta label="Notice issued">
+        <Meta label="Notified">
           {notice ? fmtDate(notice.issuedAt) + (notice.revisedAt ? ` (updated ${fmtDate(notice.revisedAt)})` : "") : ""}
         </Meta>
         <Meta label="Concluded">
@@ -138,8 +138,10 @@ export default function MyAuditDetailPage({ auditId }: { auditId: string }) {
         </div>
       ) : null}
 
+      {/* The Terms of Reference, section by section. The notice MESSAGE is not repeated here: the
+          department already received it (bell and e-mail), and its objectives and scope are the
+          sections below. */}
       <div className="obs-detail-sections">
-        {notice ? <Section title="Engagement notice" text={notice.text} /> : null}
         <Section title="Background & purpose" text={tor.background} />
         <ListSection title="Audit objectives" items={plan.objectives} />
         <Section title="Scope" text={plan.scope} />
@@ -156,7 +158,7 @@ export default function MyAuditDetailPage({ auditId }: { auditId: string }) {
         <section className="obs-detail-section">
           <div className="row" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <h4 className="obs-detail-label" style={{ margin: 0 }}>
-              Requests ({requests.length})
+              Requests &amp; comments ({requests.length})
             </h4>
             <div className="spacer" style={{ flex: 1 }} />
             <button
@@ -165,15 +167,15 @@ export default function MyAuditDetailPage({ auditId }: { auditId: string }) {
               disabled={!mine.length}
               onClick={() => modal.open(<NewRequestDialog auditId={a.id} departments={mine} />)}
             >
-              Ask Internal Audit for clarification
+              Send comment to Internal Audit
             </button>
           </div>
           {requests.length ? (
             <RequestTable requests={requests} showDepartment={mine.length > 1} />
           ) : (
             <p className="hint" style={{ marginBottom: 0 }}>
-              No requests yet. Internal Audit&apos;s requests for information appear here for anyone in your
-              department to answer, and you can ask the audit team to clarify anything about the engagement.
+              Nothing yet. Internal Audit&apos;s requests for information appear here for anyone in your
+              department to answer, and you can send the audit team a comment about anything in the engagement.
             </p>
           )}
         </section>

@@ -58,7 +58,7 @@ export const ACTION_GROUPS: ActionGroup[] = [
       ["comms.conclusion_issued", "Audit conclusion issued"],
       ["comms.conclusion_reissued", "Audit conclusion re-issued"],
       ["comms.request_raised", "Information requested"],
-      ["comms.clarification_raised", "Clarification requested"],
+      ["comms.clarification_raised", "Comment sent to Internal Audit"],
       ["comms.request_reply", "Request answered"],
       ["comms.request_closed", "Request closed"],
       ["comms.request_reopened", "Request reopened"],

@@ -62,7 +62,7 @@ function AuditCard({ a }: { a: Audit }) {
         {[a.period, a.leadAuditor ? `Lead auditor: ${a.leadAuditor}` : ""].filter(Boolean).join(" · ") || "—"}
       </div>
       <div className="myobs-card-foot">
-        <span className="hint">{concluded ? "Concluded" : timing ? "Planned timing" : "Notice issued"}</span>
+        <span className="hint">{concluded ? "Concluded" : timing ? "Planned timing" : "Notified"}</span>
         <span>
           {concluded ? fmtDate(a.closeout?.revisedAt || a.closeout?.issuedAt) : timing || fmtDate(notice?.issuedAt)}
         </span>
@@ -71,10 +71,10 @@ function AuditCard({ a }: { a: Audit }) {
   );
 }
 
-function Bucket({ title, audits, empty }: { title: string; audits: Audit[]; empty: string }) {
+function Bucket({ title, audits, empty, first }: { title: string; audits: Audit[]; empty: string; first?: boolean }) {
   return (
     <>
-      <div className="seclabel" style={{ margin: "20px 0 12px" }}>
+      <div className="seclabel" style={{ margin: first ? "4px 0 12px" : "20px 0 12px" }}>
         {title} <span className="hint" style={{ fontWeight: 400 }}>({audits.length})</span>
       </div>
       {audits.length ? (
@@ -105,9 +105,8 @@ export default function MyAuditsPage() {
           No audit engagements for your department right now.
           <br />
           <br />
-          When Internal Audit begins an audit of your department, its engagement notice appears here —
-          with the objectives, scope and terms of reference — and you can exchange information and
-          clarification requests with the audit team.
+          When Internal Audit begins an audit of your department, it appears here with its terms of
+          reference — answer the audit team&apos;s requests for information there, or send them a comment.
         </Empty>
       </div>
     );
@@ -117,11 +116,7 @@ export default function MyAuditsPage() {
   const ongoing = audits.filter((a) => !concluded.includes(a));
   return (
     <>
-      <p className="portal-note">
-        Audit engagements Internal Audit has notified your department of. Open one to read its terms of
-        reference, answer the audit team&apos;s requests for information, or ask them to clarify anything.
-      </p>
-      <Bucket title="Ongoing engagements" audits={ongoing} empty="No engagement is in progress." />
+      <Bucket first title="Ongoing engagements" audits={ongoing} empty="No engagement is in progress." />
       <Bucket title="Concluded engagements" audits={concluded} empty="No engagement has been concluded yet." />
     </>
   );

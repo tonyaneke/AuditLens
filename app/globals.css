@@ -1084,6 +1084,24 @@ textarea:focus {
   display: flex;
 }
 
+/* Vertically centred. Auto margins rather than align-items: center — a dialog taller than the
+   window then falls back to the top and the overlay scrolls, instead of its header being cut off. */
+.overlay > .modal {
+  margin-top: auto;
+  margin-bottom: auto;
+}
+
+/* Centred over the page, not the whole window. Beside the sidebar (wider than 768px — below that it
+   stacks on top) the white panel is what reads as "the page", and a dialog centred on the window sat
+   against that panel's left edge. The extra 20px on the right mirrors .main's right padding, so the
+   dialog's centre is the panel's centre. */
+@media (min-width: 769px) {
+  .overlay {
+    padding-left: calc(var(--sidebar-w) + 16px);
+    padding-right: 36px;
+  }
+}
+
 .modal {
   background: #fff;
   border-radius: 14px;

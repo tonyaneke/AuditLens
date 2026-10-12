@@ -4,8 +4,10 @@
 
    One pair of dialogs serves both sides of an engagement. Internal Audit raises INFORMATION
    requests from the audit page ("send us the Q3 disbursement listing"); the audited department
-   raises CLARIFICATION requests from the portal's Audits tab ("which branches does the sample
-   cover?"). Either side replies on the thread, with attachments, until it is closed. The rules
+   sends COMMENTS to Internal Audit from the portal's Audits tab — a question, something to
+   clarify, anything about the engagement ("which branches does the sample cover?"). A comment is
+   stored as kind "clarification", the name the server's rules use. Either side replies on the
+   thread, with attachments, until it is closed. The rules
    about who may do what are lib/workspace-authz.ts reconcileAuditRequests — these dialogs only
    offer what it allows. */
 
@@ -104,7 +106,7 @@ async function uploadOrError(folder: string, files: File[]): Promise<EvidenceFil
 /* ---------------- raise a request ---------------- */
 
 /** Internal Audit: an information request to one of the departments the notice went to.
- *  Department: a clarification request to Internal Audit, for one of their own noticed departments. */
+ *  Department: a comment to Internal Audit, for one of their own noticed departments. */
 export function NewRequestDialog({
   auditId,
   departments,
@@ -130,8 +132,8 @@ export function NewRequestDialog({
 
   async function submit() {
     if (!department) return setErr("Choose the department.");
-    if (!subject.trim()) return setErr("Give the request a subject.");
-    if (!text.trim()) return setErr(kind === "information" ? "Describe the information you need." : "Describe what needs clarifying.");
+    if (!subject.trim()) return setErr(kind === "information" ? "Give the request a subject." : "Give the comment a subject.");
+    if (!text.trim()) return setErr(kind === "information" ? "Describe the information you need." : "Write your comment.");
     setErr("");
     const evidence = await uploadOrError(id, files);
     if (typeof evidence === "string") return setErr(evidence);
@@ -159,19 +161,19 @@ export function NewRequestDialog({
       notifyRequestActivity(d, a, req, { id: user.id, side }, "raised");
     });
     modal.close();
-    toast(kind === "information" ? "Information request sent to the department." : "Clarification request sent to Internal Audit.", "success");
+    toast(kind === "information" ? "Information request sent to the department." : "Comment sent to Internal Audit.", "success");
   }
 
   return (
     <ModalFrame
-      title={kind === "information" ? "Request information" : "Ask Internal Audit for clarification"}
+      title={kind === "information" ? "Request information" : "Send comment to Internal Audit"}
       footer={
         <>
           <button className="btn sec" type="button" onClick={modal.close}>
             Cancel
           </button>
           <BusyButton className="btn pri" busyLabel={files.length ? "Uploading…" : "Sending…"} onClick={submit}>
-            Send request
+            {kind === "information" ? "Send request" : "Send comment"}
           </BusyButton>
         </>
       }
@@ -212,7 +214,7 @@ export function NewRequestDialog({
         onChange={(e) => setSubject(e.target.value)}
       />
       <label htmlFor="nr-text" style={{ marginTop: 10 }}>
-        {kind === "information" ? "What do you need?" : "What needs clarifying?"}
+        {kind === "information" ? "What do you need?" : "Your comment"}
       </label>
       <textarea id="nr-text" style={{ minHeight: 120 }} value={text} onChange={(e) => setText(e.target.value)} />
       {kind === "information" ? (
