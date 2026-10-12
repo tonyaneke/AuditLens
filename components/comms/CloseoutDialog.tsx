@@ -16,11 +16,13 @@ import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import RichText from "@/components/ui/RichText";
 import { DEPARTMENTS } from "@/components/settings/staff";
+import { useDirectoryUsers } from "@/components/external/use-directory";
 import { loadDirectory } from "@/lib/client/directory";
-import { deptLabel, normalizeDept } from "@/lib/dept-scope";
+import { deptLabel } from "@/lib/dept-scope";
 import {
   CLOSEOUT_SECTIONS,
   closeoutFromReport,
+  commDepartmentOptions,
   engagementTitle,
   finalReports,
   notifyCloseoutIssued,
@@ -37,6 +39,8 @@ export default function CloseoutDialog({ auditId, reportId }: { auditId: string;
   const finals = a ? finalReports(a) : [];
   const prior = a?.closeout;
   const issued = !!prior?.issuedAt;
+  const dir = useDirectoryUsers();
+  const options = commDepartmentOptions(DEPARTMENTS, dir, [...(prior?.departments || []), ...(a?.notice?.departments || [])]);
 
   const [rid, setRid] = useState(
     () =>
@@ -50,7 +54,7 @@ export default function CloseoutDialog({ auditId, reportId }: { auditId: string;
       : a?.notice?.departments?.length
         ? a.notice.departments
         : a
-          ? suggestNoticeDepartments(a, DEPARTMENTS)
+          ? suggestNoticeDepartments(a, options)
           : [],
   );
   const [confirming, setConfirming] = useState(false);
@@ -67,14 +71,6 @@ export default function CloseoutDialog({ auditId, reportId }: { auditId: string;
   const audit = a;
   const report = finals.find((r) => r.id === rid);
   const content = report ? closeoutFromReport(report) : null;
-  const options = [
-    ...DEPARTMENTS,
-    ...[...(prior?.departments || []), ...(audit.notice?.departments || [])].filter(
-      (d, i, all) =>
-        !DEPARTMENTS.some((x) => normalizeDept(x) === normalizeDept(d)) &&
-        all.findIndex((y) => normalizeDept(y) === normalizeDept(d)) === i,
-    ),
-  ];
 
   function toggle(d: string) {
     setConfirming(false);

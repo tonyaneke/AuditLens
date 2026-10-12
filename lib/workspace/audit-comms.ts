@@ -71,6 +71,34 @@ export function noticeIssued(a: Audit | undefined): boolean {
   return !!a?.notice?.issuedAt;
 }
 
+/** What a notice or conclusion can be addressed to: the roster first, then any department someone
+ *  actually belongs to that the roster does not name (a person's department is what decides who is
+ *  notified, so a department with members must be reachable), then any a stored communication
+ *  already names. Once each by normalised name, roster spelling winning; never Internal Audit. */
+export function commDepartmentOptions(
+  roster: readonly string[],
+  users: readonly { department?: string; extraDepartments?: string[]; active?: boolean }[],
+  stored: readonly string[] = [],
+): string[] {
+  const out: string[] = [];
+  const seen = new Set([normalizeDept("Internal Audit")]);
+  const add = (d: unknown) => {
+    const name = String(d || "").trim();
+    const k = normalizeDept(name);
+    if (!k || seen.has(k)) return;
+    seen.add(k);
+    out.push(name);
+  };
+  roster.forEach(add);
+  for (const u of users) {
+    if (u.active === false) continue;
+    add(u.department);
+    (u.extraDepartments || []).forEach(add);
+  }
+  stored.forEach(add);
+  return out;
+}
+
 /** Departments the audit's `area` already names — the notice dialog's starting selection. */
 export function suggestNoticeDepartments(a: Audit, departments: readonly string[]): string[] {
   const key = normalizeDept(a.area);

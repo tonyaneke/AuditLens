@@ -56,12 +56,17 @@ type NavItem = {
   icon: typeof DashboardSquare01Icon;
 };
 
+/* Each role sees only the items it can access (visibleViews), so one list serves both: Internal
+   Audit's Main is Dashboard / Audits & Reports / Remediation Tracker, an action owner's is
+   Dashboard / Audits — their engagements come first, then their observations under their own
+   heading, then the fraud tracker under its own, rather than everything under one "Portal" label. */
 const SECTIONS: { label: string; items: NavItem[] }[] = [
   {
     label: "Main",
     items: [
       { view: "dashboard", label: "Dashboard", icon: DashboardSquare01Icon },
       { view: "audits", label: "Audits & Reports", icon: File01Icon },
+      { view: "myaudits", label: "Audits", icon: Audit01Icon },
       { view: "tracker", label: "Remediation Tracker", icon: TaskDaily01Icon },
     ],
   },
@@ -83,13 +88,15 @@ const SECTIONS: { label: string; items: NavItem[] }[] = [
     ],
   },
   {
-    label: "Portal",
+    label: "Observations",
     items: [
-      { view: "myaudits", label: "Audits", icon: Audit01Icon },
       { view: "myobs", label: "Internal Observations", icon: Folder01Icon },
       { view: "myext", label: "External Observations", icon: BookOpen01Icon },
-      { view: "myfraud", label: "Fraud Risk Control Tracker", icon: Alert02Icon },
     ],
+  },
+  {
+    label: "Fraud Risk",
+    items: [{ view: "myfraud", label: "Fraud Risk Control Tracker", icon: Alert02Icon }],
   },
 ];
 

@@ -15,9 +15,11 @@ import { useState } from "react";
 import { useUser } from "@/components/chrome/UserContext";
 import { toast } from "@/components/feedback/ToastHost";
 import { DEPARTMENTS } from "@/components/settings/staff";
+import { useDirectoryUsers } from "@/components/external/use-directory";
 import { loadDirectory } from "@/lib/client/directory";
-import { deptLabel, normalizeDept } from "@/lib/dept-scope";
+import { deptLabel } from "@/lib/dept-scope";
 import {
+  commDepartmentOptions,
   noticeTemplate,
   notifyNoticeIssued,
   programmeIsEmpty,
@@ -42,13 +44,11 @@ export default function NoticeComposer({
   const notice = a?.notice;
   const issued = !!notice?.issuedAt;
 
-  // The roster, plus any department a stored notice names that the roster no longer carries.
-  const options = [
-    ...DEPARTMENTS,
-    ...(notice?.departments || []).filter((d) => !DEPARTMENTS.some((x) => normalizeDept(x) === normalizeDept(d))),
-  ];
+  // The roster, departments people belong to that it does not name, and any the notice already names.
+  const dir = useDirectoryUsers();
+  const options = commDepartmentOptions(DEPARTMENTS, dir, notice?.departments || []);
   const [depts, setDepts] = useState<string[]>(() =>
-    notice?.departments?.length ? notice.departments : a ? suggestNoticeDepartments(a, DEPARTMENTS) : [],
+    notice?.departments?.length ? notice.departments : a ? suggestNoticeDepartments(a, options) : [],
   );
   const [text, setText] = useState(() => notice?.text || (a ? noticeTemplate(a) : ""));
   const [confirming, setConfirming] = useState(false);
