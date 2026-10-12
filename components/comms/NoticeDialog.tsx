@@ -1,22 +1,24 @@
 "use client";
 
-/* Terms of Reference & engagement notice — one dialog, one action.
+/* The Terms of Reference (TOR) — and the engagement notice issued from it.
 
-   The Terms of Reference and the notice used to be two things in one dialog: a TOR form with its own
-   Save, and a notice composer below it with its own Issue. They are one communication — the TOR is
-   what the notice tells the department — so issuing the notice now saves the TOR with it, and the
-   TOR's "Addressed to" IS the list of departments the notice goes to.
+   It stays the Terms of Reference to the people using it (the audit page's "📄 Terms of Reference"
+   button, this dialog's title); what changed is that saving it is how the notice goes out. The TOR
+   and the notice used to be two things in one dialog — a TOR form with its own Save, and a notice
+   composer below it with its own Issue. They are one communication, so "Save & issue notice" saves
+   the TOR and sends the notice together, and the TOR's "Addressed to" IS the list of departments
+   the notice goes to.
 
    Most of it fills itself (see "terms of reference: what fills itself" in lib/workspace/audit-comms):
    the departments from the audit's Process / Department, the planned timing from the audit's
    quarter, the background from the annual plan's rationale, the reporting channel from the house
    default, and — with "Draft with AI" — the background, out-of-scope areas and information needed.
-   The auditor reviews and issues.
+   The auditor reviews and saves.
 
-     not issued   Save draft   keeps everything, sends nothing; the department sees nothing
-                  Issue notice saves the TOR and issues the notice to the departments addressed
-     issued       Save changes updates the TOR the department already sees, without notifying anyone
-                  Re-issue     sends the (edited) notice again, to the departments now addressed
+     not issued   Save draft             keeps everything, sends nothing; the department sees nothing
+                  Save & issue notice    saves the TOR and issues the notice to the departments addressed
+     issued       Save changes           updates the TOR the department already sees, notifying no one
+                  Save & re-issue notice sends the (edited) notice again, to the departments now addressed
 
    Confirmation is inline, not modal.confirm(): the modal stack renders only its top entry, so a
    confirm layered over this dialog would unmount it and lose what was typed. */
@@ -131,7 +133,7 @@ export default function NoticeDialog({ auditId }: { auditId: string }) {
       }
     });
     setTouched(false);
-    toast(issued ? "Terms of Reference updated." : "Draft saved — nothing has been sent.", "success");
+    toast(issued ? "Terms of Reference updated." : "Terms of Reference saved as a draft — the notice has not been sent.", "success");
     if (close) modal.close();
   }
 
@@ -193,21 +195,22 @@ export default function NoticeDialog({ auditId }: { auditId: string }) {
 
   return (
     <ModalFrame
-      title="Terms of Reference & engagement notice"
+      title="Terms of Reference (TOR)"
       footer={
         confirming ? (
           <>
             <span className="hint" style={{ flex: 1 }}>
-              {issued ? "Re-issue" : "Issue"} the notice to <b>{depts.map(deptLabel).join(", ")}</b>? Everyone in{" "}
+              Save the Terms of Reference and {issued ? "re-issue" : "issue"} the notice to{" "}
+              <b>{depts.map(deptLabel).join(", ")}</b>? Everyone in{" "}
               {depts.length === 1 ? "that department" : "those departments"} is notified in AuditLens and their heads by
-              e-mail. The Terms of Reference are saved with it.
+              e-mail.
             </span>
             <button className="btn sec" type="button" disabled={busy} onClick={() => setConfirming(false)}>
               Back
             </button>
             <button className="btn pri" type="button" disabled={busy} onClick={() => void issue()}>
               {busy ? <span className="btn-spin" aria-hidden="true" /> : null}
-              {issued ? "Re-issue notice" : "Issue notice"}
+              {issued ? "Save & re-issue notice" : "Save & issue notice"}
             </button>
           </>
         ) : (
@@ -230,7 +233,7 @@ export default function NoticeDialog({ auditId }: { auditId: string }) {
               {issued ? "Save changes" : "Save draft"}
             </button>
             <button className="btn pri" type="button" onClick={() => check(true) && setConfirming(true)}>
-              {issued ? "Re-issue notice…" : "Issue notice…"}
+              {issued ? "Save & re-issue notice…" : "Save & issue notice…"}
             </button>
           </>
         )

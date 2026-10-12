@@ -7,7 +7,7 @@ import dynamic from "next/dynamic";
 export const ModalAuditDialog = dynamic(() => import("./dialogs").then((m) => m.ModalAuditDialog), { loading: () => null });
 export const ModalReportDialog = dynamic(() => import("./dialogs").then((m) => m.ModalReportDialog), { loading: () => null });
 export const ModalTestDialog = dynamic(() => import("./dialogs").then((m) => m.ModalTestDialog), { loading: () => null });
-// Terms of Reference and the engagement notice are one dialog (issuing the notice saves the TOR).
+// The Terms of Reference — saving it issues the engagement notice (components/comms/NoticeDialog).
 export const ModalTORDialog = dynamic(() => import("@/components/comms/NoticeDialog"), { loading: () => null });
 export const ModalFrontMatterDialog = dynamic(() => import("./dialogs").then((m) => m.ModalFrontMatterDialog), { loading: () => null });
 export const ModalPlanPromptDialog = dynamic(() => import("./dialogs").then((m) => m.ModalPlanPromptDialog), { loading: () => null });

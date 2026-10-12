@@ -23,7 +23,6 @@ import {
 import type { AuditPlan, AuditTest, Report } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 import { AuditCommsCard } from "@/components/comms/AuditComms";
-import { noticeIssued } from "@/lib/workspace/audit-comms";
 import RaisedPill from "./RaisedPill";
 import ReportStatusPill from "./ReportStatusPill";
 import ResultPill from "./ResultPill";
@@ -50,9 +49,9 @@ export default function AuditDetailPage({ auditId }: { auditId: string }) {
         <Link href="/audits" className="btn sec sm">
           ← Back to List
         </Link>
-        {/* The Terms of Reference and the engagement notice are one dialog: issuing the notice saves the TOR. */}
+        {/* The engagement notice is issued from the Terms of Reference: saving the TOR sends it. */}
         <button className="btn sec sm" onClick={() => modal.open(<ModalTORDialog auditId={a.id} />, { wide: true })}>
-          {noticeIssued(a) ? "📄 Notice & TOR" : "📣 Issue notice"}
+          📄 Terms of Reference
         </button>
         <button className="btn sec sm" onClick={() => modal.open(<ModalAuditDialog auditId={a.id} />)}>
           ✎ Edit Audit
@@ -62,9 +61,7 @@ export default function AuditDetailPage({ auditId }: { auditId: string }) {
         </button>
       </div>
     ) : undefined,
-  },
-  // The notice button's label changes once it is issued; the title alone would not refresh it.
-  [a ? noticeIssued(a) : false]);
+  });
 
   if (!a) {
     return (

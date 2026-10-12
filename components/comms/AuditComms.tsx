@@ -183,7 +183,7 @@ export function AuditCommsCard({ audit }: { audit: Audit }) {
         ) : null}
         <div className="spacer" style={{ flex: 1 }} />
         <button className="btn ghost sm" type="button" onClick={() => modal.open(<ModalTORDialog auditId={audit.id} />, { wide: true })}>
-          {issued ? "Notice & TOR" : "Issue notice"}
+          Terms of Reference
         </button>
         <button
           className="btn ghost sm"
@@ -197,7 +197,7 @@ export function AuditCommsCard({ audit }: { audit: Audit }) {
           className="btn pri sm"
           type="button"
           disabled={!communicated}
-          title={communicated ? undefined : "Issue the engagement notice first — the department cannot see this engagement until then."}
+          title={communicated ? undefined : "Issue the notice from the Terms of Reference first — the department cannot see this engagement until then."}
           onClick={() => modal.open(<NewRequestDialog auditId={audit.id} departments={depts} />)}
         >
           + Request information
@@ -220,9 +220,9 @@ export function AuditCommsCard({ audit }: { audit: Audit }) {
         </div>
       ) : (
         <p className="hint" style={{ marginBottom: 0 }}>
-          No notice yet. <b>Issue notice</b> opens the Terms of Reference with the notice, filled from
-          this audit&apos;s plan — choose the department it is addressed to and issue. The department
-          sees the engagement on its Audits tab, and can exchange requests with you, once it is issued.
+          No notice yet. Open the <b>Terms of Reference</b> — it is filled from this audit&apos;s plan —
+          choose the department it is addressed to, and save it to issue the notice. The department sees
+          the engagement on its Audits tab, and can exchange requests with you, once it is issued.
         </p>
       )}
 
