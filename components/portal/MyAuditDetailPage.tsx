@@ -5,8 +5,10 @@
    requests, where an observation has its remediation) — using the shared parts in
    components/audits/detail-parts.tsx, so an engagement reads like everything else in the portal.
 
-   Order: the conclusion first once there is one (it is the latest word on the engagement), then the
-   Terms of Reference, then the requests exchanged with the audit team. */
+   Order: the Terms of Reference first — what the department reads when the engagement starts — then,
+   once issued, the Conclusion as its own section, set apart with space and a heading, then the
+   requests and comments exchanged with the audit team. That last block lights up (and the hero's
+   pill jumps to it) while anything in it is waiting on the department. */
 
 import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useUser } from "@/components/chrome/UserContext";
@@ -96,9 +98,9 @@ export default function MyAuditDetailPage({ auditId }: { auditId: string }) {
               </span>
             ))}
             {waiting ? (
-              <span className="status-pill open">
-                {waiting} request{waiting === 1 ? "" : "s"} awaiting your department
-              </span>
+              <a className="pill pill-await" href="#requests" title="Jump to what is waiting on your department">
+                {waiting} awaiting your response
+              </a>
             ) : null}
           </>
         }
@@ -117,27 +119,6 @@ export default function MyAuditDetailPage({ auditId }: { auditId: string }) {
         </Meta>
       </div>
 
-      {closeout ? (
-        <div className="obs-detail-sections">
-          <section className="obs-detail-section">
-            <h4 className="obs-detail-label">Audit conclusion</h4>
-            <div className="obs-detail-content">
-              The {engagementTitle(a)} has concluded. The highlights of the executive summary
-              {closeout.reportTitle ? (
-                <>
-                  {" "}of <i>{closeout.reportTitle}</i>
-                </>
-              ) : null}{" "}
-              are below. Thank you for your cooperation throughout the engagement — agreed actions continue to
-              be tracked on your Internal Observations tab.
-            </div>
-          </section>
-          {CLOSEOUT_SECTIONS.map(([k, title]) => (
-            <Section key={k} title={title} text={closeout[k]} />
-          ))}
-        </div>
-      ) : null}
-
       {/* The Terms of Reference, section by section. The notice MESSAGE is not repeated here: the
           department already received it (bell and e-mail), and its objectives and scope are the
           sections below. */}
@@ -154,32 +135,52 @@ export default function MyAuditDetailPage({ auditId }: { auditId: string }) {
         />
       </div>
 
-      <div className="obs-detail-sections">
-        <section className="obs-detail-section">
-          <div className="row" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <h4 className="obs-detail-label" style={{ margin: 0 }}>
-              Requests &amp; comments ({requests.length})
-            </h4>
-            <div className="spacer" style={{ flex: 1 }} />
-            <button
-              className="btn sm"
-              type="button"
-              disabled={!mine.length}
-              onClick={() => modal.open(<NewRequestDialog auditId={a.id} departments={mine} />)}
-            >
-              Send comment to Internal Audit
-            </button>
+      {closeout ? (
+        <section className="comms-major" aria-labelledby="conclusion-h">
+          <h3 id="conclusion-h" className="section-title">
+            Conclusion
+          </h3>
+          <p className="hint" style={{ margin: 0 }}>
+            The {engagementTitle(a)} concluded on {fmtDate(closeout.issuedAt)}. These are the highlights of the
+            executive summary{closeout.reportTitle ? <> of <i>{closeout.reportTitle}</i></> : null}. Thank you for
+            your cooperation — agreed actions continue to be tracked on your Internal Observations tab.
+          </p>
+          <div className="obs-detail-sections">
+            {CLOSEOUT_SECTIONS.map(([k, title]) => (
+              <Section key={k} title={title} text={closeout[k]} />
+            ))}
           </div>
-          {requests.length ? (
-            <RequestTable requests={requests} showDepartment={mine.length > 1} />
-          ) : (
-            <p className="hint" style={{ marginBottom: 0 }}>
-              Nothing yet. Internal Audit&apos;s requests for information appear here for anyone in your
-              department to answer, and you can send the audit team a comment about anything in the engagement.
-            </p>
-          )}
         </section>
-      </div>
+      ) : null}
+
+      <section id="requests" className="comms-major" aria-labelledby="requests-h">
+        <div className="row" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <h3 id="requests-h" className="section-title">
+            Requests &amp; comments ({requests.length})
+          </h3>
+          {waiting ? <span className="pill pill-await">{waiting} awaiting your response</span> : null}
+          <div className="spacer" style={{ flex: 1 }} />
+          <button
+            className="btn sm"
+            type="button"
+            disabled={!mine.length}
+            onClick={() => modal.open(<NewRequestDialog auditId={a.id} departments={mine} />)}
+          >
+            Send comment to Internal Audit
+          </button>
+        </div>
+        {requests.length ? (
+          // Lit up while Internal Audit is waiting on the department — information asked for, or a reply.
+          <div className={waiting ? "req-active" : undefined}>
+            <RequestTable requests={requests} showDepartment={mine.length > 1} side="dept" />
+          </div>
+        ) : (
+          <p className="hint" style={{ marginBottom: 0 }}>
+            Nothing yet. Internal Audit&apos;s requests for information appear here for anyone in your department to
+            answer, and you can send the audit team a comment about anything in the engagement.
+          </p>
+        )}
+      </section>
     </div>
   );
 }

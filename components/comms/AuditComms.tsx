@@ -24,7 +24,7 @@ import {
   requestsForAudit,
 } from "@/lib/workspace/audit-comms";
 import { fmtDate, fmtDateTime } from "@/lib/workspace/selectors";
-import type { Audit, AuditCloseout, AuditRequest } from "@/lib/workspace/types";
+import type { Audit, AuditCloseout, AuditRequest, AuditSide } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 import { CloseoutDialog, NewRequestDialog, RequestThreadDialog } from "./lazy";
 import { KindTag } from "./pills";
@@ -32,14 +32,19 @@ import { KindTag } from "./pills";
 /* ---------------- request table (both sides) ----------------
    No status column: what matters is that a response came in, and from whom — the bell and the
    e-mail say so, and "Last activity" shows who wrote last and when. A closed thread is marked in its
-   subtitle. */
+   subtitle. What IS flagged is the one thing the viewer must act on: a thread waiting on THEIR side
+   (`side`) lights up and says "Awaiting your response" — the department's when Internal Audit has
+   asked for something, Internal Audit's when the department has answered or commented. */
 
 export function RequestTable({
   requests,
   showDepartment,
+  side,
 }: {
   requests: AuditRequest[];
   showDepartment: boolean;
+  /** Which side is looking: its threads that are waiting on it are highlighted. */
+  side?: AuditSide;
 }) {
   const modal = useModal();
   const open = (r: AuditRequest) => modal.open(<RequestThreadDialog requestId={r.id} />, { wide: true });
@@ -59,13 +64,19 @@ export function RequestTable({
           const msgs = r.messages || [];
           const n = msgs.length;
           const lastBy = n ? msgs[n - 1].byName : r.raisedByName;
+          const yours = !!side && requestAwaiting(r) === side;
           return (
-            <tr key={r.id} className="row-link" onClick={() => open(r)}>
+            <tr key={r.id} className={`row-link${yours ? " req-awaiting" : ""}`} onClick={() => open(r)}>
               <td style={{ whiteSpace: "nowrap" }}>{r.ref || "—"}</td>
               <td>
                 <RowOpen onOpen={() => open(r)} label={`Open ${r.kind === "information" ? "request" : "comment"}: ${r.subject}`}>
                   <b>{r.subject}</b>
                 </RowOpen>
+                {yours ? (
+                  <span className="pill pill-await" style={{ marginLeft: 8 }}>
+                    Awaiting your response
+                  </span>
+                ) : null}
                 <div className="hint">
                   {r.raisedByName ? `Raised by ${r.raisedByName}` : ""}
                   {r.dueDate ? ` · required by ${fmtDate(r.dueDate)}` : ""}
@@ -182,9 +193,9 @@ export function AuditCommsCard({ audit }: { audit: Audit }) {
         <h3 style={{ margin: 0 }}>Audit communications</h3>
         {concluded ? <span className="status-pill closed">Concluded</span> : null}
         {waiting ? (
-          <span className="status-pill progress">
-            {waiting} awaiting Internal Audit
-          </span>
+          <a className="pill pill-await" href="#ia-requests" title="Jump to the requests waiting on Internal Audit">
+            {waiting} awaiting your response
+          </a>
         ) : null}
         <div className="spacer" style={{ flex: 1 }} />
         <button className="btn ghost sm" type="button" onClick={() => modal.open(<ModalTORDialog auditId={audit.id} />, { wide: true })}>
@@ -255,7 +266,11 @@ export function AuditCommsCard({ audit }: { audit: Audit }) {
 
       {communicated ? (
         requests.length ? (
-          <RequestTable requests={requests} showDepartment={depts.length > 1} />
+          /* Lit up while the department is waiting on Internal Audit — a response or a comment to
+             answer — so it reads as the part of the page that needs doing. */
+          <div id="ia-requests" className={waiting ? "req-active" : undefined}>
+            <RequestTable requests={requests} showDepartment={depts.length > 1} side="ia" />
+          </div>
         ) : (
           <Empty>
             No information requests or comments yet.

@@ -5220,6 +5220,25 @@ body.ai-busy .ai-generate-btn:not(:disabled) {
 /* Shared by the card and the row so "Ready for closure" cannot look like two different states. */
 .pill-rfc { background: color-mix(in oklch, var(--low) 16%, #fff); color: var(--low); }
 
+/* ---- Audit communications ---- */
+/* A major part of an engagement's page — the conclusion, the requests — set apart from the Terms
+   of Reference above it by space and a rule, under its own heading. */
+.comms-major { margin-top: 36px; padding-top: 22px; border-top: 1px solid var(--line); }
+.comms-major > .section-title { margin-bottom: 4px; }
+/* Something is waiting on the person looking at it: the requests block and its row light up. A
+   tint and a label — not a status column (dropped on request), and not a side stripe (DESIGN). */
+.req-active {
+  background: color-mix(in oklch, var(--med) 6%, #fff);
+  border: 1px solid color-mix(in oklch, var(--med) 35%, var(--line));
+  border-radius: 12px;
+  padding: 4px 14px 10px;
+  margin-top: 10px;
+}
+tr.req-awaiting td { background: color-mix(in oklch, var(--med) 14%, #fff); }
+tr.req-awaiting:hover td { background: color-mix(in oklch, var(--med) 20%, #fff); }
+.pill-await { background: color-mix(in oklch, var(--med) 20%, #fff); color: #7a5200; font-weight: 700; text-decoration: none; }
+a.pill-await:hover { background: color-mix(in oklch, var(--med) 30%, #fff); }
+
 /* ---- Owner first-login announcement ---- */
 .owner-announce {
   display: flex; align-items: flex-start; gap: 12px;
