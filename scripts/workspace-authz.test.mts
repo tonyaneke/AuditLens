@@ -1210,6 +1210,23 @@ console.log("\n== Audit comms: the audit conclusion ==");
   ok(get(r3.data, "a5").closeout.conclusion === "Concluded.", "a department cannot rewrite the conclusion");
 }
 
+console.log("\n== Audit comms: \"Request update\" is Internal Audit's ==");
+{
+  const cur = commsWorkspace();
+  const ia = clone(slimForClient(cur, { id: STAFF.id, role: "audit_staff" } as any));
+  findReq(ia, "rq1").messages.push({ id: "u1", by: "staff1", byName: "Sam", side: "ia", at: "2026-10-04T09:00:00.000Z", text: "Update requested.", updateRequest: true });
+  const r1 = authorizeWorkspaceWrite(STAFF.role, STAFF.id, cur, ia);
+  const u1 = findReq(r1.data, "rq1").messages.find((m: any) => m.id === "u1");
+  ok(!!u1 && u1.updateRequest === true && r1.violations.length === 0, "Internal Audit can chase the department for an update");
+
+  const dept = serveCol(cur);
+  findReq(dept, "rq1").messages.push({ id: "u2", by: "col1", byName: "Col", side: "dept", at: "2026-10-04T09:00:00.000Z", text: "Chasing you!", updateRequest: true });
+  const r2 = asCol(cur, dept);
+  const u2 = findReq(r2.data, "rq1").messages.find((m: any) => m.id === "u2");
+  ok(!!u2 && !u2.updateRequest, "a department message cannot pose as an update request (the flag is dropped, the message kept)");
+  ok(r2.violations.includes("request_update_flag_blocked:rq1:u2"), "…and the attempt is recorded");
+}
+
 console.log("\n== Audit comms: executives read only ==");
 {
   const cur = commsWorkspace();

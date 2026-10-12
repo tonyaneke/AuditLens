@@ -20,6 +20,7 @@ import {
   finalReports,
   lastActivity,
   noticeIssued,
+  outstandingUpdateRequest,
   requestAwaiting,
   requestsForAudit,
 } from "@/lib/workspace/audit-comms";
@@ -65,6 +66,7 @@ export function RequestTable({
           const n = msgs.length;
           const lastBy = n ? msgs[n - 1].byName : r.raisedByName;
           const yours = !!side && requestAwaiting(r) === side;
+          const chased = outstandingUpdateRequest(r);
           return (
             <tr key={r.id} className={`row-link${yours ? " req-awaiting" : ""}`} onClick={() => open(r)}>
               <td style={{ whiteSpace: "nowrap" }}>{r.ref || "—"}</td>
@@ -74,7 +76,7 @@ export function RequestTable({
                 </RowOpen>
                 {yours ? (
                   <span className="pill pill-await" style={{ marginLeft: 8 }}>
-                    Awaiting your response
+                    {chased ? "🔔 Update requested" : "Awaiting your response"}
                   </span>
                 ) : null}
                 <div className="hint">
@@ -82,6 +84,7 @@ export function RequestTable({
                   {r.dueDate ? ` · required by ${fmtDate(r.dueDate)}` : ""}
                   {n ? ` · ${n} repl${n === 1 ? "y" : "ies"}` : ""}
                   {r.closedAt ? " · closed" : ""}
+                  {chased && !yours ? ` · 🔔 update requested ${fmtDate(chased.at)}` : ""}
                 </div>
               </td>
               {showDepartment ? <td>{deptLabel(r.department)}</td> : null}

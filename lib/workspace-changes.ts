@@ -1358,9 +1358,13 @@ function diffAuditRequests(b: Obj, a: Obj, out: Draft[]): void {
     const before = new Set(arr(prev?.messages).map((m) => str(m.id)));
     for (const m of arr(r.messages)) {
       if (before.has(str(m.id))) continue;
+      // Internal Audit chasing the department ("Request update") is its own event, not a reply.
+      const chase = own(m, "updateRequest") === true;
       out.push({
-        action: "comms.request_reply",
-        summary: `Replied on ${what(r)}${excerpt(m.text)}${attached(arr(m.evidence))}`,
+        action: chase ? "comms.update_requested" : "comms.request_reply",
+        summary: chase
+          ? `Requested an update on ${what(r)}`
+          : `Replied on ${what(r)}${excerpt(m.text)}${attached(arr(m.evidence))}`,
         metadata: { ...meta, messageId: str(m.id), side: str(m.side), text: clip(str(m.text), 2000) },
       });
     }

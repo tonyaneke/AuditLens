@@ -32,6 +32,7 @@ import type {
   Audit,
   AuditCloseout,
   AuditRequest,
+  AuditRequestMessage,
   AuditSide,
   AuditUniverseUnit,
   Report,
@@ -351,6 +352,20 @@ export function canCloseRequest(r: AuditRequest, side: AuditSide): boolean {
   return side === "ia" || (r.kind === "clarification" && r.side === "dept");
 }
 
+/** "Request update": Internal Audit chasing the department for information it asked for and has not
+ *  had yet — an open information request whose next move is the department's. */
+export function canRequestUpdate(r: AuditRequest, side: AuditSide): boolean {
+  return side === "ia" && r.kind === "information" && requestAwaiting(r) === "dept";
+}
+
+/** The update request still outstanding — the thread's latest message, when that is one. A response
+ *  from the department comes after it, so answering is what clears it. */
+export function outstandingUpdateRequest(r: AuditRequest): AuditRequestMessage | undefined {
+  const msgs = r.messages || [];
+  const last = msgs[msgs.length - 1];
+  return !r.closedAt && last?.updateRequest ? last : undefined;
+}
+
 /* ---------------- notifications ----------------
    The bell reaches everyone who can act (the department shares the work, as with observations);
    e-mail goes to the accountable people only — the department's heads, or Internal Audit's
@@ -447,7 +462,7 @@ export type CommsMessage = {
   to: "dept" | "ia";
 };
 
-export type RequestEvent = "raised" | "reply" | "closed" | "reopened";
+export type RequestEvent = "raised" | "reply" | "update_requested" | "closed" | "reopened";
 
 /** The engagement notice: the auditor's message (noticeTemplate unless they changed it). */
 export function noticeMessage(a: Audit, reissued: boolean): CommsMessage {
@@ -524,6 +539,13 @@ export function requestMessage(
       `${who} has responded to ${em(what)} on ${engagement}.` +
       (files.length ? ` ${files.length} file${files.length === 1 ? "" : "s"} attached.` : "");
     cta = "View the response";
+  } else if (event === "update_requested") {
+    head = "Update requested";
+    bell = `Update requested on ${what}`;
+    text =
+      `Internal Audit has requested an update on ${em(what)} for ${engagement}` +
+      (r.dueDate ? ` — it was required by ${em(fmtDate(r.dueDate))}.` : ".") +
+      " Please respond with the information, or say when it will be ready.";
   } else {
     head = `${comment ? "Comment" : "Request"} ${event}`;
     bell = `${what} was ${event} by ${who}`;

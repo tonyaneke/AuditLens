@@ -60,6 +60,7 @@ export const ACTION_GROUPS: ActionGroup[] = [
       ["comms.request_raised", "Information requested"],
       ["comms.clarification_raised", "Comment sent to Internal Audit"],
       ["comms.request_reply", "Request answered"],
+      ["comms.update_requested", "Update requested on a request"],
       ["comms.request_closed", "Request closed"],
       ["comms.request_reopened", "Request reopened"],
       ["comms.request_updated", "Request edited"],

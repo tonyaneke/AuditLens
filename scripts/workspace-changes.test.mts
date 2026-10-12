@@ -611,6 +611,11 @@ console.log("\n== Audit communications ==");
   ok(sameList(replied.actions, ["comms.request_reply"]), "a reply → one comms.request_reply", replied.actions);
   ok(/1 file attached/.test(replied.events[0].summary), "…saying a file came with it", replied.events[0].summary);
 
+  const chased = after((db) => {
+    db.auditRequests[0].messages.push({ id: "u1", by: "staff1", byName: "Sade", side: "ia", at: "2026-10-04T08:00:00.000Z", text: "Update requested.", updateRequest: true });
+  }, withReq);
+  ok(sameList(chased.actions, ["comms.update_requested"]), "Request update → comms.update_requested, not a reply", chased.actions);
+
   const closed = after((db) => Object.assign(db.auditRequests[0], { closedAt: "2026-10-04T09:00:00.000Z", closedBy: "staff1", closedByName: "Sade" }), withReq);
   ok(sameList(closed.actions, ["comms.request_closed"]), "closing → comms.request_closed, its stamps not reported as edits", closed.actions);
 

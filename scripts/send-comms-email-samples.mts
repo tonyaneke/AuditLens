@@ -5,6 +5,7 @@
 //   npx tsx scripts/send-comms-email-samples.mts --to=you@credicorp.ng            → prints them
 //   npx tsx scripts/send-comms-email-samples.mts --to=you@credicorp.ng --send     → sends them
 //   … --base=http://localhost:3001   where the buttons point (default: APP_URL)
+//   … --only=4                       just that one sample (numbers as printed)
 //
 // Each subject is prefixed "[Sample n/N — to …]" so they can be told apart in an inbox; the real
 // e-mails carry the subject without it. Nothing is written anywhere, and no one else is e-mailed.
@@ -39,6 +40,7 @@ const samples: [string, CommsMessage][] = [
   ["Engagement notice", noticeMessage(audit, false)],
   ["Engagement notice — re-issued", noticeMessage(audit, true)],
   ["Information request from Internal Audit", requestMessage(audit, opened(ir), { side: "ia", name }, "raised")],
+  ["Update requested — Internal Audit chasing the information", requestMessage(audit, opened(ir), { side: "ia", name }, "update_requested")],
   [
     "Department's response, with files",
     requestMessage(
@@ -64,9 +66,11 @@ const samples: [string, CommsMessage][] = [
 ];
 
 const { sendNotificationEmail } = send ? await import("../lib/email") : { sendNotificationEmail: null };
+const only = Number(arg("only")) || 0;
 let n = 0;
 for (const [label, m] of samples) {
   n++;
+  if (only && n !== only) continue;
   const who = m.to === "dept" ? "the department" : "Internal Audit";
   const subject = `[Sample ${n}/${samples.length} — to ${who}] ${m.subject}`;
   console.log(`\n${"=".repeat(100)}\n${n}. ${label}  →  ${who}\nSubject: ${subject}\nBell:    ${m.bell}\nButton:  ${m.cta} → ${base}${m.path}\n${"-".repeat(100)}\n${m.text}`);
@@ -75,4 +79,9 @@ for (const [label, m] of samples) {
     console.log(r.sent ? `  ✓ sent to ${to}` : `  ✗ not sent: ${r.error}`);
   }
 }
-console.log(send ? `\n${n} samples processed for ${to}.` : `\nPRINTED ONLY — re-run with --send to e-mail these ${n} samples to ${to}.`);
+const count = only ? 1 : n;
+console.log(
+  send
+    ? `\n${count} sample(s) processed for ${to}.`
+    : `\nPRINTED ONLY — re-run with --send to e-mail ${count === 1 ? "it" : `these ${count} samples`} to ${to}.`,
+);

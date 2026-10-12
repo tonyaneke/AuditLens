@@ -248,6 +248,10 @@ export type AuditRequestMessage = {
   at: string;
   text: string;
   evidence?: EvidenceFile[];
+  /** Internal Audit chasing the department for the information ("Request update") — kept in the
+   *  thread so it shows when they were chased. Only Internal Audit's messages may carry it (the
+   *  server drops it from anyone else's). */
+  updateRequest?: boolean;
 };
 
 /** A request raised during an engagement. Internal Audit asks the department for information

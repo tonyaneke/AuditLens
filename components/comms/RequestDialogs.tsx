@@ -23,8 +23,10 @@ import { dirUser, loadDirectory } from "@/lib/client/directory";
 import { deptLabel } from "@/lib/dept-scope";
 import {
   canCloseRequest,
+  canRequestUpdate,
   nextRequestRef,
   notifyRequestActivity,
+  outstandingUpdateRequest,
   viewerSide,
 } from "@/lib/workspace/audit-comms";
 import { fmtDate, fmtDateTime, uid } from "@/lib/workspace/selectors";
@@ -256,6 +258,8 @@ export function RequestThreadDialog({ requestId }: { requestId: string }) {
   const req = r;
   const closed = !!req.closedAt;
   const mayClose = canCloseRequest(req, side);
+  const mayChase = canRequestUpdate(req, side);
+  const chased = outstandingUpdateRequest(req);
   const noun = req.kind === "information" ? "request" : "comment";
 
   async function reply() {
@@ -284,6 +288,30 @@ export function RequestThreadDialog({ requestId }: { requestId: string }) {
     setText("");
     setFiles([]);
     toast("Reply sent.", "success");
+  }
+
+  /* "Request update" — chase the department for the information. Kept in the thread (an entry marked
+     updateRequest) so it shows when they were chased, and the department is told in the app and by
+     e-mail. Their next reply is what answers it. */
+  async function requestUpdate() {
+    await loadDirectory();
+    mutate((d) => {
+      const cur = (d.auditRequests || []).find((x) => x.id === req.id);
+      if (!cur) return;
+      cur.messages = cur.messages || [];
+      cur.messages.push({
+        id: uid(),
+        by: user.id,
+        byName: user.name,
+        side,
+        at: new Date().toISOString(),
+        text: "Internal Audit has requested an update on this request.",
+        updateRequest: true,
+      });
+      const a = (d.audits || []).find((x) => x.id === cur.auditId);
+      notifyRequestActivity(d, a, cur, { id: user.id, side, name: user.name }, "update_requested");
+    });
+    toast("Update requested — the department has been notified.", "success");
   }
 
   async function setClosed(close: boolean) {
@@ -324,6 +352,20 @@ export function RequestThreadDialog({ requestId }: { requestId: string }) {
                 {`${closed ? "Reopen" : "Close"} ${noun}`}
               </button>
             ) : null}
+            {mayChase ? (
+              <BusyButton
+                className="btn sec"
+                busyLabel="Requesting…"
+                title={
+                  chased
+                    ? `Update already requested ${fmtDateTime(chased.at)} — this sends another reminder`
+                    : "Remind the department that this information is still needed"
+                }
+                onClick={requestUpdate}
+              >
+                🔔 Request update
+              </BusyButton>
+            ) : null}
             <div className="spacer" style={{ flex: 1 }} />
             {!closed ? (
               <BusyButton
@@ -356,18 +398,25 @@ export function RequestThreadDialog({ requestId }: { requestId: string }) {
         text={req.text}
         evidence={req.evidence}
       />
-      {(req.messages || []).map((m) => (
-        <Entry
-          key={m.id}
-          by={m.by}
-          byName={m.byName}
-          side={m.side}
-          at={m.at}
-          department={req.department}
-          text={m.text}
-          evidence={m.evidence}
-        />
-      ))}
+      {(req.messages || []).map((m) =>
+        // An update request is an event in the thread, not a message to read — one quiet line.
+        m.updateRequest ? (
+          <div key={m.id} className="hint" style={{ margin: "4px 0 10px", fontWeight: 600 }}>
+            🔔 Update requested by {m.byName || "Internal Audit"} (Internal Audit) · {fmtDateTime(m.at)}
+          </div>
+        ) : (
+          <Entry
+            key={m.id}
+            by={m.by}
+            byName={m.byName}
+            side={m.side}
+            at={m.at}
+            department={req.department}
+            text={m.text}
+            evidence={m.evidence}
+          />
+        ),
+      )}
 
       {closed ? (
         <p className="hint">

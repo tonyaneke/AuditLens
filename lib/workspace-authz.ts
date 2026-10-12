@@ -948,7 +948,13 @@ function mergeRequestMessages(
       continue;
     }
     budget.left--;
-    out.push({ ...m, side });
+    const next: Obj = { ...m, side };
+    // "Request update" is Internal Audit chasing the department; nobody else's message may claim it.
+    if (next.updateRequest && side !== "ia") {
+      violations.push(`request_update_flag_blocked:${reqId}:${m.id}`);
+      delete next.updateRequest;
+    }
+    out.push(next);
   }
   return out;
 }
