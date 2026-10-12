@@ -588,6 +588,14 @@ console.log("\n== Audit communications ==");
   const again = after((db) => Object.assign(db.audits[0].notice, { departments: ["Credit", "Legal"], revisedAt: "2026-10-05T09:00:00.000Z" }), withNotice);
   ok(sameList(again.actions, ["comms.notice_reissued"]), "re-issuing → comms.notice_reissued", again.actions);
 
+  const closeout = {
+    reportId: "r1", reportTitle: "Final", objective: "Obj", strengths: "S", areasForImprovement: "A",
+    conclusion: "Satisfactory.", departments: ["Credit"], issuedAt: "2026-10-09T09:00:00.000Z",
+  };
+  const concluded = after((db) => (db.audits[0].closeout = clone(closeout)), withNotice);
+  ok(sameList(concluded.actions, ["comms.conclusion_issued"]), "issuing the conclusion → comms.conclusion_issued", concluded.actions);
+  ok(concluded.events[0].metadata.conclusion === "Satisfactory.", "…keeping what it said", concluded.events[0].metadata);
+
   const req = {
     id: "rq1", auditId: withNotice.audits[0].id, ref: "IR-01", kind: "information", department: "Credit", subject: "Listing",
     text: "Send it", raisedBy: "staff1", raisedByName: "Sade", side: "ia", raisedAt: "2026-10-02T09:00:00.000Z", messages: [],

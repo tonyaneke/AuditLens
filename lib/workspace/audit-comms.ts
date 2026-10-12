@@ -1,11 +1,16 @@
 "use client";
 
-/* Audit communications — the engagement notice and the information / clarification requests that
- * pass between Internal Audit and the audited department during an engagement.
+/* Audit communications — the engagement notice, the audit conclusion, and the information /
+ * clarification requests that pass between Internal Audit and the audited department.
  *
  *   The NOTICE is composed in the Terms of Reference from the audit programme (objectives and
- *   scope) and issued to one or more departments. Issuing it is what puts the engagement on those
- *   departments' portal (Audits tab) — see lib/audit-comms-scope.ts for the shared rule.
+ *   scope) and issued to one or more departments at the start of the engagement.
+ *
+ *   The CONCLUSION is issued at the end, from a FINAL report: the parts of its executive summary the
+ *   department is given (1.1, areas out of scope, 1.2, 1.3, 1.5), snapshotted as sent.
+ *
+ *   Issuing either is what puts the engagement on those departments' portal (Audits tab) — see
+ *   lib/audit-comms-scope.ts for the shared rule.
  *
  *   A REQUEST is a thread on one engagement and one department. Internal Audit raises
  *   "information" requests (send us X); the department raises "clarification" requests (what do
@@ -15,14 +20,14 @@
  *
  * Pure helpers plus the notification fan-out. Write helpers run inside mutate(). */
 
-import { auditNoticedTo, requestReaches } from "@/lib/audit-comms-scope";
+import { commReaches, engagementReaches, requestReaches } from "@/lib/audit-comms-scope";
 import { deptLabel, deptMembers, deptScopeFor, normalizeDept } from "@/lib/dept-scope";
 import { directory, headUsers, ownerEmailFor } from "@/lib/client/directory";
 import { emailNotify } from "@/lib/client/notify";
 import type { SessionUser } from "@/lib/permissions";
 import { isInternalAudit } from "./observations";
 import { uid } from "./selectors";
-import type { Audit, AuditRequest, AuditSide, WorkspaceDb } from "./types";
+import type { Audit, AuditCloseout, AuditRequest, AuditSide, Report, WorkspaceDb } from "./types";
 
 /* ---------------- the engagement notice ---------------- */
 
@@ -72,24 +77,105 @@ export function suggestNoticeDepartments(a: Audit, departments: readonly string[
   return key ? departments.filter((d) => normalizeDept(d) === key) : [];
 }
 
+/* ---------------- the audit conclusion ---------------- */
+
+/** The executive-summary parts a department is given, in report order, with the report's own
+ *  numbering. 1.4 (the internal audit opinion and assurance rating) is deliberately not among them. */
+export const CLOSEOUT_SECTIONS: readonly [CloseoutSectionKey, string][] = [
+  ["objective", "1.1 Audit objective & scope"],
+  ["outOfScope", "Areas out of scope"],
+  ["strengths", "1.2 Highlights of strengths"],
+  ["areasForImprovement", "1.3 Areas for strategic improvement"],
+  ["conclusion", "1.5 Conclusion"],
+];
+
+export type CloseoutSectionKey = "objective" | "outOfScope" | "strengths" | "areasForImprovement" | "conclusion";
+export type CloseoutContent = Pick<AuditCloseout, "reportId" | "reportTitle" | CloseoutSectionKey>;
+
+/** Reports the conclusion may be issued from — a draft's executive summary is not the conclusion. */
+export function finalReports(a: Audit): Report[] {
+  return (a.reports || []).filter((r) => r.status === "Final");
+}
+
+/** The executive-summary parts as they stand on the report now. 1.1 falls back to the report's
+ *  scope exactly as the report page and the Word export do. */
+export function closeoutFromReport(r: Report): CloseoutContent {
+  const t = (v: unknown) => String(v || "").trim();
+  return {
+    reportId: r.id,
+    reportTitle: r.title,
+    objective: t(r.objective || r.scope),
+    outOfScope: t(r.outOfScope),
+    strengths: t(r.strengths),
+    areasForImprovement: t(r.areasForImprovement),
+    conclusion: t(r.conclusion),
+  };
+}
+
+export function closeoutIssued(a: Audit | undefined): boolean {
+  return !!a?.closeout?.issuedAt;
+}
+
+/** The conclusion as one plain-text message — the e-mail body. */
+export function closeoutText(a: Audit, c: CloseoutContent): string {
+  const parts = CLOSEOUT_SECTIONS.map(([k, title]) => {
+    const v = String(c[k] || "").trim();
+    return v ? `${title}\n${v}` : "";
+  }).filter(Boolean);
+  return [
+    `The ${engagementTitle(a)} has concluded. The highlights of the executive summary are presented below:`,
+    ...parts,
+    "Thank you for your cooperation throughout the engagement. Agreed actions will continue to be tracked through the platform.",
+    "Best regards,\nThe Internal Audit Team",
+  ].join("\n\n");
+}
+
 /* ---------------- who sees what ---------------- */
 
 type PortalUser = { id: string; department?: string; extraDepartments?: string[] };
 
-/** Engagements noticed to this user's department(s), newest notice first. Mirrors
- *  auditNoticedToViewer() in lib/workspace-scope.ts — the server served exactly these. */
+/** When the department last heard about this engagement — the sort key for the Audits tab. */
+function lastCommunicated(a: Audit): string {
+  const n = a.notice;
+  const c = a.closeout;
+  return [n?.issuedAt, n?.revisedAt, c?.issuedAt, c?.revisedAt].map((x) => String(x || "")).sort().pop() || "";
+}
+
+/** Engagements communicated to this user's department(s), most recent first. Mirrors
+ *  auditReachesViewer() in lib/workspace-scope.ts — the server served exactly these. */
 export function portalAudits(db: WorkspaceDb, user: PortalUser | undefined): Audit[] {
   const scope = deptScopeFor(db, user);
   return (db.audits || [])
-    .filter((a) => auditNoticedTo(a, scope))
-    .sort((x, y) => String(y.notice?.issuedAt || "").localeCompare(String(x.notice?.issuedAt || "")));
+    .filter((a) => engagementReaches(a, scope))
+    .sort((x, y) => lastCommunicated(y).localeCompare(lastCommunicated(x)));
 }
 
-/** The departments of this user's that an audit's notice reached, as notice-department names —
- *  what a clarification raised from the portal may be raised for. */
-export function myNoticedDepartments(db: WorkspaceDb, a: Audit, user: PortalUser | undefined): string[] {
+/** Whether the notice / the conclusion was addressed to this user's department. */
+export function reachesMe(db: WorkspaceDb, comm: unknown, user: PortalUser | undefined): boolean {
+  return commReaches(comm, deptScopeFor(db, user));
+}
+
+/** Every department the engagement was communicated to (notice or conclusion), by the names those
+ *  communications used, once each — what an information request may be addressed to. */
+export function engagementDepartments(a: Audit): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const comm of [a.notice, a.closeout]) {
+    if (!comm?.issuedAt) continue;
+    for (const d of comm.departments || []) {
+      const k = normalizeDept(d);
+      if (!k || seen.has(k)) continue;
+      seen.add(k);
+      out.push(d);
+    }
+  }
+  return out;
+}
+
+/** This user's departments among them — what a clarification raised from the portal may be raised for. */
+export function myEngagementDepartments(db: WorkspaceDb, a: Audit, user: PortalUser | undefined): string[] {
   const scope = deptScopeFor(db, user);
-  return (a.notice?.departments || []).filter((d) => scope.keys.has(normalizeDept(d)));
+  return engagementDepartments(a).filter((d) => scope.keys.has(normalizeDept(d)));
 }
 
 export function requestsForAudit(db: WorkspaceDb, auditId: string): AuditRequest[] {
@@ -218,20 +304,51 @@ function emailsFor(db: WorkspaceDb, ids: string[]): string[] {
   return [...new Set(ids.map((id) => ownerEmailFor(db, id)).filter(Boolean))];
 }
 
-/** The engagement notice, to every member of each department it is issued to; e-mail to their
- *  heads (or, for a department without a head on record, to its members). */
-export function notifyNoticeIssued(db: WorkspaceDb, a: Audit, departments: string[], reissued: boolean): void {
-  const subject = `AuditLens — ${a.name}: ${reissued ? "updated " : ""}engagement notice`;
-  const text = a.notice?.text || noticeTemplate(a);
+/** A communication to every member of each department (bell); e-mail to their heads, or — for a
+ *  department without a head on record — to its members. */
+function notifyDepartments(
+  db: WorkspaceDb,
+  a: Audit,
+  departments: string[],
+  kind: string,
+  bellText: string,
+  subject: string,
+  body: string,
+): void {
   for (const dept of departments) {
     const members = deptMembers(directory(), dept);
-    for (const u of members) {
-      bell(db, u.id, "audit_notice", `${reissued ? "Updated audit notice" : "Audit notice"}: ${a.name} is commencing`, "myaudits", a.id);
-    }
+    for (const u of members) bell(db, u.id, kind, bellText, "myaudits", a.id);
     const heads = deptHeadIds(db, dept);
     const to = emailsFor(db, heads.length ? heads : members.map((u) => u.id));
-    if (to.length) void emailNotify(to, subject, text, origin() + portalRequestHref(), "View the engagement in AuditLens");
+    if (to.length) void emailNotify(to, subject, body, origin() + portalRequestHref(), "View the engagement in AuditLens");
   }
+}
+
+/** The engagement notice, to each department it is issued to. */
+export function notifyNoticeIssued(db: WorkspaceDb, a: Audit, departments: string[], reissued: boolean): void {
+  notifyDepartments(
+    db,
+    a,
+    departments,
+    "audit_notice",
+    `${reissued ? "Updated audit notice" : "Audit notice"}: ${a.name} is commencing`,
+    `AuditLens — ${a.name}: ${reissued ? "updated " : ""}engagement notice`,
+    a.notice?.text || noticeTemplate(a),
+  );
+}
+
+/** The audit conclusion, to each department it is issued to. */
+export function notifyCloseoutIssued(db: WorkspaceDb, a: Audit, departments: string[], reissued: boolean): void {
+  if (!a.closeout) return;
+  notifyDepartments(
+    db,
+    a,
+    departments,
+    "audit_conclusion",
+    `${reissued ? "Updated audit conclusion" : "Audit concluded"}: ${a.name} — executive summary available`,
+    `AuditLens — ${a.name}: ${reissued ? "updated " : ""}audit conclusion`,
+    closeoutText(a, a.closeout),
+  );
 }
 
 /** The Internal Audit people an engagement's requests concern: its lead auditor, the request's IA

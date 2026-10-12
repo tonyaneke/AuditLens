@@ -55,6 +55,8 @@ export const ACTION_GROUPS: ActionGroup[] = [
     actions: [
       ["comms.notice_issued", "Engagement notice issued"],
       ["comms.notice_reissued", "Engagement notice re-issued"],
+      ["comms.conclusion_issued", "Audit conclusion issued"],
+      ["comms.conclusion_reissued", "Audit conclusion re-issued"],
       ["comms.request_raised", "Information requested"],
       ["comms.clarification_raised", "Clarification requested"],
       ["comms.request_reply", "Request answered"],

@@ -2,7 +2,7 @@ import type { WorkspaceDb } from "./db-data";
 import { slimForClient } from "./workspace-payload";
 import { FRAUD_VALIDATED, fraudActionDone } from "./workspace/fraud";
 import {
-  auditNoticedToViewer,
+  auditReachesViewer,
   auditsById,
   canSeeAuditRequest,
   canSeeExt,
@@ -340,8 +340,8 @@ function noteGovernanceChanges(curA: Obj, incA: Obj, notices: string[]): void {
  *  of the document they were served, so its absence from their save is a deletion attempt. */
 function auditIsVisible(curA: Obj, viewer: Viewer): boolean {
   if (isFullScope(viewer)) return true;
-  // An engagement noticed to their department is served too (scopeWorkspace / noticeOnlyAudit).
-  return asArray(curA.reports).some((r) => reportIsVisible(r, viewer)) || auditNoticedToViewer(curA, viewer);
+  // An engagement communicated to their department is served too (scopeWorkspace).
+  return asArray(curA.reports).some((r) => reportIsVisible(r, viewer)) || auditReachesViewer(curA, viewer);
 }
 
 function reportIsVisible(curR: Obj, viewer: Viewer): boolean {

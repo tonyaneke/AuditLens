@@ -1170,6 +1170,45 @@ console.log("\n== Audit comms: Internal Audit staff ==");
   ok(findReq(r2.data, "rq1").messages[1].text === "Here it is.", "staff cannot rewrite the department's reply");
 }
 
+/* The audit conclusion (end of engagement) reaches departments the same way the notice does, and
+   each department receives only the communications addressed to it. */
+console.log("\n== Audit comms: the audit conclusion ==");
+{
+  const conclusion = (departments: string[]) => ({
+    reportId: "r9", reportTitle: "Final report", objective: "Obj", outOfScope: "OOS", strengths: "S",
+    areasForImprovement: "AFI", conclusion: "Concluded.", departments, issuedAt: "2026-10-09T09:00:00.000Z",
+  });
+  const cur = commsWorkspace();
+  // a3: noticed to Credit, concluded to Legal only. a1: holds Credit's observation, concluded to Legal.
+  cur.audits.find((a: any) => a.id === "a3").closeout = conclusion(["Legal"]);
+  cur.audits[0].closeout = conclusion(["Legal"]);
+  // a5: never noticed — the conclusion alone puts it on Credit's Audits tab.
+  cur.audits.push({ id: "a5", name: "Payroll Audit", reports: [], plan: { tests: [{ id: "t5", title: "x" }] }, closeout: conclusion(["Credit Department"]) });
+
+  const LEGAL = { role: "action_owner", id: "lg1", department: "Legal" };
+  const credit = serveCol(cur);
+  const legal = clone(slimForClient(cur, viewerFor(LEGAL, cur)));
+  const get = (w: any, id: string) => w.audits.find((a: any) => a.id === id);
+
+  ok(!!get(credit, "a5")?.closeout && !get(credit, "a5").plan.tests, "a conclusion alone puts the engagement on the department's tab (no test programme)");
+  ok(!get(legal, "a5"), "…and nowhere else");
+  ok(!!get(credit, "a3") && !get(credit, "a3").closeout && !!get(credit, "a3").notice, "Credit sees a3's notice but not a conclusion addressed to Legal");
+  ok(!!get(legal, "a3")?.closeout && !get(legal, "a3").notice, "Legal sees a3's conclusion but not the notice addressed to Credit");
+  ok(!!findObs(credit, "o1") && !get(credit, "a1").closeout, "an audit served for its observations carries no conclusion the department was not sent");
+  ok(!!findReq(legal, "rq2"), "a request to a department the conclusion reached is now served to it");
+
+  const r1 = asCol(cur, credit);
+  ok(r1.violations.length === 0, "Credit's save round-trips without violations");
+  ok(get(r1.data, "a3").closeout?.departments[0] === "Legal" && get(r1.data, "a1").closeout, "…and the conclusions it was never sent survive");
+  const r2 = authorizeWorkspaceWrite(LEGAL.role, LEGAL.id, cur, legal, undefined, LEGAL.department);
+  ok(r2.violations.length === 0 && !!get(r2.data, "a3").notice, "Legal's save round-trips, keeping the notice it was never sent");
+
+  const tamper = serveCol(cur);
+  get(tamper, "a5").closeout.conclusion = "Rewritten by the department";
+  const r3 = asCol(cur, tamper);
+  ok(get(r3.data, "a5").closeout.conclusion === "Concluded.", "a department cannot rewrite the conclusion");
+}
+
 console.log("\n== Audit comms: executives read only ==");
 {
   const cur = commsWorkspace();

@@ -196,6 +196,27 @@ export type AuditNotice = {
   revisedByName?: string;
 };
 
+/** The audit conclusion — the closing communication at the end of an engagement. The parts of a
+ *  FINAL report's executive summary the department is given (1.1, areas out of scope, 1.2, 1.3,
+ *  1.5 — not the 1.4 opinion), snapshotted as issued, so later edits to the report do not rewrite
+ *  what the department was told. Issuing it also puts the engagement on those departments' portal. */
+export type AuditCloseout = {
+  reportId: string;
+  reportTitle: string;
+  objective?: string;
+  outOfScope?: string;
+  strengths?: string;
+  areasForImprovement?: string;
+  conclusion: string;
+  departments: string[];
+  issuedAt: string;
+  issuedBy?: string;
+  issuedByName?: string;
+  revisedAt?: string;
+  revisedBy?: string;
+  revisedByName?: string;
+};
+
 export type Audit = {
   id: string;
   name: string;
@@ -210,6 +231,7 @@ export type Audit = {
   plan?: AuditPlan;
   tor?: Record<string, string | undefined>;
   notice?: AuditNotice;
+  closeout?: AuditCloseout;
   [k: string]: unknown;
 };
 

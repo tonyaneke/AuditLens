@@ -35,6 +35,7 @@ import {
   ModalSopBulkDialog,
   RaiseFlowDialog,
 } from "./lazy";
+import { CloseoutDialog } from "@/components/comms/lazy";
 import ObsGridCard from "./ObsGridCard";
 import ReportStatusPill from "./ReportStatusPill";
 
@@ -168,6 +169,16 @@ export default function ReportDetailPage({ auditId, reportId }: { auditId: strin
         <div className="row" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <h3 style={{ margin: 0 }}>Executive Summary</h3>
           <div className="spacer" />
+          {/* The end-of-engagement communication: these sections (bar 1.4) go to the department. */}
+          {r.status === "Final" ? (
+            <button
+              className="btn sm"
+              title="Send the executive summary (without the 1.4 opinion) to the audited department"
+              onClick={() => modal.open(<CloseoutDialog auditId={a.id} reportId={r.id} />, { wide: true })}
+            >
+              {a.closeout?.reportId === r.id ? "Audit conclusion" : "Issue audit conclusion"}
+            </button>
+          ) : null}
           {head ? (
             <>
               <button

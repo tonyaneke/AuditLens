@@ -1,9 +1,10 @@
 "use client";
 
 /* Audit communications on the Internal Audit side — the "Audit communications" card on an audit's
-   page: whether the engagement notice has gone out (and to whom), and the information /
-   clarification requests exchanged with the department. Also the pieces the portal's Audits tab
-   shares: the request table and the ?request= deep link that notifications use. */
+   page: whether the engagement notice (start) and the audit conclusion (end) have gone out, and to
+   whom, and the information / clarification requests exchanged with the department. Also the
+   pieces the portal's Audits tab shares: the request table, the conclusion as the department sees
+   it, and the ?request= deep link that notifications use. */
 
 import { Suspense, useEffect, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -12,11 +13,20 @@ import { Empty, RowOpen } from "@/components/ui";
 import RichText from "@/components/ui/RichText";
 import { ModalTORDialog } from "@/components/audits/lazy";
 import { deptLabel } from "@/lib/dept-scope";
-import { lastActivity, noticeIssued, requestAwaiting, requestsForAudit } from "@/lib/workspace/audit-comms";
+import {
+  CLOSEOUT_SECTIONS,
+  closeoutIssued,
+  engagementDepartments,
+  finalReports,
+  lastActivity,
+  noticeIssued,
+  requestAwaiting,
+  requestsForAudit,
+} from "@/lib/workspace/audit-comms";
 import { fmtDate, fmtDateTime } from "@/lib/workspace/selectors";
-import type { Audit, AuditRequest } from "@/lib/workspace/types";
+import type { Audit, AuditCloseout, AuditRequest } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
-import { NewRequestDialog, RequestThreadDialog } from "./lazy";
+import { CloseoutDialog, NewRequestDialog, RequestThreadDialog } from "./lazy";
 import { AwaitingPill, KindTag } from "./pills";
 
 /* ---------------- request table (both sides) ---------------- */
@@ -110,13 +120,53 @@ export function OpenRequestFromQuery() {
   );
 }
 
+/* ---------------- the conclusion as the department sees it ---------------- */
+
+export function CloseoutView({ closeout }: { closeout: AuditCloseout }) {
+  return (
+    <div className="obs-note">
+      {CLOSEOUT_SECTIONS.map(([k, title]) =>
+        closeout[k] ? (
+          <div className="obs-field" key={k}>
+            <div className="ttl">{title}</div>
+            <div className="txt">
+              <RichText text={closeout[k]} />
+            </div>
+          </div>
+        ) : null,
+      )}
+    </div>
+  );
+}
+
+/** "Issued 3 Oct 2026 by Sade · re-issued 9 Oct 2026 to Credit, Finance" */
+function issuedLine(
+  what: string,
+  c: { issuedAt: string; issuedByName?: string; revisedAt?: string; departments: string[] },
+) {
+  return (
+    <>
+      {what} issued {fmtDate(c.issuedAt)}
+      {c.issuedByName ? ` by ${c.issuedByName}` : ""}
+      {c.revisedAt ? ` · re-issued ${fmtDate(c.revisedAt)}` : ""} to{" "}
+      <b>{c.departments.map(deptLabel).join(", ") || "—"}</b>
+    </>
+  );
+}
+
 /* ---------------- the card on the audit page ---------------- */
 
 export function AuditCommsCard({ audit }: { audit: Audit }) {
   const { db } = useWorkspace();
   const modal = useModal();
   const issued = noticeIssued(audit);
+  const concluded = closeoutIssued(audit);
   const notice = audit.notice;
+  const closeout = audit.closeout;
+  // Requests can run once the department knows about the engagement, by either communication.
+  const depts = engagementDepartments(audit);
+  const communicated = depts.length > 0;
+  const hasFinal = finalReports(audit).length > 0;
   const requests = requestsForAudit(db, audit.id);
   const waiting = requests.filter((r) => requestAwaiting(r) === "ia").length;
 
@@ -125,6 +175,7 @@ export function AuditCommsCard({ audit }: { audit: Audit }) {
       <OpenRequestFromQuery />
       <div className="row" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <h3 style={{ margin: 0 }}>Audit communications</h3>
+        {concluded ? <span className="status-pill closed">Concluded</span> : null}
         {waiting ? (
           <span className="status-pill progress">
             {waiting} awaiting Internal Audit
@@ -135,13 +186,19 @@ export function AuditCommsCard({ audit }: { audit: Audit }) {
           {issued ? "Engagement notice" : "Compose engagement notice"}
         </button>
         <button
+          className="btn ghost sm"
+          type="button"
+          title={hasFinal ? undefined : "Available once a report in this audit is marked Final."}
+          onClick={() => modal.open(<CloseoutDialog auditId={audit.id} />, { wide: true })}
+        >
+          {concluded ? "Audit conclusion" : "Issue audit conclusion"}
+        </button>
+        <button
           className="btn pri sm"
           type="button"
-          disabled={!issued}
-          title={issued ? undefined : "Issue the engagement notice first — the department cannot see this engagement until then."}
-          onClick={() =>
-            modal.open(<NewRequestDialog auditId={audit.id} departments={notice?.departments || []} />)
-          }
+          disabled={!communicated}
+          title={communicated ? undefined : "Issue the engagement notice first — the department cannot see this engagement until then."}
+          onClick={() => modal.open(<NewRequestDialog auditId={audit.id} departments={depts} />)}
         >
           + Request information
         </button>
@@ -149,12 +206,7 @@ export function AuditCommsCard({ audit }: { audit: Audit }) {
 
       {issued && notice ? (
         <div className="obs-field">
-          <div className="hint">
-            Notice issued {fmtDate(notice.issuedAt)}
-            {notice.issuedByName ? ` by ${notice.issuedByName}` : ""}
-            {notice.revisedAt ? ` · re-issued ${fmtDate(notice.revisedAt)}` : ""} to{" "}
-            <b>{notice.departments.map(deptLabel).join(", ") || "—"}</b>
-          </div>
+          <div className="hint">{issuedLine("Notice", notice)}</div>
           <details style={{ marginTop: 6 }}>
             <summary className="hint" style={{ cursor: "pointer" }}>
               View the notice as sent
@@ -174,9 +226,31 @@ export function AuditCommsCard({ audit }: { audit: Audit }) {
         </p>
       )}
 
-      {issued ? (
+      {concluded && closeout ? (
+        <div className="obs-field">
+          <div className="hint">
+            {issuedLine("Conclusion", closeout)} — from <i>{closeout.reportTitle}</i>
+          </div>
+          <details style={{ marginTop: 6 }}>
+            <summary className="hint" style={{ cursor: "pointer" }}>
+              View the conclusion as sent
+            </summary>
+            <div style={{ marginTop: 6 }}>
+              <CloseoutView closeout={closeout} />
+            </div>
+          </details>
+        </div>
+      ) : issued && hasFinal ? (
+        <p className="hint" style={{ marginBottom: 0 }}>
+          A report is Final — issue the audit conclusion to give the department its executive summary
+          (objective &amp; scope, areas out of scope, strengths, areas for strategic improvement and
+          the conclusion).
+        </p>
+      ) : null}
+
+      {communicated ? (
         requests.length ? (
-          <RequestTable requests={requests} showDepartment={(notice?.departments || []).length > 1} />
+          <RequestTable requests={requests} showDepartment={depts.length > 1} />
         ) : (
           <Empty>
             No information or clarification requests yet.

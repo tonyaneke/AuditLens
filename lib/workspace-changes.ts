@@ -370,7 +370,7 @@ function indexTree(db: Obj): Tree {
   return t;
 }
 
-const AUDIT_IGNORE = new Set(["id", "reports", "plan", "tor", "notice", "createdAt"]);
+const AUDIT_IGNORE = new Set(["id", "reports", "plan", "tor", "notice", "closeout", "createdAt"]);
 const REPORT_IGNORE = new Set(["id", "observations", "createdAt"]);
 
 function diffAuditTree(b: Obj, a: Obj, dept: (id: unknown) => string, out: Draft[]): void {
@@ -522,19 +522,31 @@ function auditUpdated(prev: Obj, audit: Obj, meta: Obj, out: Draft[]): void {
     });
   }
 
-  /* The engagement notice is a communication, not an edit: it is recorded as sent, with who it went
-     to, and the text kept in full — it is what the department was told the audit would cover. */
-  const noticeB = isObj(prev.notice) ? prev.notice : {};
-  const noticeA = isObj(audit.notice) ? audit.notice : {};
-  if (str(noticeA.issuedAt) && !same(noticeB, noticeA)) {
-    const depts = (Array.isArray(noticeA.departments) ? noticeA.departments : []).map(str).filter(Boolean);
-    const again = !!str(noticeB.issuedAt);
+  /* The engagement notice (start) and the audit conclusion (end) are communications, not edits:
+     each is recorded as sent, with who it went to and what it said kept in full — it is what the
+     department was told. */
+  const sent = (key: string, what: string, action: string, content: (c: Obj) => Obj) => {
+    const cB = isObj(prev[key]) ? prev[key] : {};
+    const cA = isObj(audit[key]) ? audit[key] : {};
+    if (!str(cA.issuedAt) || same(cB, cA)) return;
+    const depts = (Array.isArray(cA.departments) ? cA.departments : []).map(str).filter(Boolean);
+    const again = !!str(cB.issuedAt);
     out.push({
-      action: again ? "comms.notice_reissued" : "comms.notice_issued",
-      summary: `${again ? "Re-issued" : "Issued"} the engagement notice for ${name} to ${depts.length ? clip(depts.join(", "), 200) : "no department"}`,
-      metadata: { ...meta, departments: depts, text: clip(str(noticeA.text), 4000) },
+      action: `comms.${action}_${again ? "reissued" : "issued"}`,
+      summary: `${again ? "Re-issued" : "Issued"} the ${what} for ${name} to ${depts.length ? clip(depts.join(", "), 200) : "no department"}`,
+      metadata: { ...meta, departments: depts, ...content(cA) },
     });
-  }
+  };
+  sent("notice", "engagement notice", "notice", (c) => ({ text: clip(str(c.text), 4000) }));
+  sent("closeout", "audit conclusion", "conclusion", (c) => ({
+    reportId: str(c.reportId),
+    reportTitle: str(c.reportTitle),
+    objective: clip(str(c.objective), 2000),
+    outOfScope: clip(str(c.outOfScope), 2000),
+    strengths: clip(str(c.strengths), 2000),
+    areasForImprovement: clip(str(c.areasForImprovement), 2000),
+    conclusion: clip(str(c.conclusion), 4000),
+  }));
 
   const planB = isObj(prev.plan) ? prev.plan : {};
   const planA = isObj(audit.plan) ? audit.plan : {};

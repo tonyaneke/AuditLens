@@ -5,4 +5,5 @@
 import dynamic from "next/dynamic";
 
 export const NewRequestDialog = dynamic(() => import("./RequestDialogs").then((m) => m.NewRequestDialog), { loading: () => null });
-export const RequestThreadDialog = dynamic(() => import("./RequestDialogs").then((m) => m.RequestThreadDialog), { loading: () => null });
+export const CloseoutDialog = dynamic(() => import("./CloseoutDialog"), { loading: () => null });
+export const RequestThreadDialog =dynamic(() => import("./RequestDialogs").then((m) => m.RequestThreadDialog), { loading: () => null });
