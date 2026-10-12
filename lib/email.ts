@@ -242,7 +242,7 @@ export async function sendNotificationEmail(params: {
         heading: params.subject.replace(/^AuditLens\s*[—-]\s*/i, ""),
         bodyHtml: escapeHtml(params.text)
           .split(/\n{2,}/)
-          .map((p) => `<p>${p.replace(/\n/g, "<br>")}</p>`)
+          .map((p) => `<p>${emphasise(p).replace(/\n/g, "<br>")}</p>`)
           .join(""),
         ctaLabel,
         ctaUrl,
@@ -259,7 +259,7 @@ export async function sendNotificationEmail(params: {
       from: { email: from, name: "AuditLens" },
       subject: params.subject,
       content: [
-        { type: "text/plain", value: `${params.text}\n\n${ctaLabel}: ${signInLink}` },
+        { type: "text/plain", value: `${params.text.replace(EMPHASIS, "$1")}\n\n${ctaLabel}: ${signInLink}` },
         { type: "text/html", value: html },
       ],
     }),
@@ -271,6 +271,14 @@ export async function sendNotificationEmail(params: {
   }
 
   return { sent: true as const };
+}
+
+/* `**text**` in a notification marks the one part the reader needs first — the engagement, the
+   request, the date. Bold in the HTML part; the markers are dropped from the plain-text part.
+   Applied to text that is already escaped, so it can only ever produce <strong>. */
+const EMPHASIS = /\*\*([^*\n]+?)\*\*/g;
+function emphasise(escaped: string): string {
+  return escaped.replace(EMPHASIS, "<strong>$1</strong>");
 }
 
 function escapeHtml(value: string) {

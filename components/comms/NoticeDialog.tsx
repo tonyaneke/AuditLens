@@ -342,24 +342,24 @@ export default function NoticeDialog({ auditId }: { auditId: string }) {
 
       <div className="row" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14 }}>
         <label htmlFor="notice-text" style={{ margin: 0 }}>
-          Message to the department
+          E-mail to the department
         </label>
         <div className="spacer" style={{ flex: 1 }} />
         <button
           className="btn ghost sm"
           type="button"
-          title="Replace the message with the standard wording and the audit plan's current objectives and scope"
+          title="Replace the message with Internal Audit's standard wording"
           onClick={() => edit(setText)(noticeTemplate(audit))}
         >
-          ↺ Refill from audit plan
+          ↺ Standard wording
         </button>
       </div>
-      {programmeIsEmpty(audit) ? (
-        <div className="hint" style={{ margin: "4px 0" }}>
-          This audit has no objectives or scope yet — generate the audit plan first, or write them into the message.
-        </div>
-      ) : null}
-      <textarea id="notice-text" style={{ minHeight: 220 }} value={text} onChange={(e) => edit(setText)(e.target.value)} />
+      <div className="hint" style={{ margin: "4px 0" }}>
+        Kept short on purpose — the department reads the objectives, scope and the rest of these Terms of Reference
+        on their AuditLens dashboard, which the e-mail&apos;s button opens.
+        {programmeIsEmpty(audit) ? " This audit has no objectives or scope yet — generate the audit plan first." : ""}
+      </div>
+      <textarea id="notice-text" style={{ minHeight: 130 }} value={text} onChange={(e) => edit(setText)(e.target.value)} />
 
       {err ? <div className="ai-err">{err}</div> : null}
     </ModalFrame>

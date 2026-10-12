@@ -51,20 +51,13 @@ export function engagementTitle(a: Pick<Audit, "name" | "type">): string {
   return /\b(audit|review|engagement)\b/i.test(name) ? name : `${name} ${auditTypeLabel(a).toLowerCase()}`;
 }
 
-/** The notice as Internal Audit's standard wording, filled from the audit programme. Plain text:
- *  it is shown as written (RichText) and e-mailed as written. The fallbacks match the Terms of
- *  Reference export (exportTORWord), so the notice never promises less than the TOR does. */
+/** The notice — the message the department is e-mailed when the engagement starts — in Internal
+ *  Audit's standard wording. Deliberately short: it says an audit is commencing and where to read
+ *  about it. The objectives, scope and the rest of the Terms of Reference are on the department's
+ *  page in AuditLens, not repeated in an inbox. */
 export function noticeTemplate(a: Audit): string {
-  const plan = a.plan || {};
-  const objectives = (plan.objectives || []).map((o) => String(o).trim()).filter(Boolean);
-  const scope = String(plan.scope || "").trim();
-  const objText = objectives.length
-    ? objectives.map((o, i) => `${i + 1}. ${o}`).join("\n")
-    : `To assess the adequacy and effectiveness of governance, risk management and internal controls over ${a.name}.`;
   return [
-    `The ${engagementTitle(a)} is commencing. The engagement objectives and scope are presented below:`,
-    `Objectives\n${objText}`,
-    `Scope\n${scope || "To be confirmed during planning."}`,
+    `The ${engagementTitle(a)} is commencing. The engagement objectives, scope and terms of reference are now on your AuditLens dashboard.`,
     "Observations will be raised progressively throughout the engagement, and relevant management teams will be notified through the platform.",
     "Best regards,\nThe Internal Audit Team",
   ].join("\n\n");
@@ -251,20 +244,6 @@ export function closeoutIssued(a: Audit | undefined): boolean {
   return !!a?.closeout?.issuedAt;
 }
 
-/** The conclusion as one plain-text message — the e-mail body. */
-export function closeoutText(a: Audit, c: CloseoutContent): string {
-  const parts = CLOSEOUT_SECTIONS.map(([k, title]) => {
-    const v = String(c[k] || "").trim();
-    return v ? `${title}\n${v}` : "";
-  }).filter(Boolean);
-  return [
-    `The ${engagementTitle(a)} has concluded. The highlights of the executive summary are presented below:`,
-    ...parts,
-    "Thank you for your cooperation throughout the engagement. Agreed actions will continue to be tracked through the platform.",
-    "Best regards,\nThe Internal Audit Team",
-  ].join("\n\n");
-}
-
 /* ---------------- who sees what ---------------- */
 
 type PortalUser = { id: string; department?: string; extraDepartments?: string[] };
@@ -434,51 +413,156 @@ function emailsFor(db: WorkspaceDb, ids: string[]): string[] {
   return [...new Set(ids.map((id) => ownerEmailFor(db, id)).filter(Boolean))];
 }
 
+/* ---------------- what each communication says ----------------
+   Pure: the exact bell line, e-mail subject, body and link of each communication. The notify*
+   functions below send these, and scripts/send-comms-email-samples.mts renders the very same ones
+   as samples — so a sample can never drift from what is actually sent.
+
+   E-mails are BRIEF on purpose: what happened, the one part the reader needs in **bold** (lib/email
+   renders it bold), and the button. The detail — the terms of reference, what a request asks, the
+   executive summary — is in AuditLens, one click away, and is not repeated in an inbox. */
+
+/** `**…**` — bold in the e-mail (lib/email.ts). Never used in bell lines, which are plain. */
+const em = (s: string) => `**${s}**`;
+
+/** Bold the engagement's name where the message mentions it — the notice text is the auditor's own,
+ *  so the emphasis is added when it is sent rather than typed into it. */
+function emphasiseFirst(text: string, phrase: string): string {
+  const i = phrase ? text.indexOf(phrase) : -1;
+  return i < 0 || text.includes("**") ? text : text.slice(0, i) + em(phrase) + text.slice(i + phrase.length);
+}
+
+export type CommsMessage = {
+  /** NotificationItem.kind */
+  kind: string;
+  /** The bell line. */
+  bell: string;
+  subject: string;
+  /** The e-mail body, as plain text (lib/email.ts lays it out). */
+  text: string;
+  /** Where the bell and the e-mail's button lead — a path; the sender adds the origin. */
+  path: string;
+  cta: string;
+  /** Who it is for: the audited department, or Internal Audit. */
+  to: "dept" | "ia";
+};
+
+export type RequestEvent = "raised" | "reply" | "closed" | "reopened";
+
+/** The engagement notice: the auditor's message (noticeTemplate unless they changed it). */
+export function noticeMessage(a: Audit, reissued: boolean): CommsMessage {
+  const title = engagementTitle(a);
+  const message = emphasiseFirst(a.notice?.text || noticeTemplate(a), title);
+  const head = reissued ? "Audit notice updated" : "Audit commencing";
+  return {
+    kind: "audit_notice",
+    bell: `${head}: ${a.name}`,
+    subject: `AuditLens — ${head}: ${a.name}`,
+    text: reissued
+      ? `The notice for the ${em(title)} has been updated. The latest terms of reference are on your AuditLens dashboard.`
+      : message,
+    path: portalAuditHref(a.id),
+    cta: "View the engagement",
+    to: "dept",
+  };
+}
+
+/** The audit conclusion: that it has concluded, and where the results are. */
+export function closeoutMessage(a: Audit, reissued: boolean): CommsMessage {
+  const title = engagementTitle(a);
+  const head = reissued ? "Audit conclusion updated" : "Audit concluded";
+  return {
+    kind: "audit_conclusion",
+    bell: `${head}: ${a.name} — results available`,
+    subject: `AuditLens — ${head}: ${a.name}`,
+    text: reissued
+      ? `The conclusion of the ${em(title)} has been updated. The latest results are on your AuditLens dashboard.`
+      : `The ${em(title)} has concluded. The results are now on your AuditLens dashboard.`,
+    path: portalAuditHref(a.id),
+    cta: "View the results",
+    to: "dept",
+  };
+}
+
+/** A new request or comment, a response on one, or its close / reopen — told to the OTHER side, in a
+ *  line or two: who did what, on which request (in bold), and for a new request when it is needed by.
+ *  What was actually written, and any files, are one click away in AuditLens. */
+export function requestMessage(
+  a: Audit | undefined,
+  r: AuditRequest,
+  actor: { side: AuditSide; name?: string },
+  event: RequestEvent,
+): CommsMessage {
+  const engagement = a ? `the ${engagementTitle(a)}` : "an audit";
+  const what = `${r.ref ? r.ref + " — " : ""}${r.subject}`;
+  const comment = r.kind !== "information";
+  const noun = comment ? "comment" : "request";
+  const msgs = r.messages || [];
+  const files = (event === "reply" ? msgs[msgs.length - 1]?.evidence : undefined) || [];
+  const dept = deptLabel(r.department) || "the department";
+  const who = actor.side === "ia" ? `Internal Audit${actor.name ? ` (${actor.name})` : ""}` : `${actor.name || "The department"} (${dept})`;
+  const toDept = actor.side === "ia";
+
+  let head: string;
+  let bell: string;
+  let text: string;
+  let cta = `Open the ${noun}`;
+  if (event === "raised" && !comment) {
+    head = "Information requested";
+    bell = `Information requested on ${a?.name || "an audit"}: ${what}`;
+    text =
+      `Internal Audit has requested information for ${engagement}: ${em(what)}` +
+      (r.dueDate ? `, required by ${em(fmtDate(r.dueDate))}.` : ".");
+  } else if (event === "raised") {
+    head = `New comment from ${dept}`;
+    bell = `New comment from ${dept} on ${a?.name || "an audit"}: ${what}`;
+    text = `${dept} has sent Internal Audit a comment on ${engagement}: ${em(what)}.`;
+  } else if (event === "reply") {
+    head = "New response";
+    bell = `New response from ${who} on ${what}`;
+    text =
+      `${who} has responded to ${em(what)} on ${engagement}.` +
+      (files.length ? ` ${files.length} file${files.length === 1 ? "" : "s"} attached.` : "");
+    cta = "View the response";
+  } else {
+    head = `${comment ? "Comment" : "Request"} ${event}`;
+    bell = `${what} was ${event} by ${who}`;
+    text = `${em(what)} on ${engagement} was ${event} by ${who}.`;
+  }
+  return {
+    kind: "audit_request",
+    bell,
+    subject: `AuditLens — ${head}: ${what}`,
+    text,
+    path: toDept ? portalAuditHref(r.auditId, r.id) : auditRequestHref(r.auditId, r.id),
+    cta,
+    to: toDept ? "dept" : "ia",
+  };
+}
+
+/* ---------------- sending them ---------------- */
+
 /** A communication to every member of each department (bell); e-mail to their heads, or — for a
  *  department without a head on record — to its members. */
-function notifyDepartments(
-  db: WorkspaceDb,
-  a: Audit,
-  departments: string[],
-  kind: string,
-  bellText: string,
-  subject: string,
-  body: string,
-): void {
+function notifyDepartments(db: WorkspaceDb, a: Audit, departments: string[], m: CommsMessage): void {
   for (const dept of departments) {
     const members = deptMembers(directory(), dept);
-    for (const u of members) bell(db, u.id, kind, bellText, "myaudits", a.id);
+    for (const u of members) bell(db, u.id, m.kind, m.bell, "myaudits", a.id);
     const heads = deptHeadIds(db, dept);
     const to = emailsFor(db, heads.length ? heads : members.map((u) => u.id));
-    if (to.length) void emailNotify(to, subject, body, origin() + portalAuditHref(a.id), "View the engagement in AuditLens");
+    if (to.length) void emailNotify(to, m.subject, m.text, origin() + m.path, m.cta);
   }
 }
 
 /** The engagement notice, to each department it is issued to. */
 export function notifyNoticeIssued(db: WorkspaceDb, a: Audit, departments: string[], reissued: boolean): void {
-  notifyDepartments(
-    db,
-    a,
-    departments,
-    "audit_notice",
-    `${reissued ? "Updated audit notice" : "Audit notice"}: ${a.name} is commencing`,
-    `AuditLens — ${a.name}: ${reissued ? "updated " : ""}engagement notice`,
-    a.notice?.text || noticeTemplate(a),
-  );
+  notifyDepartments(db, a, departments, noticeMessage(a, reissued));
 }
 
 /** The audit conclusion, to each department it is issued to. */
 export function notifyCloseoutIssued(db: WorkspaceDb, a: Audit, departments: string[], reissued: boolean): void {
   if (!a.closeout) return;
-  notifyDepartments(
-    db,
-    a,
-    departments,
-    "audit_conclusion",
-    `${reissued ? "Updated audit conclusion" : "Audit concluded"}: ${a.name} — executive summary available`,
-    `AuditLens — ${a.name}: ${reissued ? "updated " : ""}audit conclusion`,
-    closeoutText(a, a.closeout),
-  );
+  notifyDepartments(db, a, departments, closeoutMessage(a, reissued));
 }
 
 /** The Internal Audit people an engagement's requests concern: its lead auditor, the request's IA
@@ -517,47 +601,12 @@ export function notifyRequestActivity(
   a: Audit | undefined,
   r: AuditRequest,
   actor: { id: string; side: AuditSide; name?: string },
-  event: "raised" | "reply" | "closed" | "reopened",
+  event: RequestEvent,
 ): void {
-  const auditName = a?.name || "an audit";
-  const what = `${r.ref ? r.ref + " " : ""}“${r.subject}”`;
-  const msgs = r.messages || [];
-  const last = event === "reply" ? msgs[msgs.length - 1] : undefined;
-  const said = event === "reply" ? last?.text || "" : event === "raised" ? r.text : "";
-  const files = (event === "reply" ? last?.evidence : event === "raised" ? r.evidence : undefined) || [];
-  const dept = deptLabel(r.department) || "the department";
-  const who = actor.side === "ia" ? `Internal Audit${actor.name ? ` (${actor.name})` : ""}` : `${actor.name || "The department"} (${dept})`;
-  const toDept = actor.side === "ia";
-
-  const line =
-    event === "raised"
-      ? r.kind === "information"
-        ? `Information requested on ${auditName}: ${what}`
-        : `Comment from ${dept} on ${auditName}: ${what}`
-      : event === "reply"
-        ? `New response from ${who} on ${what}`
-        : `${what} on ${auditName} was ${event}`;
-  const subject = `AuditLens — ${line}`;
-  const body = [
-    event === "reply" ? `${who} responded on ${what} — ${auditName}:` : line,
-    said,
-    files.length
-      ? `Attached (${files.length}): ${files.map((f) => f.name).join(", ")} — open the request in AuditLens to download.`
-      : "",
-    r.dueDate && event === "raised" ? `Required by: ${fmtDate(r.dueDate)}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-
-  if (toDept) {
-    const p = deptParticipants(db, r);
-    for (const id of p.bell) bell(db, id, "audit_request", line, "myaudits", r.auditId, r.id);
-    const to = emailsFor(db, p.email);
-    if (to.length) void emailNotify(to, subject, body, origin() + portalAuditHref(r.auditId, r.id), "Open the request");
-  } else {
-    const ids = iaParticipants(a, r);
-    for (const id of ids) bell(db, id, "audit_request", line, "audit", r.auditId, r.id);
-    const to = emailsFor(db, ids);
-    if (to.length) void emailNotify(to, subject, body, origin() + auditRequestHref(r.auditId, r.id), "Open the request");
-  }
+  const m = requestMessage(a, r, actor, event);
+  const link = m.to === "dept" ? "myaudits" : "audit";
+  const p = m.to === "dept" ? deptParticipants(db, r) : { bell: iaParticipants(a, r), email: iaParticipants(a, r) };
+  for (const id of p.bell) bell(db, id, m.kind, m.bell, link, r.auditId, r.id);
+  const to = emailsFor(db, p.email);
+  if (to.length) void emailNotify(to, m.subject, m.text, origin() + m.path, m.cta);
 }

@@ -9,6 +9,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useModal } from "@/components/modals/ModalProvider";
+import { BackButton } from "@/components/ui";
 import RichText from "@/components/ui/RichText";
 import { exportAuditWord } from "@/lib/client/word";
 import { exportExceptionsWord, exportPlanWord } from "@/lib/client/plan-word";
@@ -23,6 +24,10 @@ import {
 import type { AuditPlan, AuditTest, Report } from "@/lib/workspace/types";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 import { AuditCommsCard } from "@/components/comms/AuditComms";
+import { deptLabel } from "@/lib/dept-scope";
+import { auditTypeLabel, closeoutIssued, engagementDepartments, noticeIssued } from "@/lib/workspace/audit-comms";
+import { fmtDate } from "@/lib/workspace/selectors";
+import { DetailHero, Meta } from "./detail-parts";
 import RaisedPill from "./RaisedPill";
 import ReportStatusPill from "./ReportStatusPill";
 import ResultPill from "./ResultPill";
@@ -42,26 +47,32 @@ export default function AuditDetailPage({ auditId }: { auditId: string }) {
   const router = useRouter();
   const a = (db.audits || []).find((x) => x.id === auditId);
 
-  usePageChrome({
-    title: a?.name || "Audit Engagement",
-    actions: a ? (
-      <div className="topbar-actions">
-        <Link href="/audits" className="btn sec sm">
-          ← Back to List
-        </Link>
-        {/* The engagement notice is issued from the Terms of Reference: saving the TOR sends it. */}
-        <button className="btn sec sm" onClick={() => modal.open(<ModalTORDialog auditId={a.id} />, { wide: true })}>
-          📄 Terms of Reference
-        </button>
-        <button className="btn sec sm" onClick={() => modal.open(<ModalAuditDialog auditId={a.id} />)}>
-          ✎ Edit Audit
-        </button>
-        <button className="btn pri sm" onClick={() => exportAuditWord(db, a)}>
-          ⤓ Export Audit
-        </button>
-      </div>
-    ) : undefined,
-  });
+  /* Laid out like an observation's page: the topbar carries only Back and the actions, and the
+     audit's name is the hero below — badges over a large title, then the meta strip — built from the
+     same parts (./detail-parts), so an engagement reads like the findings raised in it. */
+  usePageChrome(
+    {
+      title: "",
+      back: <BackButton href="/audits" />,
+      actions: a ? (
+        <div className="topbar-actions">
+          {/* The engagement notice is issued from the Terms of Reference: saving the TOR sends it. */}
+          <button className="btn sec sm" onClick={() => modal.open(<ModalTORDialog auditId={a.id} />, { wide: true })}>
+            📄 Terms of Reference
+          </button>
+          <button className="btn sec sm" onClick={() => modal.open(<ModalAuditDialog auditId={a.id} />)}>
+            ✎ Edit Audit
+          </button>
+          <button className="btn pri sm" onClick={() => exportAuditWord(db, a)}>
+            ⤓ Export Audit
+          </button>
+        </div>
+      ) : undefined,
+    },
+    // The title is always blank, so without these the topbar kept whatever it had on first render —
+    // no actions at all when the workspace was still loading.
+    [a?.id, a?.name, a?.status],
+  );
 
   if (!a) {
     return (
@@ -117,38 +128,40 @@ export default function AuditDetailPage({ auditId }: { auditId: string }) {
     });
   }
 
+  const depts = engagementDepartments(a);
+  const reports = a.reports ? a.reports.length : 0;
+
   return (
     <div>
-      <div className="card" style={{ marginBottom: 20 }}>
-        <div className="f3" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 }}>
-          <div>
-            <div className="ttl">Type</div>
-            <div>{a.type === "department" ? "Department audit" : "Process audit"}</div>
-          </div>
-          <div>
-            <div className="ttl">Process / Department</div>
-            <div>{a.area || "—"}</div>
-          </div>
-          <div>
-            <div className="ttl">Period</div>
-            <div>{a.period || "—"}</div>
-          </div>
-          <div>
-            <div className="ttl">Lead Auditor</div>
-            <div>{a.leadAuditor || "—"}</div>
-          </div>
-          <div>
-            <div className="ttl">Status</div>
-            <div>
+      <div className="obs-detail-page anim-fade-in" style={{ paddingBottom: 0, marginBottom: 20 }}>
+        <DetailHero
+          title={a.name}
+          badges={
+            <>
               <span className={`pill ${a.status === "Completed" ? "c-Low" : a.status === "In progress" ? "c-Medium" : "c-High"}`}>
                 {a.status || "In progress"}
               </span>
-            </div>
-          </div>
-          <div>
-            <div className="ttl">Reports</div>
-            <div>{a.reports ? a.reports.length : 0}</div>
-          </div>
+              <span className="tag">{auditTypeLabel(a)}</span>
+              {depts.map((d) => (
+                <span className="tag" key={d}>
+                  {deptLabel(d)}
+                </span>
+              ))}
+              {closeoutIssued(a) ? (
+                <span className="status-pill closed">Concluded</span>
+              ) : noticeIssued(a) ? (
+                <span className="status-pill progress">Notice issued</span>
+              ) : null}
+            </>
+          }
+        />
+        <div className="obs-detail-meta">
+          <Meta label="Process / Department">{a.area || "—"}</Meta>
+          <Meta label="Period">{a.period || "—"}</Meta>
+          <Meta label="Lead auditor">{a.leadAuditor || "—"}</Meta>
+          <Meta label="Planned timing">{String(a.tor?.timing || "") || "—"}</Meta>
+          <Meta label="Reports">{String(reports)}</Meta>
+          <Meta label="Created">{a.createdAt ? fmtDate(a.createdAt) : ""}</Meta>
         </div>
       </div>
 
