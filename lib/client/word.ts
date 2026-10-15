@@ -5,6 +5,7 @@
 // the workspace db explicitly; the org logo rides in as wordDoc's logo parameter (db.logo).
 
 import type { Audit, AuditPlan, Observation, Report, WorkspaceDb } from "@/lib/workspace/types";
+import { DEFAULT_REPORTING_TO } from "@/lib/workspace/audit-comms";
 import { CRITS, ck, effectiveClose, fmtDate, isoToDate, obsAge } from "@/lib/workspace/selectors";
 import { testControl, testResultNotes, testTitle, worstCrit, zc } from "@/lib/workspace/observations";
 import { esc, wordDoc } from "./exports";
@@ -160,10 +161,8 @@ type Tor = {
   addressee?: string;
   date?: string;
   timing?: string;
-  background?: string;
   outOfScope?: string;
   infoRequired?: string;
-  reportingTo?: string;
 };
 export function exportTORWord(db: WorkspaceDb, a: Audit): void {
   const p = (a.plan || {}) as { scope?: string; objectives?: string[]; keyRisks?: string[] };
@@ -187,7 +186,6 @@ export function exportTORWord(db: WorkspaceDb, a: Audit): void {
       <tr><td><b>Lead auditor</b></td><td>${esc(a.leadAuditor || name)}</td></tr>
       ${t.addressee ? `<tr><td><b>Addressed to</b></td><td>${esc(t.addressee)}</td></tr>` : ""}
     </table>
-    ${t.background ? `<h2>${sec()}Background &amp; Purpose</h2>${wpar(t.background)}` : ""}
     <h2>${sec()}Audit Objective${(p.objectives || []).length === 1 ? "" : "s"}</h2>
     ${(p.objectives || []).length ? bl(p.objectives) : wpar("To assess the adequacy and effectiveness of governance, risk management and internal controls over " + a.name + ".")}
     <h2>${sec()}Scope</h2>
@@ -199,7 +197,7 @@ export function exportTORWord(db: WorkspaceDb, a: Audit): void {
     <div>The audit will be conducted in line with the Institute of Internal Auditors (IIA) Standards and the Corporation's internal audit methodology — comprising planning, walkthroughs, control design and operating-effectiveness testing, and discussion of findings with management before the report is finalised.</div>
     ${t.infoRequired ? `<h2>${sec()}Information &amp; Access Required</h2>${wpar(t.infoRequired)}` : ""}
     <h2>${sec()}Reporting</h2>
-    <div>Observations will be discussed with the relevant process owners. A draft report will be issued for management responses, and the final report distributed to ${t.reportingTo ? esc(t.reportingTo) : "the relevant executive management and the Board Audit Committee"}.</div>
+    <div>Observations will be discussed with the relevant process owners. A draft report will be issued for management responses, and the final report distributed to ${esc(DEFAULT_REPORTING_TO)}.</div>
     <div class="sign" style="margin-top:14px">We would appreciate your cooperation and the availability of your team during the engagement. Please contact us with any questions regarding the scope or timing.<br><br>Regards,<br><br><b>${esc(name)}</b><br>${esc(title)}</div>`;
   wordDoc("Terms of Reference - " + String(a.name).replace(/[^\w \-]/g, ""), inner, orgLogo(db));
 }

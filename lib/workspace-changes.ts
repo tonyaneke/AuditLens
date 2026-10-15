@@ -541,10 +541,10 @@ function auditUpdated(prev: Obj, audit: Obj, meta: Obj, out: Draft[]): void {
   sent("closeout", "audit conclusion", "conclusion", (c) => ({
     reportId: str(c.reportId),
     reportTitle: str(c.reportTitle),
-    objective: clip(str(c.objective), 2000),
-    outOfScope: clip(str(c.outOfScope), 2000),
     strengths: clip(str(c.strengths), 2000),
     areasForImprovement: clip(str(c.areasForImprovement), 2000),
+    auditOpinion: clip(str(c.auditOpinion), 2000),
+    assuranceLevel: str(c.assuranceLevel),
     conclusion: clip(str(c.conclusion), 4000),
   }));
 

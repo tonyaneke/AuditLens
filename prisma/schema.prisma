@@ -47,12 +47,12 @@ model User {
 // profile, so it can be signed into without a Microsoft account of its own. Only an account whose
 // role is "admin" can sign in with it, and never while ADMIN_LOGIN_ENABLED=false — see
 // lib/admin-credential.ts. Seeded by scripts/seed-admin-profile.mts; never written by the app
-// except to count failed attempts and stamp the last sign-in.
+// except to count failed attempts and stamp the last sign-in. The sign-in name is the account's
+// own User.email — there is no separate username to drift from it.
 model AdminCredential {
   id                String    @id @default(cuid())
   userId            String    @unique
   user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  username          String    @unique // stored lower-case
   passwordHash      String    // scrypt — the format is documented in lib/admin-credential.ts
   failedAttempts    Int       @default(0)
   lockedUntil       DateTime?

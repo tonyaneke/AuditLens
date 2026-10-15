@@ -10,10 +10,10 @@
    the notice goes to.
 
    Most of it fills itself (see "terms of reference: what fills itself" in lib/workspace/audit-comms):
-   the departments from the audit's Process / Department, the planned timing from the audit's
-   quarter, the background from the annual plan's rationale, the reporting channel from the house
-   default, and — with "Draft with AI" — the background, out-of-scope areas and information needed.
-   The auditor reviews and saves.
+   the departments from the audit's Process / Department and the planned timing from the audit's
+   quarter. The auditor writes the out-of-scope areas and information needed, and saves. The message
+   e-mailed to the department is always Internal Audit's standard wording (noticeTemplate); it is
+   not edited here.
 
      not issued   Save draft             keeps everything, sends nothing; the department sees nothing
                   Save & issue notice    saves the TOR and issues the notice to the departments addressed
@@ -26,27 +26,21 @@
 import { useState } from "react";
 import { useUser } from "@/components/chrome/UserContext";
 import { useDirectoryUsers } from "@/components/external/use-directory";
-import BusyButton from "@/components/feedback/BusyButton";
 import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal, useModalGuard } from "@/components/modals/ModalProvider";
 import { DEPARTMENTS } from "@/components/settings/staff";
-import { runAiJson } from "@/lib/client/ai";
 import { loadDirectory } from "@/lib/client/directory";
 import { exportTORWord } from "@/lib/client/word";
 import { deptLabel, normalizeDept } from "@/lib/dept-scope";
 import {
-  DEFAULT_REPORTING_TO,
   addressedToLine,
   commDepartmentOptions,
-  defaultBackground,
   formatTiming,
   noticeTemplate,
   notifyNoticeIssued,
-  parseTorDraft,
   programmeIsEmpty,
   quarterRange,
   suggestNoticeDepartments,
-  torDraftPrompt,
 } from "@/lib/workspace/audit-comms";
 import { fmtDate, isoNow } from "@/lib/workspace/selectors";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
@@ -74,11 +68,8 @@ export default function NoticeDialog({ auditId }: { auditId: string }) {
   const [date, setDate] = useState(tor.date || isoNow());
   const [from, setFrom] = useState(tor.timingFrom || (legacyTiming ? "" : quarter?.from || ""));
   const [to, setTo] = useState(tor.timingTo || (legacyTiming ? "" : quarter?.to || ""));
-  const [background, setBackground] = useState(() => tor.background || (a ? defaultBackground(db, a) : ""));
   const [outOfScope, setOutOfScope] = useState(tor.outOfScope || "");
   const [infoRequired, setInfoRequired] = useState(tor.infoRequired || "");
-  const [reportingTo, setReportingTo] = useState(tor.reportingTo || DEFAULT_REPORTING_TO);
-  const [text, setText] = useState(() => notice?.text || (a ? noticeTemplate(a) : ""));
   const [touched, setTouched] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -98,17 +89,14 @@ export default function NoticeDialog({ auditId }: { auditId: string }) {
       timingFrom: from,
       timingTo: to,
       timing: formatTiming(from, to) || legacyTiming,
-      background: background.trim(),
       outOfScope: outOfScope.trim(),
       infoRequired: infoRequired.trim(),
-      reportingTo: reportingTo.trim(),
     };
   }
 
   function check(forIssue: boolean): boolean {
     if (from && to && from > to) return fail("The planned timing ends before it starts.");
     if (forIssue && !depts.length) return fail("Choose the department(s) the notice is addressed to.");
-    if (forIssue && !text.trim()) return fail("The message to the department is empty.");
     setErr("");
     return true;
   }
@@ -129,7 +117,7 @@ export default function NoticeDialog({ auditId }: { auditId: string }) {
         cur.tor = torFields(cur.notice.departments);
       } else {
         cur.tor = torFields(depts);
-        cur.notice = { text: text.trim(), departments: depts };
+        cur.notice = { text: noticeTemplate(cur), departments: depts };
       }
     });
     setTouched(false);
@@ -147,10 +135,11 @@ export default function NoticeDialog({ auditId }: { auditId: string }) {
         if (!cur) return;
         const again = !!cur.notice?.issuedAt;
         cur.tor = torFields(depts);
+        const text = noticeTemplate(cur);
         cur.notice =
           again && cur.notice
-            ? { ...cur.notice, text: text.trim(), departments: depts, revisedAt: now, revisedBy: user.id, revisedByName: user.name }
-            : { text: text.trim(), departments: depts, issuedAt: now, issuedBy: user.id, issuedByName: user.name };
+            ? { ...cur.notice, text, departments: depts, revisedAt: now, revisedBy: user.id, revisedByName: user.name }
+            : { text, departments: depts, issuedAt: now, issuedBy: user.id, issuedByName: user.name };
         notifyNoticeIssued(d, cur, depts, again);
       });
       setTouched(false);
@@ -158,22 +147,6 @@ export default function NoticeDialog({ auditId }: { auditId: string }) {
       modal.close();
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function draftWithAi() {
-    if (!a) return;
-    setErr("");
-    try {
-      const d = parseTorDraft(await runAiJson<unknown>(torDraftPrompt(db, a)));
-      if (!d) return void setErr("The AI returned nothing usable — try again, or write these yourself.");
-      if (d.background) setBackground(d.background);
-      if (d.outOfScope) setOutOfScope(d.outOfScope);
-      if (d.infoRequired) setInfoRequired(d.infoRequired);
-      setTouched(true);
-      setConfirming(false);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "AI request failed.");
     }
   }
 
@@ -191,7 +164,7 @@ export default function NoticeDialog({ auditId }: { auditId: string }) {
     );
   }
   const audit = a;
-  const unsentChange = issued && !!notice && (text.trim() !== notice.text || !sameDepts(depts, notice.departments));
+  const unsentChange = issued && !!notice && !sameDepts(depts, notice.departments);
 
   return (
     <ModalFrame
@@ -226,7 +199,7 @@ export default function NoticeDialog({ auditId }: { auditId: string }) {
             <div className="spacer" style={{ flex: 1 }} />
             {unsentChange ? (
               <span className="hint" style={{ maxWidth: 260 }}>
-                The new departments or message are only sent when you re-issue.
+                The newly addressed departments are only notified when you re-issue.
               </span>
             ) : null}
             <button className="btn sec" type="button" onClick={() => save()}>
@@ -246,8 +219,8 @@ export default function NoticeDialog({ auditId }: { auditId: string }) {
               Issued {fmtDate(notice.issuedAt)}
               {notice.revisedAt ? ` · re-issued ${fmtDate(notice.revisedAt)}` : ""}
             </span>
-            Sent to {notice.departments.map(deptLabel).join(", ")}. They see these Terms of Reference on their Audits
-            tab; saving changes updates what they see without notifying them again.
+            Sent to {notice.departments.map(deptLabel).join(", ")}. They see these Terms of Reference on their Audit
+            Reports tab; saving changes updates what they see without notifying them again.
           </>
         ) : (
           <>
@@ -305,23 +278,7 @@ export default function NoticeDialog({ auditId }: { auditId: string }) {
         {legacyTiming ? `Previously entered as “${legacyTiming}” — set the dates to replace it.` : "Narrow it to the fieldwork dates."}
       </div>
 
-      <div className="row" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14 }}>
-        <label htmlFor="tor-bg" style={{ margin: 0 }}>
-          Background &amp; purpose
-        </label>
-        <div className="spacer" style={{ flex: 1 }} />
-        <BusyButton
-          className="btn ghost sm ai-generate-btn"
-          busyLabel="Drafting…"
-          title="Draft the background, out-of-scope areas and information required from this audit's plan"
-          onClick={draftWithAi}
-        >
-          ✦ Draft with AI
-        </BusyButton>
-      </div>
-      <textarea id="tor-bg" rows={4} value={background} onChange={(e) => edit(setBackground)(e.target.value)} />
-
-      <label htmlFor="tor-oos" style={{ marginTop: 10 }}>
+      <label htmlFor="tor-oos" style={{ marginTop: 14 }}>
         Out of scope areas <span className="hint">(one per line)</span>
       </label>
       <textarea id="tor-oos" rows={3} value={outOfScope} onChange={(e) => edit(setOutOfScope)(e.target.value)} />
@@ -331,35 +288,12 @@ export default function NoticeDialog({ auditId }: { auditId: string }) {
       </label>
       <textarea id="tor-info" rows={3} value={infoRequired} onChange={(e) => edit(setInfoRequired)(e.target.value)} />
 
-      <label htmlFor="tor-rep" style={{ marginTop: 10 }}>
-        Final report distributed to <span className="hint">(reporting channel)</span>
-      </label>
-      <input id="tor-rep" type="text" value={reportingTo} onChange={(e) => edit(setReportingTo)(e.target.value)} />
-      <div className="hint" style={{ marginTop: 4 }}>
-        Who receives the final audit report. The TOR&apos;s Reporting section reads: “Observations will be discussed
-        with the process owners… and the final report distributed to {reportingTo.trim() || "…"}.”
-      </div>
-
-      <div className="row" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14 }}>
-        <label htmlFor="notice-text" style={{ margin: 0 }}>
-          E-mail to the department
-        </label>
-        <div className="spacer" style={{ flex: 1 }} />
-        <button
-          className="btn ghost sm"
-          type="button"
-          title="Replace the message with Internal Audit's standard wording"
-          onClick={() => edit(setText)(noticeTemplate(audit))}
-        >
-          ↺ Standard wording
-        </button>
-      </div>
-      <div className="hint" style={{ margin: "4px 0" }}>
-        Kept short on purpose — the department reads the objectives, scope and the rest of these Terms of Reference
-        on their AuditLens dashboard, which the e-mail&apos;s button opens.
-        {programmeIsEmpty(audit) ? " This audit has no objectives or scope yet — generate the audit plan first." : ""}
-      </div>
-      <textarea id="notice-text" style={{ minHeight: 130 }} value={text} onChange={(e) => edit(setText)(e.target.value)} />
+      {programmeIsEmpty(audit) ? (
+        <div className="hint" style={{ marginTop: 10 }}>
+          This audit has no objectives or scope yet — generate the audit plan first. The department reads them, with the
+          rest of these Terms of Reference, on their AuditLens dashboard.
+        </div>
+      ) : null}
 
       {err ? <div className="ai-err">{err}</div> : null}
     </ModalFrame>

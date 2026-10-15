@@ -58,7 +58,7 @@ type NavItem = {
 
 /* Each role sees only the items it can access (visibleViews), so one list serves both: Internal
    Audit's Main is Dashboard / Audits & Reports / Remediation Tracker, an action owner's is
-   Dashboard / Audits — their engagements come first, then their observations under their own
+   Dashboard / Audit Reports — their engagements come first, then their observations under their own
    heading, then the fraud tracker under its own, rather than everything under one "Portal" label. */
 const SECTIONS: { label: string; items: NavItem[] }[] = [
   {
@@ -66,7 +66,7 @@ const SECTIONS: { label: string; items: NavItem[] }[] = [
     items: [
       { view: "dashboard", label: "Dashboard", icon: DashboardSquare01Icon },
       { view: "audits", label: "Audits & Reports", icon: File01Icon },
-      { view: "myaudits", label: "Audits", icon: Audit01Icon },
+      { view: "myaudits", label: "Audit Reports", icon: Audit01Icon },
       { view: "tracker", label: "Remediation Tracker", icon: TaskDaily01Icon },
     ],
   },

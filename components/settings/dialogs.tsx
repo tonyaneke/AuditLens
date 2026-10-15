@@ -11,6 +11,7 @@ import BusyButton from "@/components/feedback/BusyButton";
 import { toast } from "@/components/feedback/ToastHost";
 import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import { loadDirectory, type DirectoryUser } from "@/lib/client/directory";
+import { normalizeDept } from "@/lib/dept-scope";
 import { uid } from "@/lib/workspace/selectors";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 import {
@@ -28,6 +29,14 @@ import {
 const STAFF_SORTED = STAFF_DIRECTORY.slice().sort((a, b) => a[0].localeCompare(b[0]));
 
 /* ---------------- shared bits ---------------- */
+
+/** A department name in the roster's spelling when the roster has that department ("Procurement
+ *  Department" → "Procurement"), otherwise as given. Every action-owner record of a department
+ *  should carry the same name, or each list built from them shows the department twice. */
+function rosterSpelling(name: string): string {
+  const k = normalizeDept(name);
+  return (k && DEPARTMENTS.find((d) => normalizeDept(d) === k)) || name;
+}
 
 /** deptOptionsHTML: canonical departments + preserve a non-canonical existing value. */
 function DeptOptions({ sel }: { sel: string }) {
@@ -121,7 +130,8 @@ export function DepartmentDialog({
     : undefined;
   const emailLocked = !!(existing && existing.headUserId);
 
-  const [dept, setDept] = useState(existing?.name || "");
+  // An old spelling opens as the roster's, so saving the edit unifies it rather than offering both.
+  const [dept, setDept] = useState(rosterSpelling(existing?.name || ""));
   const [headName, setHeadName] = useState(existing?.headName || "");
   const [headEmail, setHeadEmail] = useState(existing?.headEmail || "");
   const [err, setErr] = useState("");
@@ -218,7 +228,7 @@ export function DepartmentDialog({
     >
       <label>Department name *</label>
       <select value={dept} onChange={(e) => setDept(e.target.value)}>
-        <DeptOptions sel={existing?.name || ""} />
+        <DeptOptions sel={rosterSpelling(existing?.name || "")} />
       </select>
       <div className="f2">
         <div>

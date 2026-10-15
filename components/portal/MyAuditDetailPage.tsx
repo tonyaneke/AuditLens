@@ -13,22 +13,23 @@
 import { usePageChrome } from "@/components/chrome/PageChrome";
 import { useUser } from "@/components/chrome/UserContext";
 import { useModal } from "@/components/modals/ModalProvider";
-import { BackButton } from "@/components/ui";
+import { BackButton, Kpi } from "@/components/ui";
 import { DetailHero, Meta, Section } from "@/components/audits/detail-parts";
 import { OpenRequestFromQuery, RequestTable } from "@/components/comms/AuditComms";
 import { NewRequestDialog } from "@/components/comms/lazy";
 import { deptLabel } from "@/lib/dept-scope";
 import {
   CLOSEOUT_SECTIONS,
-  DEFAULT_REPORTING_TO,
   auditTypeLabel,
+  closeoutSectionTag,
   engagementTitle,
   myEngagementDepartments,
   portalRequests,
   reachesMe,
   requestAwaiting,
 } from "@/lib/workspace/audit-comms";
-import { fmtDate } from "@/lib/workspace/selectors";
+import { portalObsList } from "@/lib/workspace/portal";
+import { fmtDate, type ObsWithContext } from "@/lib/workspace/selectors";
 import { useWorkspace } from "@/lib/workspace/WorkspaceProvider";
 
 const BACK = "/portal/audits";
@@ -48,6 +49,29 @@ function ListSection({ title, items }: { title: string; items: string[] | undefi
         </ul>
       </div>
     </section>
+  );
+}
+
+/** The report's "Summary of findings" as the department sees it: the observations raised against
+ *  their department in this engagement (the only ones the server serves them), with Closed as the
+ *  fourth card where Internal Audit's report shows its overall risk rating. Live, unlike the
+ *  conclusion's sections — it is the department's own remediation, which carries on after the
+ *  conclusion. Inside the Conclusion once there is one; before that, its own section. Shown at
+ *  zero too (user's call): four zeros say "nothing raised against you" as plainly as a sentence. */
+function FindingsSummary({ obs, title = true }: { obs: ObsWithContext[]; title?: boolean }) {
+  const open = obs.filter((o) => o.status !== "Closed").length;
+  const closed = obs.length - open;
+  const keyExposures = obs.filter((o) => o.criticality === "Critical" || o.criticality === "High").length;
+  return (
+    <div className="findings-summary">
+      {title ? <h4 className="findings-summary-title">Summary of findings</h4> : null}
+      <div className="findings-summary-cards">
+        <Kpi tone="base" label="Observations" value={obs.length} sub={`${open} open · ${closed} closed`} icon="obs" />
+        <Kpi tone="warn" label="Key exposures" value={keyExposures} sub="Critical & High" icon="alert" />
+        <Kpi tone="accent" label="Open actions" value={open} sub="in progress" icon="audit" />
+        <Kpi tone="good" label="Closed" value={closed} sub="resolved" icon="check" />
+      </div>
+    </div>
   );
 }
 
@@ -77,7 +101,7 @@ export default function MyAuditDetailPage({ auditId }: { auditId: string }) {
   const requests = portalRequests(db, user, a.id);
   const waiting = requests.filter((r) => requestAwaiting(r) === "dept").length;
   const mine = myEngagementDepartments(db, a, user);
-  const reporting = tor.reportingTo || DEFAULT_REPORTING_TO;
+  const findings = portalObsList(db, user).filter((o) => o._a.id === a.id);
 
   return (
     <div className="obs-detail-page anim-fade-in">
@@ -123,17 +147,26 @@ export default function MyAuditDetailPage({ auditId }: { auditId: string }) {
           department already received it (bell and e-mail), and its objectives and scope are the
           sections below. */}
       <div className="obs-detail-sections">
-        <Section title="Background & purpose" text={tor.background} />
         <ListSection title="Audit objectives" items={plan.objectives} />
         <Section title="Scope" text={plan.scope} />
         <ListSection title="Key risks to be assessed" items={plan.keyRisks} />
         <Section title="Areas out of scope" text={tor.outOfScope} />
         <Section title="Information & access required" text={tor.infoRequired} />
-        <Section
-          title="Reporting"
-          text={`Observations will be discussed with the relevant process owners. A draft report will be issued for management responses, and the final report distributed to ${reporting}.`}
-        />
       </div>
+
+      {!closeout ? (
+        <section className="comms-major" aria-labelledby="findings-h">
+          <h3 id="findings-h" className="section-title">
+            Summary of findings
+          </h3>
+          <p className="hint" style={{ margin: 0 }}>
+            {findings.length
+              ? "Observations raised against your department in this engagement so far. Each one is on your Internal Observations tab."
+              : "No observations have been raised against your department in this engagement yet. Any that are will be counted here."}
+          </p>
+          <FindingsSummary obs={findings} title={false} />
+        </section>
+      ) : null}
 
       {closeout ? (
         <section className="comms-major" aria-labelledby="conclusion-h">
@@ -145,9 +178,10 @@ export default function MyAuditDetailPage({ auditId }: { auditId: string }) {
             executive summary{closeout.reportTitle ? <> of <i>{closeout.reportTitle}</i></> : null}. Thank you for
             your cooperation — agreed actions continue to be tracked on your Internal Observations tab.
           </p>
+          <FindingsSummary obs={findings} />
           <div className="obs-detail-sections">
             {CLOSEOUT_SECTIONS.map(([k, title]) => (
-              <Section key={k} title={title} text={closeout[k]} />
+              <Section key={k} title={title} text={closeout[k]} tag={closeoutSectionTag(closeout, k)} />
             ))}
           </div>
         </section>

@@ -5,7 +5,7 @@ import {
   MAX_FAILED_ATTEMPTS,
   adminLoginEnabled,
   burnVerification,
-  normalizeUsername,
+  normalizeEmail,
   verifyPassword,
 } from "@/lib/admin-credential";
 import { writeAuditLog } from "@/lib/audit-log";
@@ -20,7 +20,7 @@ export const runtime = "nodejs";
    off switch (ADMIN_LOGIN_ENABLED=false), admin accounts only, account lock-out after repeated failures, an IP
    throttle in front of that, 8-hour sessions, and the whole of it in the audit trail. */
 
-const REFUSED = "Incorrect username or password.";
+const REFUSED = "Incorrect email or password.";
 
 /* Per-IP throttle, in memory. It is the outer layer only: it resets on restart and trusts the
    first X-Forwarded-For hop, which a client can write. The lock-out on the account itself is kept
@@ -61,36 +61,39 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Too many attempts. Try again later." }, { status: 429 });
   }
 
-  let username = "";
+  let email = "";
   let password = "";
   try {
     const body = await request.json();
-    username = normalizeUsername(body?.username);
+    email = normalizeEmail(body?.email);
     password = typeof body?.password === "string" ? body.password : "";
   } catch {
     return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
   }
-  if (!username || !password) {
-    return NextResponse.json({ error: "Enter the username and password." }, { status: 400 });
+  if (!email || !password) {
+    return NextResponse.json({ error: "Enter the email and password." }, { status: 400 });
   }
 
-  const cred = await prisma.adminCredential.findUnique({ where: { username }, include: { user: true } });
+  /* By the account's own email. A member of staff's address finds their account but no credential,
+     and is refused exactly like an address nobody has — same answer, same scrypt-sized delay. */
+  const account = await prisma.user.findUnique({ where: { email }, include: { adminCredential: true } });
+  const cred = account?.adminCredential;
 
-  if (!cred) {
+  if (!account || !cred) {
     await burnVerification(password);
     noteFailure(ip);
-    // The username typed is NOT recorded: a password typed into the wrong box would land in the log.
+    // What was typed is NOT recorded: a password typed into the wrong box would land in the log.
     await writeAuditLog({
-      user: { id: "", name: "Unknown admin username", email: "", authMethod: ADMIN_AUTH_METHOD },
+      user: { id: "", name: "Unknown admin sign-in", email: "", authMethod: ADMIN_AUTH_METHOD },
       action: "auth.login_failed",
       category: "auth",
-      summary: "Admin sign-in refused: no admin account has that username",
+      summary: "Admin sign-in refused: no Admin profile has that email",
       metadata: { method: ADMIN_AUTH_METHOD },
     }).catch(() => {});
     return NextResponse.json({ error: REFUSED }, { status: 401 });
   }
 
-  const actor = { id: cred.user.id, name: cred.user.name, email: cred.user.email, authMethod: ADMIN_AUTH_METHOD };
+  const actor = { id: account.id, name: account.name, email: account.email, authMethod: ADMIN_AUTH_METHOD };
 
   if (cred.lockedUntil && cred.lockedUntil > new Date()) {
     noteFailure(ip);
@@ -99,7 +102,7 @@ export async function POST(request: NextRequest) {
       action: "auth.login_blocked",
       category: "auth",
       summary: `Admin sign-in refused: the account is locked after repeated wrong passwords`,
-      metadata: { method: ADMIN_AUTH_METHOD, username, lockedUntil: cred.lockedUntil.toISOString() },
+      metadata: { method: ADMIN_AUTH_METHOD, lockedUntil: cred.lockedUntil.toISOString() },
     }).catch(() => {});
     return NextResponse.json(
       { error: `Too many wrong passwords. Try again in ${minutesUntil(cred.lockedUntil)} minute(s).` },
@@ -129,7 +132,7 @@ export async function POST(request: NextRequest) {
       summary: locks
         ? `Admin account locked for ${LOCKOUT_MINUTES} minutes after ${MAX_FAILED_ATTEMPTS} wrong passwords in a row`
         : `Admin sign-in refused: wrong password (${failedAttempts} of ${MAX_FAILED_ATTEMPTS} before lock-out)`,
-      metadata: { method: ADMIN_AUTH_METHOD, username, failedAttempts },
+      metadata: { method: ADMIN_AUTH_METHOD, failedAttempts },
     }).catch(() => {});
     return locks
       ? NextResponse.json({ error: `Too many wrong passwords. Try again in ${LOCKOUT_MINUTES} minutes.` }, { status: 429 })
@@ -139,13 +142,13 @@ export async function POST(request: NextRequest) {
   /* Checked only after the password, so these answers are given to nobody who does not already
      hold it. The role check is what keeps this route from ever signing in a member of staff, even
      if a credential row were somehow attached to their account. */
-  if (cred.user.role !== "admin" || cred.user.active === false) {
+  if (account.role !== "admin" || account.active === false) {
     await writeAuditLog({
       user: actor,
       action: "auth.login_blocked",
       category: "auth",
-      summary: `Admin sign-in refused: the account is ${cred.user.active === false ? "inactive" : "not an admin account"}`,
-      metadata: { method: ADMIN_AUTH_METHOD, username, role: cred.user.role, active: cred.user.active },
+      summary: `Admin sign-in refused: the account is ${account.active === false ? "inactive" : "not an admin account"}`,
+      metadata: { method: ADMIN_AUTH_METHOD, role: account.role, active: account.active },
     }).catch(() => {});
     return NextResponse.json({ error: "This account cannot sign in here." }, { status: 403 });
   }
@@ -156,7 +159,7 @@ export async function POST(request: NextRequest) {
   });
 
   const sessionUser: SessionUser = {
-    ...userToSession(cred.user),
+    ...userToSession(account),
     sessionId: newSessionId(),
     authMethod: ADMIN_AUTH_METHOD,
   };
@@ -167,7 +170,7 @@ export async function POST(request: NextRequest) {
     action: "auth.login",
     category: "auth",
     summary: `${sessionUser.name} signed in with the Admin password`,
-    metadata: { method: ADMIN_AUTH_METHOD, username },
+    metadata: { method: ADMIN_AUTH_METHOD },
   }).catch(() => {});
 
   const res = NextResponse.json({ ok: true });

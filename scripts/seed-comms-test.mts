@@ -6,20 +6,25 @@
 //   npx tsx scripts/seed-comms-test.mts --cleanup            → DRY RUN of the tear-down.
 //   npx tsx scripts/seed-comms-test.mts --cleanup --apply    → tears it down.
 //
-// SET-UP changes the tester's account (TESTER) only:
+// SET-UP changes the tester's account (TESTER) and adds one workspace record:
 //   - role → admin, so ONE account can act as Internal Audit (Head view) and switch to the
 //     action-owner view to play the department;
 //   - TEST_DEPT added to extraDepartments — a department nobody else belongs to. It then appears in
 //     the notice / conclusion department list (commDepartmentOptions offers departments people
 //     belong to), and addressing ONLY it means every notice, request and conclusion reaches only
-//     the tester. Their home department, and everyone in it, is untouched.
+//     the tester. Their home department, and everyone in it, is untouched;
+//   - an action-owner record "<tester> · TEST_DEPT", so TEST_DEPT is in the owner dropdown and
+//     observations can be raised against it (Settings → Add Action Owner offers only the roster's
+//     departments). While it exists it is in EVERY owner dropdown, and approved test observations
+//     count in the tracker and the dashboards like real ones — tear down when done.
 // The account's previous role and extraDepartments are saved next to the snapshots so the
 // tear-down restores them exactly. The test audit itself is created in the app by the tester.
 //
 // TEAR-DOWN soft-deletes every audit the test touched — any audit whose notice or conclusion names
 // TEST_DEPT, or whose Process / Department is TEST_DEPT — and the requests on them (the app's usual
-// delete: kept in storage, never served), removes the notifications about them, and restores the
-// account.
+// delete: kept in storage, never served), the TEST_DEPT action-owner record and any observation
+// raised against it in another audit; removes the notifications about the test audits; and
+// restores the account.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -67,17 +72,47 @@ if (!cleanup) {
 
   const wantExtra = namesTestDept(testerExtra) ? testerExtra : [...testerExtra, TEST_DEPT];
   const change = tester.role !== "admin" || wantExtra.length !== testerExtra.length;
-  if (!change) {
+
+  const { data: ws, updatedAt } = await readWorkspaceVersioned();
+  const hasOwner = arr(ws.departments).some(
+    (d) => !d.deletedAt && normalizeDept(d.name) === KEY && String(d.headUserId) === tester.id,
+  );
+
+  if (!change && hasOwner) {
     console.log("\n  Already set up. Nothing to do.");
   } else {
-    console.log(`  ~ role ${tester.role} → admin; extra departments → ${wantExtra.join(", ")}`);
+    if (change) console.log(`  ~ role ${tester.role} → admin; extra departments → ${wantExtra.join(", ")}`);
+    if (!hasOwner) {
+      console.log(`  + action owner "${tester.name} · ${TEST_DEPT}" — in every owner dropdown until the tear-down`);
+    }
     if (ctx.apply) {
-      // Saved only on the first set-up, so a second --apply cannot overwrite the original state.
-      if (!fs.existsSync(statePath)) {
-        writeSnapshotFile(STATE_FILE, JSON.stringify({ email: TESTER, role: tester.role, extraDepartments: testerExtra }, null, 2));
+      if (change) {
+        // Saved only on the first set-up, so a second --apply cannot overwrite the original state.
+        if (!fs.existsSync(statePath)) {
+          writeSnapshotFile(STATE_FILE, JSON.stringify({ email: TESTER, role: tester.role, extraDepartments: testerExtra }, null, 2));
+        }
+        await prisma.user.update({ where: { id: tester.id }, data: { role: "admin", extraDepartments: wantExtra } });
       }
-      await prisma.user.update({ where: { id: tester.id }, data: { role: "admin", extraDepartments: wantExtra } });
-      console.log("\n  Account updated. Sign out and back in so the session picks up the new role.");
+      if (!hasOwner) {
+        const after = structuredClone(ws) as Workspace;
+        after.departments = [
+          ...arr(after.departments),
+          {
+            id: `test-dept-${tester.id}`,
+            name: TEST_DEPT,
+            headName: tester.name,
+            headEmail: tester.email,
+            headUserId: tester.id,
+            createdAt: new Date().toISOString(),
+          },
+        ];
+        await writeWorkspace(ws, after, "seed-comms-test", { expectUpdatedAt: updatedAt });
+      }
+      console.log(
+        change
+          ? "\n  Account updated. Sign out and back in so the session picks up the new role."
+          : "\n  Set up. Refresh AuditLens to see the new action owner.",
+      );
     } else {
       console.log("\n  DRY RUN — nothing written. Re-run with --apply to set it up.");
     }
@@ -106,6 +141,25 @@ if (!cleanup) {
     if (!ids.has(String(r.auditId)) || r.deletedAt) continue;
     Object.assign(r, stamp);
     console.log(`  - request ${r.ref || r.id} "${r.subject}" (soft-deleted)`);
+    changes++;
+  }
+  // The test action owner, and anything raised against it in an audit that is not itself a test
+  // audit (those go with their audit above) — or it would sit in the tracker with no department.
+  const testDeptIds = new Set(arr(after.departments).filter((d) => normalizeDept(d.name) === KEY).map((d) => String(d.id)));
+  for (const a of arr(after.audits)) {
+    if (a.deletedAt) continue;
+    for (const r of arr(a.reports))
+      for (const o of arr(r.observations)) {
+        if (o.deletedAt || !testDeptIds.has(String(o.departmentId))) continue;
+        Object.assign(o, stamp);
+        console.log(`  - observation ${o.ref || o.id} "${o.title}" in "${a.name}" (soft-deleted)`);
+        changes++;
+      }
+  }
+  for (const d of arr(after.departments)) {
+    if (d.deletedAt || !testDeptIds.has(String(d.id))) continue;
+    Object.assign(d, stamp);
+    console.log(`  - action owner "${d.headName} · ${d.name}" (soft-deleted)`);
     changes++;
   }
   const notifs = arr(after.notifications);

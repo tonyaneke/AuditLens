@@ -5,7 +5,7 @@ import { FormEvent, useEffect, useState } from "react";
 export default function AdminLoginForm() {
   const [logo, setLogo] = useState("/org-logo.png");
   const [org, setOrg] = useState("Audit Management System");
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -29,7 +29,7 @@ export default function AdminLoginForm() {
       const res = await fetch("/api/auth/admin-login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ email, password }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -61,15 +61,15 @@ export default function AdminLoginForm() {
 
         <p className="login-sub">For the AuditLens Admin profile only.</p>
         <form className="login-form" onSubmit={onSubmit}>
-          <label htmlFor="adminUsername">Username</label>
+          <label htmlFor="adminEmail">Email</label>
           <input
-            id="adminUsername"
-            type="text"
+            id="adminEmail"
+            type="email"
             autoComplete="username"
             autoCapitalize="none"
             spellCheck={false}
-            value={username}
-            onChange={(ev) => setUsername(ev.target.value)}
+            value={email}
+            onChange={(ev) => setEmail(ev.target.value)}
             required
           />
           <label htmlFor="adminPassword">Password</label>

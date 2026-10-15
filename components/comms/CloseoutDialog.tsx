@@ -3,10 +3,10 @@
 /* Issue the audit conclusion — the closing communication at the end of an engagement.
 
    Internal Audit picks the FINAL report it comes from and the departments it goes to. The parts of
-   that report's executive summary a department is given (1.1, areas out of scope, 1.2, 1.3, 1.5 —
-   never the 1.4 opinion) are shown exactly as they will be sent, and snapshotted when issued: the
-   report is the one place they are edited (the executive summary's Edit / Generate), so this dialog
-   only previews them. Re-issue after editing the report to send the revised summary.
+   that report's executive summary a department is given (1.2, 1.3, 1.4 with its assurance rating,
+   1.5 — not 1.1 or the areas out of scope) are shown exactly as they will be sent, and snapshotted
+   when issued: the report is the one place they are edited (the executive summary's Edit /
+   Generate), so this dialog only previews them. Re-issue after editing the report to send the revised summary.
 
    The confirmation is inline, as in NoticeDialog: modal.confirm() would unmount this dialog. */
 
@@ -22,6 +22,7 @@ import { deptLabel } from "@/lib/dept-scope";
 import {
   CLOSEOUT_SECTIONS,
   closeoutFromReport,
+  closeoutSectionTag,
   commDepartmentOptions,
   engagementTitle,
   finalReports,
@@ -94,9 +95,21 @@ export default function CloseoutDialog({ auditId, reportId }: { auditId: string;
       mutate((d) => {
         const cur = (d.audits || []).find((x) => x.id === auditId);
         if (!cur) return;
-        const again = !!cur.closeout?.issuedAt;
-        cur.closeout = again && cur.closeout
-          ? { ...cur.closeout, ...content, departments: depts, revisedAt: now, revisedBy: user.id, revisedByName: user.name }
+        const prev = cur.closeout;
+        const again = !!prev?.issuedAt;
+        // Rebuilt rather than spread over the old snapshot, so sections no longer sent (1.1 and the
+        // areas out of scope, on conclusions issued before they were dropped) do not ride along.
+        cur.closeout = again && prev
+          ? {
+              ...content,
+              departments: depts,
+              issuedAt: prev.issuedAt,
+              issuedBy: prev.issuedBy,
+              issuedByName: prev.issuedByName,
+              revisedAt: now,
+              revisedBy: user.id,
+              revisedByName: user.name,
+            }
           : { ...content, departments: depts, issuedAt: now, issuedBy: user.id, issuedByName: user.name };
         notifyCloseoutIssued(d, cur, depts, again);
       });
@@ -141,7 +154,7 @@ export default function CloseoutDialog({ auditId, reportId }: { auditId: string;
       <p className="hint" style={{ marginTop: 0 }}>
         {issued && prior
           ? `Issued ${fmtDate(prior.issuedAt)}${prior.issuedByName ? ` by ${prior.issuedByName}` : ""}${prior.revisedAt ? ` · re-issued ${fmtDate(prior.revisedAt)}` : ""} to ${prior.departments.map(deptLabel).join(", ")}. Re-issuing sends the summary below again and replaces what the department sees.`
-          : `Tells the department the ${engagementTitle(audit)} has concluded and shows them the executive summary below on their Audits tab. The internal audit opinion (1.4) is not included.`}
+          : `Tells the department the ${engagementTitle(audit)} has concluded and shows them the executive summary below, including the internal audit opinion (1.4), on their Audit Reports tab.`}
       </p>
 
       {!finals.length ? (
@@ -204,7 +217,9 @@ export default function CloseoutDialog({ auditId, reportId }: { auditId: string;
                 {CLOSEOUT_SECTIONS.map(([k, title]) =>
                   content[k] ? (
                     <div className="obs-field" key={k}>
-                      <div className="ttl">{title}</div>
+                      <div className="ttl">
+                        {title} {closeoutSectionTag(content, k) ? <span className="tag">{closeoutSectionTag(content, k)}</span> : null}
+                      </div>
                       <div className="txt">
                         <RichText text={content[k]} />
                       </div>

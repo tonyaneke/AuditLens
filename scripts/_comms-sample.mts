@@ -32,8 +32,9 @@ export function sampleConcludedAudit(tester: Tester): { audit: Audit; requests: 
       "Vendor onboarding forms were complete and approved for all 25 vendors sampled.\nEvery payment sampled was approved in the system within delegated limits.\nThe vendor master file is reviewed monthly by Finance, with evidence retained.",
     areasForImprovement:
       "Automate the three-way match so that manual overrides are system-logged and reviewed.\nIntroduce a quarterly review of dormant vendors on the master file.\nAgree a service level for supplier statement reconciliations.",
-    auditOpinion: "Sample opinion — the 1.4 opinion is never sent to the department.",
-    assuranceLevel: "Satisfactory",
+    auditOpinion:
+      "Based on the audit work performed, Internal Audit provides High Assurance that controls over vendor onboarding, invoice processing and payment approval are adequately designed and operating effectively. The improvement opportunities noted above would strengthen the control environment further but do not represent significant exposures.",
+    assuranceLevel: "High assurance",
     conclusion:
       "Controls over vendor payments are generally adequate and operating effectively. Management has agreed the improvement actions above, with target dates by 31 December 2026, and Internal Audit will follow them up through the platform.",
     execSummaryNarrative: "",

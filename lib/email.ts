@@ -1,3 +1,5 @@
+import { ADMIN_PROFILE_EMAIL } from "./admin-credential";
+
 // Hardcoded sender for ALL AuditLens mail — deliberately ignores SENDGRID_SENDER so no
 // environment misconfiguration can break sending. The credicorp.org domain is authenticated
 // in SendGrid, so this address is always accepted.
@@ -61,11 +63,11 @@ function brandedEmail(opts: {
   </div>`.trim();
 }
 
-/* An address on the reserved .invalid TLD (RFC 2606) belongs to an account with no mailbox — the
-   Admin profile (scripts/seed-admin-profile.mts). It is a Head-level recipient, so the fan-out
-   reaches it; sending would only bounce and count against the sender's reputation. */
+/* The Admin profile's address is a sign-in name, not a mailbox (lib/admin-credential.ts). It is a
+   Head-level recipient, so the fan-out reaches it; sending would either bounce or hand audit
+   notifications to whoever receives mail for that domain. */
 function deliverable(email: string | null | undefined): boolean {
-  return !!email && !/\.invalid$/i.test(email.trim());
+  return !!email && email.trim().toLowerCase() !== ADMIN_PROFILE_EMAIL;
 }
 
 export async function sendWelcomeEmail(params: WelcomeEmailParams) {

@@ -16,6 +16,7 @@ import { deptLabel } from "@/lib/dept-scope";
 import {
   CLOSEOUT_SECTIONS,
   closeoutIssued,
+  closeoutSectionTag,
   engagementDepartments,
   finalReports,
   lastActivity,
@@ -147,7 +148,9 @@ export function CloseoutView({ closeout }: { closeout: AuditCloseout }) {
       {CLOSEOUT_SECTIONS.map(([k, title]) =>
         closeout[k] ? (
           <div className="obs-field" key={k}>
-            <div className="ttl">{title}</div>
+            <div className="ttl">
+              {title} {closeoutSectionTag(closeout, k) ? <span className="tag">{closeoutSectionTag(closeout, k)}</span> : null}
+            </div>
             <div className="txt">
               <RichText text={closeout[k]} />
             </div>
@@ -241,7 +244,7 @@ export function AuditCommsCard({ audit }: { audit: Audit }) {
         <p className="hint" style={{ marginBottom: 0 }}>
           No notice yet. Open the <b>Terms of Reference</b> — it is filled from this audit&apos;s plan —
           choose the department it is addressed to, and save it to issue the notice. The department sees
-          the engagement on its Audits tab, and can exchange requests with you, once it is issued.
+          the engagement on its Audit Reports tab, and can exchange requests with you, once it is issued.
         </p>
       )}
 

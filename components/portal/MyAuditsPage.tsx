@@ -91,7 +91,7 @@ function Bucket({ title, audits, empty, first }: { title: string; audits: Audit[
 }
 
 export default function MyAuditsPage() {
-  usePageChrome({ title: "Audits" });
+  usePageChrome({ title: "Audit Reports" });
   const { db } = useWorkspace();
   const user = useUser();
   const audits = portalAudits(db, user);

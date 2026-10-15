@@ -7,7 +7,7 @@
  *   scope) and issued to one or more departments at the start of the engagement.
  *
  *   The CONCLUSION is issued at the end, from a FINAL report: the parts of its executive summary the
- *   department is given (1.1, areas out of scope, 1.2, 1.3, 1.5), snapshotted as sent.
+ *   department is given (1.2, 1.3, 1.4 with its assurance rating, 1.5), snapshotted as sent.
  *
  *   Issuing either is what puts the engagement on those departments' portal (Audits tab) — see
  *   lib/audit-comms-scope.ts for the shared rule.
@@ -26,7 +26,6 @@ import { directory, headUsers, ownerEmailFor } from "@/lib/client/directory";
 import { emailNotify } from "@/lib/client/notify";
 import type { SessionUser } from "@/lib/permissions";
 import { isInternalAudit } from "./observations";
-import { raLinkIds } from "./ra";
 import { fmtDate, uid } from "./selectors";
 import type {
   Audit,
@@ -34,7 +33,6 @@ import type {
   AuditRequest,
   AuditRequestMessage,
   AuditSide,
-  AuditUniverseUnit,
   Report,
   WorkspaceDb,
 } from "./types";
@@ -80,13 +78,12 @@ export function noticeIssued(a: Audit | undefined): boolean {
    types:
      addressed to       the departments the notice goes to (one picker for both)
      planned timing     the audit's own quarter ("Q2 2027" → 1 Apr – 30 Jun 2027) until narrowed
-     background         the annual plan's rationale for the engagement this audit belongs to
-     reporting channel  the house default below
-     out of scope /     drafted by AI with the audit plan, or from it later (torDraftPrompt) —
-     information needed nothing deterministic knows them */
+     reporting channel  always the house wording below — the TOR no longer asks for it
+     out of scope /     written by the auditor — nothing deterministic knows them
+     information needed */
 
-/** Who the final report goes to unless the auditor says otherwise — the wording the TOR export
- *  has always fallen back to. */
+/** Who the final report goes to — the TOR's Reporting section, in the Word export and on the
+ *  department's page alike. */
 export const DEFAULT_REPORTING_TO = "Executive Management and the Board Audit Committee";
 
 /** "Q2 2027" (or "… - Q2" with a year elsewhere in the text) → the quarter's first and last day. */
@@ -109,67 +106,9 @@ export function formatTiming(from: string | undefined, to: string | undefined): 
   return f && t ? `${f} – ${t}` : f ? `From ${f}` : t ? `Until ${t}` : "";
 }
 
-/** The annual-plan engagement (Audit Risk Assessment) this audit was created under, if linked. */
-export function planUnitFor(db: WorkspaceDb, a: Audit): AuditUniverseUnit | undefined {
-  return (db.auditUniverse || []).find((u) => !u.deletedAt && raLinkIds(u).includes(a.id));
-}
-
-/** Background & purpose from the annual plan: why the engagement is in the plan, in the plan's own
- *  words. Empty when the audit is not linked to the plan — then AI drafting fills it. */
-export function defaultBackground(db: WorkspaceDb, a: Audit): string {
-  const u = planUnitFor(db, a);
-  const why = String(u?.rationale || "").trim();
-  if (!u || !why) return "";
-  const year = /20\d{2}/.exec(String(a.period || ""))?.[0] || String(db.planYear || "");
-  return `This engagement forms part of the ${year ? year + " " : ""}risk-based internal audit plan ("${u.name}"). ${why}`;
-}
-
 /** The department addressed in the TOR export: "Head of Department — Finance, IT". */
 export function addressedToLine(departments: readonly string[]): string {
   return departments.length ? `Head of Department — ${departments.map(deptLabel).join(", ")}` : "";
-}
-
-export type TorDraft = { background: string; outOfScope: string; infoRequired: string };
-
-/** The AI brief for the TOR's three judgement fields, from everything the audit already knows. */
-export function torDraftPrompt(db: WorkspaceDb, a: Audit): string {
-  const plan = a.plan || {};
-  const unit = planUnitFor(db, a);
-  const tests = (plan.tests || [])
-    .slice(0, 25)
-    .map((t) => `- ${String(t.title || t.name || "")}${t.population ? ` (population: ${String(t.population)})` : ""}`)
-    .join("\n");
-  return `Act as the internal audit function of ${String(db.org || "the organisation")}. Draft three sections of the Terms of Reference for the engagement below. Write for the management of the audited department: plain, professional, specific to this engagement.
-
-Audit: ${a.name}
-Basis: ${auditTypeLabel(a)}
-Process / Department: ${a.area || "(not specified)"}
-Period: ${a.period || "(not specified)"}
-Annual plan rationale: ${String(unit?.rationale || "(none)")}
-Scope: ${String(plan.scope || "(not yet defined)")}
-Objectives:
-${(plan.objectives || []).map((o) => `- ${o}`).join("\n") || "(none)"}
-Key risks:
-${(plan.keyRisks || []).map((r) => `- ${r}`).join("\n") || "(none)"}
-Planned tests:
-${tests || "(none)"}
-
-Return ONLY a JSON object (no commentary) with these exact keys:
-{
-  "background": "one or two short paragraphs: why this engagement is being performed and what it aims to give management assurance over",
-  "outOfScope": ["an area deliberately excluded from this engagement", "another"],
-  "infoRequired": ["a document, report, data extract or system access the audit team will need from management", "another"]
-}`;
-}
-
-/** The AI's answer as the dialog's three text fields — lists become one item per line. */
-export function parseTorDraft(raw: unknown): TorDraft | null {
-  if (!raw || typeof raw !== "object") return null;
-  const o = raw as Record<string, unknown>;
-  const lines = (v: unknown) =>
-    Array.isArray(v) ? v.map((x) => String(x).trim()).filter(Boolean).join("\n") : String(v || "").trim();
-  const draft = { background: lines(o.background), outOfScope: lines(o.outOfScope), infoRequired: lines(o.infoRequired) };
-  return draft.background || draft.outOfScope || draft.infoRequired ? draft : null;
 }
 
 /** What a notice or conclusion can be addressed to: the roster first, then any department someone
@@ -209,34 +148,39 @@ export function suggestNoticeDepartments(a: Audit, departments: readonly string[
 /* ---------------- the audit conclusion ---------------- */
 
 /** The executive-summary parts a department is given, in report order, with the report's own
- *  numbering. 1.4 (the internal audit opinion and assurance rating) is deliberately not among them. */
+ *  numbering. 1.1 (objective & scope) and the areas out of scope are not among them — the department
+ *  already has those from the Terms of Reference. 1.4 carries the assurance rating as its tag
+ *  (closeoutSectionTag), as it does on the report. */
 export const CLOSEOUT_SECTIONS: readonly [CloseoutSectionKey, string][] = [
-  ["objective", "1.1 Audit objective & scope"],
-  ["outOfScope", "Areas out of scope"],
   ["strengths", "1.2 Highlights of strengths"],
   ["areasForImprovement", "1.3 Areas for strategic improvement"],
+  ["auditOpinion", "1.4 Internal audit opinion"],
   ["conclusion", "1.5 Conclusion"],
 ];
 
-export type CloseoutSectionKey = "objective" | "outOfScope" | "strengths" | "areasForImprovement" | "conclusion";
-export type CloseoutContent = Pick<AuditCloseout, "reportId" | "reportTitle" | CloseoutSectionKey>;
+export type CloseoutSectionKey = "strengths" | "areasForImprovement" | "auditOpinion" | "conclusion";
+export type CloseoutContent = Pick<AuditCloseout, "reportId" | "reportTitle" | "assuranceLevel" | CloseoutSectionKey>;
+
+/** The tag beside a section's title: the assurance rating on 1.4, nothing elsewhere. */
+export function closeoutSectionTag(c: Pick<AuditCloseout, "assuranceLevel">, k: CloseoutSectionKey): string {
+  return k === "auditOpinion" ? String(c.assuranceLevel || "").trim() : "";
+}
 
 /** Reports the conclusion may be issued from — a draft's executive summary is not the conclusion. */
 export function finalReports(a: Audit): Report[] {
   return (a.reports || []).filter((r) => r.status === "Final");
 }
 
-/** The executive-summary parts as they stand on the report now. 1.1 falls back to the report's
- *  scope exactly as the report page and the Word export do. */
+/** The executive-summary parts as they stand on the report now. */
 export function closeoutFromReport(r: Report): CloseoutContent {
   const t = (v: unknown) => String(v || "").trim();
   return {
     reportId: r.id,
     reportTitle: r.title,
-    objective: t(r.objective || r.scope),
-    outOfScope: t(r.outOfScope),
     strengths: t(r.strengths),
     areasForImprovement: t(r.areasForImprovement),
+    auditOpinion: t(r.auditOpinion),
+    assuranceLevel: t(r.assuranceLevel),
     conclusion: t(r.conclusion),
   };
 }
@@ -464,7 +408,9 @@ export type CommsMessage = {
 
 export type RequestEvent = "raised" | "reply" | "update_requested" | "closed" | "reopened";
 
-/** The engagement notice: the auditor's message (noticeTemplate unless they changed it). */
+/** The engagement notice: Internal Audit's standard wording (noticeTemplate), as stored when it was
+ *  issued. Notices issued before the TOR stopped offering an editable message may carry the
+ *  auditor's own text. */
 export function noticeMessage(a: Audit, reissued: boolean): CommsMessage {
   const title = engagementTitle(a);
   const message = emphasiseFirst(a.notice?.text || noticeTemplate(a), title);

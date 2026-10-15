@@ -23,6 +23,12 @@ import { randomBytes, scrypt as scryptCb, timingSafeEqual, type ScryptOptions } 
  *
  * Pure node:crypto — no Prisma — so the seeding script can import it without a database client. */
 
+/** The Admin profile's address — what it signs in with (scripts/seed-admin-profile.mts creates it).
+ *  It is a sign-in name, not a mailbox: lib/email.ts never sends to it, because the profile counts
+ *  as a Head for approvals and its notifications would otherwise go to whoever receives mail for the
+ *  domain. Changed with the script's --email, a different address is an ordinary one again. */
+export const ADMIN_PROFILE_EMAIL = "admin@credicorp.org";
+
 /** The session's authMethod for a password sign-in. Distinct from "sso" and "dev" everywhere. */
 export const ADMIN_AUTH_METHOD = "local";
 
@@ -38,8 +44,9 @@ export function adminLoginEnabled(): boolean {
   return process.env.ADMIN_LOGIN_ENABLED?.trim().toLowerCase() !== "false";
 }
 
-export function normalizeUsername(raw: unknown): string {
-  return String(raw ?? "").trim().toLowerCase().slice(0, 64);
+/** The sign-in email, compared the way User.email is stored: trimmed and lower-case. */
+export function normalizeEmail(raw: unknown): string {
+  return String(raw ?? "").trim().toLowerCase().slice(0, 254);
 }
 
 /** Why a new password is unacceptable, or null when it is fine. */
@@ -96,8 +103,8 @@ export async function verifyPassword(password: string, stored: string): Promise<
   }
 }
 
-/* An unknown username still pays for one scrypt, so how long a refusal takes does not reveal
-   whether the username exists. The hash is of random bytes nobody knows; it never verifies. */
+/* An email with no Admin password still pays for one scrypt, so how long a refusal takes does not
+   reveal which email is the Admin's. The hash is of random bytes nobody knows; it never verifies. */
 let dummy: Promise<string> | null = null;
 export async function burnVerification(password: string): Promise<void> {
   dummy ??= hashPassword(randomBytes(24).toString("base64"));

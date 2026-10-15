@@ -53,11 +53,14 @@ export function Meta({ label, children }: { label: string; children: ReactNode }
 
 /** A titled block of prose. Absent when the field is empty — a heading over nothing reads as
  *  missing data rather than as a field that does not apply. */
-export function Section({ title, text }: { title: string; text: string | undefined }) {
+export function Section({ title, text, tag }: { title: string; text: string | undefined; tag?: string }) {
   if (!text) return null;
   return (
     <section className="obs-detail-section">
-      <h4 className="obs-detail-label">{title}</h4>
+      <h4 className="obs-detail-label">
+        {title}
+        {tag ? <> <span className="tag">{tag}</span></> : null}
+      </h4>
       <div className="obs-detail-content">
         <RichText text={text} />
       </div>

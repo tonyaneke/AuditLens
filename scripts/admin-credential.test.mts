@@ -3,7 +3,7 @@
 import {
   adminLoginEnabled,
   hashPassword,
-  normalizeUsername,
+  normalizeEmail,
   passwordProblem,
   verifyPassword,
 } from "../lib/admin-credential";
@@ -33,7 +33,7 @@ console.log("\n== Policy ==");
   ok(passwordProblem("short") !== null, "too short is refused");
   ok(passwordProblem("aaaaaaaaaaaaaaaaaaaa") !== null, "a repetitive password is refused");
   ok(passwordProblem("Tr1cky-Lens-Audit-26") === null, "a reasonable one is accepted");
-  ok(normalizeUsername("  Admin ") === "admin", "usernames compare case-insensitively");
+  ok(normalizeEmail("  Admin@Credicorp.ORG ") === "admin@credicorp.org", "the sign-in email compares the way User.email is stored");
 }
 
 console.log("\n== The off switch ==");

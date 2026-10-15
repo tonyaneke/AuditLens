@@ -169,11 +169,11 @@ export default function ReportDetailPage({ auditId, reportId }: { auditId: strin
         <div className="row" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <h3 style={{ margin: 0 }}>Executive Summary</h3>
           <div className="spacer" />
-          {/* The end-of-engagement communication: these sections (bar 1.4) go to the department. */}
+          {/* The end-of-engagement communication: 1.2–1.5 of these sections go to the department. */}
           {r.status === "Final" ? (
             <button
               className="btn sm"
-              title="Send the executive summary (without the 1.4 opinion) to the audited department"
+              title="Send the executive summary (1.2–1.5, with the internal audit opinion) to the audited department"
               onClick={() => modal.open(<CloseoutDialog auditId={a.id} reportId={r.id} />, { wide: true })}
             >
               {a.closeout?.reportId === r.id ? "Audit conclusion" : "Issue audit conclusion"}

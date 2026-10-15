@@ -13,7 +13,8 @@ import { useModal } from "@/components/modals/ModalProvider";
 import { CritPill, Empty, Kpi, RowOpen, StatusPill } from "@/components/ui";
 import { StatusEditDialog, requestOwnerUpdateAction } from "@/components/audits/workflow-dialogs";
 import { esc, excelDoc, stamp, wordDoc } from "@/lib/client/exports";
-import { deptLabel, deptNameOf } from "@/lib/dept-scope";
+import { DEPARTMENTS } from "@/components/settings/staff";
+import { deptLabel, deptNameOf, normalizeDept } from "@/lib/dept-scope";
 import { hrefForView, isLegacyPath } from "@/lib/routes";
 import { isInternalAudit, pendingStatusChange } from "@/lib/workspace/observations";
 import {
@@ -370,14 +371,21 @@ export default function TrackerPage() {
   );
   // The owning department, resolved the way the Observations register resolves it (departmentId,
   // then the owner's department) — so both screens agree on which department an action sits in.
-  const depts = [...new Set(obs.map((o) => deptNameOf(db, o)).filter(Boolean))].sort((a, b) =>
-    a.localeCompare(b),
-  );
+  // One entry per department however its records spell it: "Procurement Department" and
+  // "Procurement" are two owners' records for the same department, and were listed twice. Named
+  // as the roster names it where the roster has it.
+  const deptOpts = new Map<string, string>();
+  for (const o of obs) {
+    const name = deptNameOf(db, o);
+    const k = normalizeDept(name);
+    if (k && !deptOpts.has(k)) deptOpts.set(k, deptLabel(DEPARTMENTS.find((d) => normalizeDept(d) === k) || name));
+  }
+  const depts = [...deptOpts.values()].sort((a, b) => a.localeCompare(b));
 
   const needle = query.trim().toLowerCase();
   let pool = obs.slice();
   if (filter.crit !== "All") pool = pool.filter((o) => o.criticality === filter.crit);
-  if (filter.dept !== "All") pool = pool.filter((o) => deptNameOf(db, o) === filter.dept);
+  if (filter.dept !== "All") pool = pool.filter((o) => normalizeDept(deptNameOf(db, o)) === normalizeDept(filter.dept));
   if (filter.owner !== "All") pool = pool.filter((o) => String(o.owner || "") === filter.owner);
   if (filter.quarter !== "All") pool = pool.filter((o) => quarterOf(o.createdAt) === filter.quarter);
   if (filter.repeat) pool = pool.filter((o) => o.isRepeat);
@@ -672,7 +680,7 @@ export default function TrackerPage() {
                 <option value="All">All</option>
                 {depts.map((x) => (
                   <option key={x} value={x}>
-                    {deptLabel(x)}
+                    {x}
                   </option>
                 ))}
               </select>
