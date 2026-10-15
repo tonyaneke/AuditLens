@@ -3,6 +3,11 @@
 // Takes a backup made by Settings → Back up now (or by a migration just before it wrote) straight
 // from SharePoint, a downloaded copy of one, or a snapshot JSON from scripts/.snapshots/.
 //
+// A change-only backup (…-changes.zip, the automatic daily one) is rebuilt first: its full backup
+// and every change file between are fetched and replayed (lib/backup.ts reconstruct). From
+// SharePoint that is automatic; for a downloaded copy, put the rest of the chain in the same folder
+// — the dry run names any file that is missing.
+//
 // Restores the workspace document only: every audit, report, observation (with its responses,
 // comments and closure details), external finding, fraud risk, approval and setting. User accounts
 // and the audit trail are never overwritten — the trail is append-only by design, and accounts move
@@ -17,7 +22,8 @@
 // can be undone the same way.
 
 import fs from "node:fs";
-import { readZip } from "../lib/zip";
+import path from "node:path";
+import { parseBackup, reconstruct } from "../lib/backup";
 import {
   getPrisma,
   heading,
@@ -49,17 +55,20 @@ function documentFrom(parsed: unknown, label: string): Workspace {
   throw new Error(`${label} is not a workspace document.`);
 }
 
-function fromZip(zip: Buffer, label: string): Source {
-  const files = readZip(zip);
-  const rows = files.get("tables/WorkspaceData.json");
-  if (!rows) throw new Error(`${label} is not an AuditLens backup — it has no tables/WorkspaceData.json.`);
-  const manifest = files.get("manifest.json");
-  const m = manifest ? (JSON.parse(manifest.toString("utf8")) as Obj) : {};
+/** A backup ZIP's workspace document — rebuilt from its chain when it is a change-only backup.
+ *  `load` fetches another backup in the chain by file name. */
+async function fromZip(name: string, zip: Buffer, label: string, load: (name: string) => Promise<Buffer>): Promise<Source> {
+  const first = parseBackup(zip, label);
+  const built = first.state
+    ? { state: first.state, manifest: first.manifest, chain: [name] }
+    : await reconstruct(name, (n) => (n === name ? Promise.resolve(zip) : load(n)));
+  const rows = built.state.tables.WorkspaceData?.rows;
+  if (!rows) throw new Error(`${label} is not an AuditLens backup — it has no workspace table.`);
   return {
-    label,
-    data: documentFrom(JSON.parse(rows.toString("utf8")), label),
-    takenAt: str(m.createdAt),
-    takenBy: str(m.createdBy),
+    label: built.chain.length > 1 ? `${label} (rebuilt: ${built.chain[0]} + ${built.chain.length - 1} change file(s))` : label,
+    data: documentFrom(rows, label),
+    takenAt: str(built.manifest.createdAt),
+    takenBy: str(built.manifest.createdBy),
   };
 }
 
@@ -71,14 +80,21 @@ async function load(ctx: { argv: string[] }): Promise<Source> {
     await getPrisma(); // loads .env, which holds the SharePoint credentials too
     const { fetchSharePointBackup } = await import("../lib/sharepoint");
     const got = await fetchSharePointBackup(name);
-    return fromZip(got.data, `SharePoint: AuditLens/Backups/${got.name}`);
+    return fromZip(got.name, got.data, `SharePoint: AuditLens/Backups/${got.name}`, async (n) => (await fetchSharePointBackup(n)).data);
   }
   const file = ctx.argv.find((a) => !a.startsWith("--"));
   if (!file) {
     throw new Error("Say what to restore: --sharepoint <name|latest>, or the path of a backup .zip or snapshot .json.");
   }
   const bytes = fs.readFileSync(file);
-  if (/\.zip$/i.test(file)) return fromZip(bytes, file);
+  if (/\.zip$/i.test(file)) {
+    const dir = path.dirname(file);
+    return fromZip(path.basename(file), bytes, file, async (n) => {
+      const p = path.join(dir, n);
+      if (!fs.existsSync(p)) throw new Error(`${n} is part of this backup's chain — download it from AuditLens/Backups into ${dir} too.`);
+      return fs.readFileSync(p);
+    });
+  }
   return { label: file, data: documentFrom(JSON.parse(bytes.toString("utf8")), file) };
 }
 

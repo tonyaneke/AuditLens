@@ -249,13 +249,6 @@ export default function ObsDetailPage({
           ) : null}
           {obsWithdrawStage(o) ? <span className={`pill ${ck(o.criticality)}`}>under review</span> : null}
         </div>
-        {/* Internal Audit arrives here from the audit; an action owner arrives from their register,
-            so the page says which audit the observation came out of. */}
-        {!internalAudit ? (
-          <div className="obs-detail-audit">
-            Audit: <b>{a.name}</b>
-          </div>
-        ) : null}
         <h2 className="obs-detail-title">
           {o.ref ? o.ref + " — " : ""}
           {o.title}
@@ -395,6 +388,11 @@ export default function ObsDetailPage({
           </Meta>
         ) : null}
         {o.createdAt ? <Meta label="Created">{fmtDateTime(o.createdAt)}</Meta> : null}
+        {/* Which audit it came out of — an action owner arrives from their register, not the audit.
+            Linked, like the test below, only for people who can open the audit. */}
+        <Meta label="Audit">
+          {canAccessView(user, "audit") ? <Link href={`/audits/${a.id}`}>{a.name}</Link> : a.name}
+        </Meta>
         {testLabel ? (
           <Meta label="Test programme">
             {/* Linked only for people who can open the audit plan; everyone else sees the title. */}

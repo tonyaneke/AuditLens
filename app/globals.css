@@ -3652,17 +3652,6 @@ td.timeline-cell {
   letter-spacing: -0.02em;
 }
 
-/* The audit an observation came out of, above its title on an action owner's view. */
-.obs-detail-audit {
-  margin: 0 0 6px;
-  font-size: 13px;
-  color: var(--muted);
-}
-.obs-detail-audit b {
-  color: var(--ink);
-  font-weight: 600;
-}
-
 /* The hairlines between meta cells used to be the CONTAINER's background showing through the 1px
    gaps. That also painted every UNUSED cell of the final row — five items in a four-column grid
    left three-quarters of a row filled in as a solid slab under "Created", which read as a layout
