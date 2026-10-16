@@ -86,8 +86,9 @@ async function provenance(user: AuditActor | null | undefined, via?: "system"): 
           : user.role
         : null,
       authMethod: user.authMethod || null,
-      // Only a developer sign-in is operated by someone other than the account holder.
-      actorName: user.authMethod === "dev" ? user.operator || "an unidentified developer" : null,
+      // No session is operated by anyone but its account holder since the developer sign-in was
+      // removed (lib/auth.ts refuses its sessions), so there is no one else to name.
+      actorName: null,
       sessionId: user.sessionId || null,
     };
   }

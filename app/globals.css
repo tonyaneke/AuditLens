@@ -5007,15 +5007,6 @@ body.ai-busy .ai-generate-btn:not(:disabled) {
 }
 
 /* Shown for the whole of a developer sign-in: this is someone else's account, on real data. */
-.dev-session-banner {
-  padding: 9px 28px;
-  border-bottom: 1px solid #f3c9a8;
-  border-radius: 20px 20px 0 0;
-  background: var(--high-bg);
-  color: #8a3a06;
-  font-size: 13px;
-}
-
 .proc-upload-row {
   margin-top: 6px;
 }

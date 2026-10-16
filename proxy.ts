@@ -6,7 +6,6 @@ const PUBLIC_PATHS = [
   "/login",
   "/api/auth/azure",
   "/api/auth/callback",
-  "/api/auth/dev-login",
   // The Admin profile's password sign-in. Both answer 404 when ADMIN_LOGIN_ENABLED=false.
   "/admin/login",
   "/api/auth/admin-login",

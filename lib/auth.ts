@@ -122,18 +122,14 @@ async function readSession(): Promise<{ session: SessionUser; issuedAt: number }
     const amr = String(payload.amr || "");
     // Turning the Admin password sign-in off signs out every session it issued, from the next request.
     if (amr === ADMIN_AUTH_METHOD && !adminLoginEnabled()) return null;
-    if (process.env.NODE_ENV === "production") {
-      /* Production never honours a developer sign-in. The route is disabled here, but a token
-         minted by a local dev server is signed with AUTH_SECRET — and if that secret matches
-         production's, the cookie would work against the live site as anyone. */
-      if (amr === "dev") return null;
-    } else if (!amr) {
-      /* Outside production every session comes from the developer sign-in — and one issued before
-         sessions recorded how they began carries no mark, so it would act as someone else while
-         the trail credited them. Make it sign in again. Production sessions without the claim
-         are left alone: an SSO cookie without it is still its owner's. */
-      return null;
-    }
+    /* The developer sign-in — anyone's account by e-mail alone, on a local server pointed at the
+       live database — was removed on 2026-10-16 (the Admin profile's role switching covers it).
+       A session it issued is refused everywhere from now on, so one still sitting in a browser stops
+       at its next request. Outside production a session with no mark at all is one of its older
+       cookies too, issued before sessions recorded how they began; production SSO cookies without
+       the claim are left alone, since those are still their owner's. */
+    if (amr === "dev") return null;
+    if (process.env.NODE_ENV !== "production" && !amr) return null;
 
     const session: SessionUser = {
       id,

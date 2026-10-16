@@ -178,14 +178,15 @@ export type SessionUser = {
    *  like activeRole; lib/auth.ts drops it in any other view. */
   activeDepartment?: string;
   /* Facts about the SESSION rather than the user, carried in the JWT and stamped on every audit
-     entry the session writes. They are what separates a person from someone signed in as them:
-     the developer sign-in (app/api/auth/dev-login) issues a session for another user's account,
-     and without these every action taken in it was recorded as that user's own. */
+     entry the session writes. They were added to separate a person from someone signed in as them
+     — the developer sign-in, removed 2026-10-16, issued sessions for other people's accounts; its
+     sessions are refused now (lib/auth.ts), but the trail still shows who operated the old ones. */
   /** Random id minted at sign-in; every audit entry the session writes carries it. */
   sessionId?: string;
-  /** How the session was established: "sso" (Microsoft) or "dev" (the developer sign-in). */
+  /** How the session was established: "sso" (Microsoft) or "local" (the Admin profile's password). */
   authMethod?: string;
-  /** For a developer sign-in: who was actually operating it. */
+  /** Who was actually operating the session, when that is not its account holder. Only the removed
+   *  developer sign-in ever set it. */
   operator?: string;
   /** For an Admin password session ("local"): its fixed deadline, epoch seconds. Re-signing the
    *  cookie keeps it, so the 8-hour limit cannot be extended. Unset for every other session. */
