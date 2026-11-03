@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { requireActiveSession } from "@/lib/auth";
 import { defaultWorkspaceData } from "@/lib/db-data";
 import {
-  analysePdfWithGemini,
+  analysePdfWithAi,
   MAX_PROCESS_PDF_BYTES,
   MAX_STORED_PDF_BYTES,
-} from "@/lib/gemini-document";
+} from "@/lib/ai-document";
 import { buildProcReviewPrompt } from "@/lib/process-prompts";
 import { prisma } from "@/lib/prisma";
 
@@ -59,7 +59,7 @@ export async function POST(request: Request) {
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
     const prompt = buildProcReviewPrompt(org, unit, sopTitle || fileName.replace(/\.pdf$/i, ""));
-    const analysis = await analysePdfWithGemini(buffer, prompt);
+    const analysis = await analysePdfWithAi(buffer, prompt, fileName);
 
     const sopPdfBase64 =
       buffer.length <= MAX_STORED_PDF_BYTES

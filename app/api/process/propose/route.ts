@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { requireActiveSession } from "@/lib/auth";
 import { defaultWorkspaceData } from "@/lib/db-data";
 import {
-  analysePdfWithGemini,
-  generateJsonWithGemini,
+  analysePdfWithAi,
+  generateJsonWithAi,
   MAX_PROCESS_PDF_BYTES,
-} from "@/lib/gemini-document";
+} from "@/lib/ai-document";
 import { buildProposeProcessPrompt } from "@/lib/process-prompts";
 import { prisma } from "@/lib/prisma";
 
@@ -79,8 +79,8 @@ export async function POST(request: Request) {
 
   try {
     const analysis = pdfBuffer?.length
-      ? await analysePdfWithGemini(pdfBuffer, prompt)
-      : await generateJsonWithGemini(prompt);
+      ? await analysePdfWithAi(pdfBuffer, prompt, sopTitle ? `${sopTitle}.pdf` : undefined)
+      : await generateJsonWithAi(prompt);
 
     return NextResponse.json({ analysis });
   } catch (err) {

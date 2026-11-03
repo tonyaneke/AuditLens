@@ -50,8 +50,10 @@ export function isAiUnreachable(e: unknown): e is AiUnreachableError {
 /* Observed round trips on the closure check run 15-25s against Gemini, so the ceiling has to sit
    well clear of a slow-but-working call — this is here to end a request that is never coming
    back, not to police latency. Without it a dropped connection leaves the owner on a spinner
-   indefinitely, which is the one outcome worse than an error. */
-const AI_TIMEOUT_MS = 60_000;
+   indefinitely, which is the one outcome worse than an error. It also has to leave room for the
+   server's fallback: a Gemini call that hangs is cut off at 45s and retried on OpenAI
+   (lib/ai-provider.ts), so the worst working case is that plus one more full round trip. */
+const AI_TIMEOUT_MS = 100_000;
 
 export async function aiGenerate(prompt: string, mode: "json" | "text" = "json"): Promise<string> {
   let res: Response;

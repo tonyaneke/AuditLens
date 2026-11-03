@@ -1,16 +1,8 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse } from "next/server";
 import { requireActiveSession } from "@/lib/auth";
+import { AiNotConfiguredError, generateAi } from "@/lib/ai-provider";
 
 type AiMode = "json" | "text";
-
-function stripCodeFences(raw: string): string {
-  return raw
-    .trim()
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .trim();
-}
 
 export async function POST(request: Request) {
   try {
@@ -21,17 +13,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Password change required." }, { status: 403 });
     }
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json(
-      {
-        error:
-          "GEMINI_API_KEY is not configured. Add it to .env and restart the dev server.",
-      },
-      { status: 503 },
-    );
   }
 
   let body: { prompt?: string; mode?: AiMode };
@@ -49,43 +30,14 @@ export async function POST(request: Request) {
   }
 
   try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-      model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
-      ...(mode === "json"
-        ? { generationConfig: { responseMimeType: "application/json" } }
-        : {}),
-    });
-
-    const result = await model.generateContent(prompt);
-    let text = result.response.text()?.trim() ?? "";
-
-    if (!text) {
-      return NextResponse.json(
-        { error: "Gemini returned an empty response." },
-        { status: 502 },
-      );
-    }
-
-    if (mode === "json") {
-      text = stripCodeFences(text);
-      try {
-        JSON.parse(text);
-      } catch {
-        return NextResponse.json(
-          {
-            error: "Gemini returned invalid JSON.",
-            text: text.slice(0, 500),
-          },
-          { status: 502 },
-        );
-      }
-    }
-
+    // Gemini first, OpenAI when Gemini fails — the provider is not the client's concern.
+    const { text } = await generateAi({ prompt, json: mode === "json" });
     return NextResponse.json({ text });
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : "Gemini request failed.";
+    if (err instanceof AiNotConfiguredError) {
+      return NextResponse.json({ error: err.message }, { status: 503 });
+    }
+    const message = err instanceof Error ? err.message : "AI request failed.";
     return NextResponse.json({ error: message }, { status: 502 });
   }
 }

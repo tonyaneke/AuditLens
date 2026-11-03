@@ -63,7 +63,8 @@ function buildCsp(nonce: string): string {
     // globals.css, and blob: for locally previewed uploads.
     "img-src 'self' blob: data:",
     "font-src 'self'",
-    // Graph, SendGrid and Gemini are all called server-side — the browser never goes off-origin.
+    // Graph, SendGrid and the AI providers (Gemini, OpenAI) are all called server-side — the
+    // browser never goes off-origin.
     "connect-src 'self'",
     "object-src 'none'",
     "base-uri 'self'",

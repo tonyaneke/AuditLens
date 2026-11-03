@@ -176,7 +176,7 @@ export function ProcNewDialog() {
       <div>
         {upload ? (
           <div className="note">
-            Ready: <b>{upload.name}</b> · {Math.round(upload.file.size / 1024)} KB — Gemini will
+            Ready: <b>{upload.name}</b> · {Math.round(upload.file.size / 1024)} KB — the AI will
             read the PDF directly
           </div>
         ) : (
@@ -575,7 +575,7 @@ export function ProposeProcessDialog({ pid }: { pid: string }) {
     <div className="note" style={{ marginBottom: 8 }}>
       {p.sopPdfBase64 || p.sopPdfStored ? (
         <>
-          Original SOP PDF on file: <b>{p.sopFileName}</b> — Gemini will use it for context.
+          Original SOP PDF on file: <b>{p.sopFileName}</b> — the AI will use it for context.
         </>
       ) : (
         <>
