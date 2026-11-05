@@ -11,7 +11,7 @@
    about who may do what are lib/workspace-authz.ts reconcileAuditRequests — these dialogs only
    offer what it allows. */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useUser } from "@/components/chrome/UserContext";
 import BusyButton from "@/components/feedback/BusyButton";
 import { toast } from "@/components/feedback/ToastHost";
@@ -223,7 +223,7 @@ export function NewRequestDialog({
       {kind === "information" ? (
         <>
           <label htmlFor="nr-due" style={{ marginTop: 10 }}>
-            Required by <span className="hint">(optional)</span>
+            Due date <span className="hint">(optional — when you need it by)</span>
           </label>
           <input id="nr-due" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
         </>
@@ -247,6 +247,18 @@ export function RequestThreadDialog({ requestId }: { requestId: string }) {
   const [text, setText] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [err, setErr] = useState("");
+
+  // Opening the thread is seeing what is new on it: its unread notifications are marked read, which
+  // clears the request table's new-reply badge and the bell. Re-runs if a reply lands while open.
+  const unseen = (db.notifications || []).some((n) => !n.read && n.userId === user.id && n.requestId === requestId);
+  useEffect(() => {
+    if (!unseen) return;
+    mutate((d) => {
+      for (const n of d.notifications || []) {
+        if (!n.read && n.userId === user.id && n.requestId === requestId) n.read = true;
+      }
+    });
+  }, [unseen, mutate, user.id, requestId]);
 
   if (!r) {
     return (
@@ -385,7 +397,7 @@ export function RequestThreadDialog({ requestId }: { requestId: string }) {
         <KindTag r={req} />
         <span className="hint">
           {audit?.name || "Audit engagement"} · {req.department}
-          {req.dueDate ? ` · required by ${fmtDate(req.dueDate)}` : ""}
+          {req.dueDate ? ` · due ${fmtDate(req.dueDate)}` : ""}
         </span>
       </div>
 

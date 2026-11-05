@@ -123,7 +123,7 @@ export default function MyAuditDetailPage({ auditId }: { auditId: string }) {
             ))}
             {waiting ? (
               <a className="pill pill-await" href="#requests" title="Jump to what is waiting on your department">
-                {waiting} awaiting your response
+                {waiting} awaiting you
               </a>
             ) : null}
           </>
@@ -192,7 +192,7 @@ export default function MyAuditDetailPage({ auditId }: { auditId: string }) {
           <h3 id="requests-h" className="section-title">
             Requests &amp; comments ({requests.length})
           </h3>
-          {waiting ? <span className="pill pill-await">{waiting} awaiting your response</span> : null}
+          {waiting ? <span className="pill pill-await">{waiting} awaiting you</span> : null}
           <div className="spacer" style={{ flex: 1 }} />
           <button
             className="btn sm"
@@ -204,10 +204,7 @@ export default function MyAuditDetailPage({ auditId }: { auditId: string }) {
           </button>
         </div>
         {requests.length ? (
-          // Lit up while Internal Audit is waiting on the department — information asked for, or a reply.
-          <div className={waiting ? "req-active" : undefined}>
-            <RequestTable requests={requests} showDepartment={mine.length > 1} side="dept" />
-          </div>
+          <RequestTable requests={requests} showDepartment={mine.length > 1} side="dept" />
         ) : (
           <p className="hint" style={{ marginBottom: 0 }}>
             Nothing yet. Internal Audit&apos;s requests for information appear here for anyone in your department to
