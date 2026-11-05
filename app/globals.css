@@ -5216,17 +5216,29 @@ body.ai-busy .ai-generate-btn:not(:disabled) {
    of Reference above it by space and a rule, under its own heading. */
 .comms-major { margin-top: 36px; padding-top: 22px; border-top: 1px solid var(--line); }
 .comms-major > .section-title { margin-bottom: 4px; }
-/* Something is waiting on the person looking at it: the requests block and its row light up. A
-   tint and a label — not a status column (dropped on request), and not a side stripe (DESIGN). */
-.req-active {
-  background: color-mix(in oklch, var(--med) 6%, #fff);
-  border: 1px solid color-mix(in oklch, var(--med) 35%, var(--line));
-  border-radius: 12px;
-  padding: 4px 14px 10px;
-  margin-top: 10px;
+/* Request table: a closed thread's row is green, so what is done and what is left read apart at a
+   glance. Open threads get no tint — the Status badge and the new-reply circle say it (the user
+   found the old amber block and row tint turned the whole table orange). */
+tr.req-closed td { background: color-mix(in oklch, var(--low) 12%, #fff); }
+/* Out-ranks the card's generic row hover, which would otherwise lighten a closed row. */
+tr.req-closed:hover > td,
+.card table tbody tr.req-closed:hover > td { background: color-mix(in oklch, var(--low) 18%, #fff); }
+/* Solid, or the pale .closed pill vanishes into its own green row. */
+tr.req-closed .status-pill.closed { background: var(--low); color: #fff; }
+/* Still open: "Awaiting" in the app's yellow (the --med family, as .pill-await), and dark orange
+   "Awaiting you" when the next move is the viewer's. #bb5400 keeps white 11px text above 4.5:1; a
+   brighter orange does not. */
+.status-pill.awaiting { background: color-mix(in oklch, var(--med) 20%, #fff); color: #7a5200; }
+.status-pill.awaiting-you { background: #bb5400; color: #fff; }
+/* Replies the viewer has not opened yet: a count in a green circle by the subject. */
+.req-new {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 5px; margin-left: 8px; vertical-align: 1px;
+  border-radius: 9px; background: var(--accent); color: #fff;
+  font-size: 11px; font-weight: 700; line-height: 1;
 }
-tr.req-awaiting td { background: color-mix(in oklch, var(--med) 14%, #fff); }
-tr.req-awaiting:hover td { background: color-mix(in oklch, var(--med) 20%, #fff); }
+/* An open request past its due date: the date stays as it is, the "Overdue" under it is red. */
+td.req-overdue .hint { color: var(--crit); font-weight: 700; }
 .pill-await { background: color-mix(in oklch, var(--med) 20%, #fff); color: #7a5200; font-weight: 700; text-decoration: none; }
 a.pill-await:hover { background: color-mix(in oklch, var(--med) 30%, #fff); }
 

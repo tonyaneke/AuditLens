@@ -52,7 +52,7 @@ function AuditCard({ a }: { a: Audit }) {
           </span>
         ))}
         {waiting ? (
-          <span className="pill pill-await">{waiting} awaiting your response</span>
+          <span className="pill pill-await">{waiting} awaiting you</span>
         ) : null}
       </div>
       <div className="myobs-card-title">{a.name}</div>

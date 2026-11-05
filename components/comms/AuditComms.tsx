@@ -8,6 +8,7 @@
 
 import { Suspense, useEffect, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useUser } from "@/components/chrome/UserContext";
 import { useModal } from "@/components/modals/ModalProvider";
 import { Empty, RowOpen } from "@/components/ui";
 import RichText from "@/components/ui/RichText";
@@ -23,7 +24,9 @@ import {
   noticeIssued,
   outstandingUpdateRequest,
   requestAwaiting,
+  requestOverdue,
   requestsForAudit,
+  unreadRepliesByRequest,
 } from "@/lib/workspace/audit-comms";
 import { fmtDate, fmtDateTime } from "@/lib/workspace/selectors";
 import type { Audit, AuditCloseout, AuditRequest, AuditSide } from "@/lib/workspace/types";
@@ -32,11 +35,40 @@ import { CloseoutDialog, NewRequestDialog, RequestThreadDialog } from "./lazy";
 import { KindTag } from "./pills";
 
 /* ---------------- request table (both sides) ----------------
-   No status column: what matters is that a response came in, and from whom — the bell and the
-   e-mail say so, and "Last activity" shows who wrote last and when. A closed thread is marked in its
-   subtitle. What IS flagged is the one thing the viewer must act on: a thread waiting on THEIR side
-   (`side`) lights up and says "Awaiting your response" — the department's when Internal Audit has
-   asked for something, Internal Audit's when the department has answered or commented. */
+   A Status column says where each thread stands, so what is closed and what is left reads at a
+   glance: Closed is green (its row too), anything still open is yellow "Awaiting". A thread waiting
+   on the viewer's side (`side`) says "Awaiting you" in dark orange — the department's when Internal
+   Audit has asked for something, Internal Audit's when the department has answered or commented.
+   Replies the viewer has not opened yet are counted in a green badge by the subject. That badge and
+   the status are the whole signal: no tinted row or table for open threads (the user's call — they
+   made the table read orange). The due date has its own column, with a red "Overdue" under it once
+   an open request is past it. */
+
+function RequestStatus({ r, side }: { r: AuditRequest; side?: AuditSide }) {
+  const awaiting = requestAwaiting(r);
+  if (awaiting === "closed") {
+    return (
+      <>
+        <span className="status-pill closed">Closed</span>
+        {r.closedAt ? <div className="hint">{fmtDate(r.closedAt)}</div> : null}
+      </>
+    );
+  }
+  if (side && awaiting === side) {
+    return (
+      <span className="status-pill awaiting-you">
+        {outstandingUpdateRequest(r) ? "🔔 Update requested" : "Awaiting you"}
+      </span>
+    );
+  }
+  return <span className="status-pill awaiting">Awaiting</span>;
+}
+
+/** Local YYYY-MM-DD, to compare with a request's due date (stored the same way). */
+function todayYmd(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 export function RequestTable({
   requests,
@@ -49,6 +81,10 @@ export function RequestTable({
   side?: AuditSide;
 }) {
   const modal = useModal();
+  const { db } = useWorkspace();
+  const user = useUser();
+  const fresh = unreadRepliesByRequest(db, user.id);
+  const today = todayYmd();
   const open = (r: AuditRequest) => modal.open(<RequestThreadDialog requestId={r.id} />, { wide: true });
   return (
     <table style={{ marginTop: 8 }}>
@@ -58,6 +94,8 @@ export function RequestTable({
           <th scope="col">Subject</th>
           {showDepartment ? <th scope="col">Department</th> : null}
           <th scope="col">Type</th>
+          <th scope="col">Due date</th>
+          <th scope="col">Status</th>
           <th scope="col">Last activity</th>
         </tr>
       </thead>
@@ -66,31 +104,40 @@ export function RequestTable({
           const msgs = r.messages || [];
           const n = msgs.length;
           const lastBy = n ? msgs[n - 1].byName : r.raisedByName;
-          const yours = !!side && requestAwaiting(r) === side;
+          const awaiting = requestAwaiting(r);
+          const yours = !!side && awaiting === side;
           const chased = outstandingUpdateRequest(r);
+          const rowState = awaiting === "closed" ? " req-closed" : "";
+          const newReplies = fresh.get(r.id) || 0;
+          const overdue = requestOverdue(r, today);
           return (
-            <tr key={r.id} className={`row-link${yours ? " req-awaiting" : ""}`} onClick={() => open(r)}>
+            <tr key={r.id} className={`row-link${rowState}`} onClick={() => open(r)}>
               <td style={{ whiteSpace: "nowrap" }}>{r.ref || "—"}</td>
               <td>
                 <RowOpen onOpen={() => open(r)} label={`Open ${r.kind === "information" ? "request" : "comment"}: ${r.subject}`}>
                   <b>{r.subject}</b>
                 </RowOpen>
-                {yours ? (
-                  <span className="pill pill-await" style={{ marginLeft: 8 }}>
-                    {chased ? "🔔 Update requested" : "Awaiting your response"}
+                {newReplies ? (
+                  <span className="req-new" title={`${newReplies} new repl${newReplies === 1 ? "y" : "ies"}`}>
+                    {newReplies}
+                    <span className="visually-hidden"> new repl{newReplies === 1 ? "y" : "ies"}</span>
                   </span>
                 ) : null}
                 <div className="hint">
                   {r.raisedByName ? `Raised by ${r.raisedByName}` : ""}
-                  {r.dueDate ? ` · required by ${fmtDate(r.dueDate)}` : ""}
-                  {n ? ` · ${n} repl${n === 1 ? "y" : "ies"}` : ""}
-                  {r.closedAt ? " · closed" : ""}
                   {chased && !yours ? ` · 🔔 update requested ${fmtDate(chased.at)}` : ""}
                 </div>
               </td>
               {showDepartment ? <td>{deptLabel(r.department)}</td> : null}
               <td>
                 <KindTag r={r} />
+              </td>
+              <td style={{ whiteSpace: "nowrap" }} className={overdue ? "req-overdue" : undefined}>
+                {r.dueDate ? fmtDate(r.dueDate) : "—"}
+                {overdue ? <div className="hint">Overdue</div> : null}
+              </td>
+              <td style={{ whiteSpace: "nowrap" }}>
+                <RequestStatus r={r} side={side} />
               </td>
               <td style={{ whiteSpace: "nowrap" }}>
                 {fmtDateTime(lastActivity(r))}
@@ -200,7 +247,7 @@ export function AuditCommsCard({ audit }: { audit: Audit }) {
         {concluded ? <span className="status-pill closed">Concluded</span> : null}
         {waiting ? (
           <a className="pill pill-await" href="#ia-requests" title="Jump to the requests waiting on Internal Audit">
-            {waiting} awaiting your response
+            {waiting} awaiting you
           </a>
         ) : null}
         <div className="spacer" style={{ flex: 1 }} />
@@ -272,9 +319,7 @@ export function AuditCommsCard({ audit }: { audit: Audit }) {
 
       {communicated ? (
         requests.length ? (
-          /* Lit up while the department is waiting on Internal Audit — a response or a comment to
-             answer — so it reads as the part of the page that needs doing. */
-          <div id="ia-requests" className={waiting ? "req-active" : undefined}>
+          <div id="ia-requests">
             <RequestTable requests={requests} showDepartment={depts.length > 1} side="ia" />
           </div>
         ) : (

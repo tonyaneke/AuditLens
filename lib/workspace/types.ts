@@ -589,6 +589,9 @@ export type NotificationItem = {
   /** Deep-link target for audit communications: the audit, and the request within it. */
   auditId?: string;
   requestId?: string;
+  /** Audit communications: what happened on the request ("raised", "reply", …). The request table
+   *  counts a viewer's unread "reply" notifications as the request's new replies. */
+  event?: string;
   read: boolean;
   at: string;
 };

@@ -273,6 +273,24 @@ export function lastActivity(r: AuditRequest): string {
   return msgs.length ? msgs[msgs.length - 1].at : r.raisedAt;
 }
 
+/** A request is overdue while it is open past its due date (the "Due date" set when it was raised). */
+export function requestOverdue(r: AuditRequest, today: string): boolean {
+  return !r.closedAt && !!r.dueDate && r.dueDate < today;
+}
+
+/** The replies this user has not seen yet, per request: their unread "reply" notifications, which
+ *  opening the thread marks read. Notifications from before `event` was stored are recognised by
+ *  their bell line (requestMessage's "New response from …"). */
+export function unreadRepliesByRequest(db: WorkspaceDb, userId: string): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const n of db.notifications || []) {
+    if (n.read || n.userId !== userId || !n.requestId) continue;
+    const reply = n.event ? n.event === "reply" : String(n.text || "").startsWith("New response from ");
+    if (reply) out.set(n.requestId, (out.get(n.requestId) || 0) + 1);
+  }
+  return out;
+}
+
 /** Open requests waiting on this user's department — the portal's Audits badge. */
 export function myAuditRequestsPendingCount(db: WorkspaceDb, user: PortalUser | undefined): number {
   return portalRequests(db, user).filter((r) => requestAwaiting(r) === "dept").length;
@@ -340,6 +358,7 @@ function bell(
   link: "myaudits" | "audit",
   auditId: string,
   requestId = "",
+  event?: RequestEvent,
 ): void {
   if (!userId) return;
   db.notifications = db.notifications || [];
@@ -351,6 +370,7 @@ function bell(
     link,
     auditId,
     requestId,
+    ...(event ? { event } : {}),
     read: false,
     at: new Date().toISOString(),
   });
@@ -574,7 +594,7 @@ export function notifyRequestActivity(
   const m = requestMessage(a, r, actor, event);
   const link = m.to === "dept" ? "myaudits" : "audit";
   const p = m.to === "dept" ? deptParticipants(db, r) : { bell: iaParticipants(a, r), email: iaParticipants(a, r) };
-  for (const id of p.bell) bell(db, id, m.kind, m.bell, link, r.auditId, r.id);
+  for (const id of p.bell) bell(db, id, m.kind, m.bell, link, r.auditId, r.id, event);
   const to = emailsFor(db, p.email);
   if (to.length) void emailNotify(to, m.subject, m.text, origin() + m.path, m.cta);
 }
