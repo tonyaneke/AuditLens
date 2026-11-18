@@ -9,6 +9,9 @@ import { ModalFrame, useModal } from "@/components/modals/ModalProvider";
 import NewObsDialog from "@/components/obs/NewObsDialog";
 import BusyButton from "@/components/feedback/BusyButton";
 import NewResponsesDialog, { newResponseNotifs } from "./NewResponsesDialog";
+import ActionOwnerBarChart from "./ActionOwnerBarChart";
+import ResolutionTimelineTable from "./ResolutionTimelineTable";
+import CarryoverObsDialog from "./CarryoverObsDialog";
 import { CritPill, Empty, Kpi, RowOpen, StatusPill } from "@/components/ui";
 import { displayRoleLabel } from "@/lib/permissions";
 import {
@@ -36,45 +39,98 @@ const HEX: Record<string, string> = {
 };
 const TIMELINES = ["Immediate", "Short-term", "Long-term"];
 
-function Donut({ segs, total, label }: { segs: { value: number; color: string }[]; total: number; label: string }) {
+function Donut({
+  segs,
+  total,
+  label,
+  hoveredCrit,
+  onHoverCrit,
+  activeValue,
+  activeLabel,
+  activeColor,
+}: {
+  segs: { name?: string; value: number; color: string }[];
+  total: number;
+  label: string;
+  hoveredCrit?: string | null;
+  onHoverCrit?: (name: string | null) => void;
+  activeValue?: number;
+  activeLabel?: string;
+  activeColor?: string;
+}) {
   const r = 54;
   const C = 2 * Math.PI * r;
   // Precompute arc geometry with a plain loop — no closure mutation during JSX mapping.
-  const arcs: { color: string; len: number; off: number; delay: number }[] = [];
+  const arcs: { name?: string; color: string; len: number; off: number; delay: number }[] = [];
   {
     let off = 0;
     let idx = 0;
     for (const s of segs) {
       if (s.value <= 0) continue;
       const len = total ? (s.value / total) * C : 0;
-      arcs.push({ color: s.color, len, off, delay: idx * 0.12 });
+      arcs.push({ name: s.name, color: s.color, len, off, delay: idx * 0.1 });
       off += len;
       idx++;
     }
   }
+
+  const hasHover = hoveredCrit != null && activeValue != null;
+  const displayNum = hasHover ? activeValue : total;
+  const displayLbl = hasHover ? activeLabel : label;
+  const displayColor = hasHover && activeColor ? activeColor : "#0d5a47";
+
   return (
-    <svg className="donut-chart" viewBox="0 0 140 140" width="148" height="148" style={{ flexShrink: 0 }}>
+    <svg className="donut-chart" viewBox="0 0 140 140" width="154" height="154" style={{ flexShrink: 0 }}>
       <circle cx="70" cy="70" r={r} fill="none" stroke="#eef2f7" strokeWidth="16" />
-      {arcs.map((s, i) => (
-        <circle
-          key={i}
-          className="donut-seg"
-          cx="70"
-          cy="70"
-          r={r}
-          fill="none"
-          stroke={s.color}
-          strokeWidth="16"
-          strokeDashoffset={(-s.off).toFixed(2)}
-          transform="rotate(-90 70 70)"
-          style={{ ["--seg-len" as string]: s.len.toFixed(2), ["--seg-delay" as string]: `${s.delay}s` }}
-        />
-      ))}
-      <text className="donut-center-num" x="70" y="66" textAnchor="middle" fontSize="30" fontWeight="700" fill="#0d5a47">
-        {total}
+      {arcs.map((s, i) => {
+        const isHovered = s.name != null && hoveredCrit === s.name;
+        const isDimmed = hoveredCrit != null && !isHovered;
+
+        return (
+          <circle
+            key={s.name || i}
+            className="donut-seg donut-seg-interactive"
+            cx="70"
+            cy="70"
+            r={r}
+            fill="none"
+            stroke={s.color}
+            strokeWidth={isHovered ? 20 : 16}
+            opacity={isDimmed ? 0.35 : 1}
+            strokeDashoffset={(-s.off).toFixed(2)}
+            transform="rotate(-90 70 70)"
+            style={{
+              ["--seg-len" as string]: s.len.toFixed(2),
+              ["--seg-delay" as string]: `${s.delay}s`,
+            }}
+            onMouseEnter={() => s.name && onHoverCrit?.(s.name)}
+            onMouseLeave={() => onHoverCrit?.(null)}
+          />
+        );
+      })}
+      <text
+        className="donut-center-num"
+        x="70"
+        y="65"
+        textAnchor="middle"
+        fontSize="30"
+        fontWeight="800"
+        fill={displayColor}
+        style={{ transition: "fill 0.15s ease" }}
+      >
+        {displayNum}
       </text>
-      <text className="donut-center-lbl" x="70" y="86" textAnchor="middle" fontSize="11" fill="#64748b">
-        {label}
+      <text
+        className="donut-center-lbl"
+        x="70"
+        y="85"
+        textAnchor="middle"
+        fontSize="11"
+        fontWeight="600"
+        fill="#64748b"
+        style={{ transition: "fill 0.15s ease" }}
+      >
+        {displayLbl}
       </text>
     </svg>
   );
@@ -208,6 +264,9 @@ export default function StaffDashboard() {
   const modal = useModal();
   const [watchOpen, setWatchOpen] = useState<Record<string, boolean>>({});
 
+  const [critStatusFilter, setCritStatusFilter] = useState<"All" | "Open" | "Closed">("All");
+  const [hoveredCrit, setHoveredCrit] = useState<string | null>(null);
+
   /* Surface unread owner responses once per visit. The ref keeps it to once — the workspace
      poll swaps `db` regularly, and re-opening the modal under the user would be hostile. */
   const responses = newResponseNotifs(db, user.id);
@@ -237,21 +296,6 @@ export default function StaffDashboard() {
     (o) => (o.criticality === "Critical" || o.criticality === "High") && o.status !== "Closed",
   ).length;
   const remRate = total ? Math.round((closed / total) * 100) : 0;
-
-  const byArea: Record<string, Record<string, number>> = {};
-  obs.forEach((o) => {
-    const k = (o._a.area as string) || o._a.name;
-    if (!byArea[k]) {
-      byArea[k] = {};
-      CRITS.forEach((c) => (byArea[k][c] = 0));
-      byArea[k].t = 0;
-    }
-    byArea[k][o.criticality] = (byArea[k][o.criticality] || 0) + 1;
-    byArea[k].t++;
-  });
-  const areaRows = Object.entries(byArea).sort(
-    (a, b) => b[1].Critical * 100 + b[1].High * 10 + b[1].t - (a[1].Critical * 100 + a[1].High * 10 + a[1].t),
-  );
 
   const critical = obs
     .filter((o) => (o.criticality === "Critical" || o.criticality === "High") && o.status !== "Closed")
@@ -287,8 +331,24 @@ export default function StaffDashboard() {
      approve and close findings. Same label as everywhere else now. */
   const roleTitle = displayRoleLabel(user);
 
-  const segs = CRITS.map((c) => ({ value: byC[c], color: HEX[c] }));
-  const critPct = percentages(CRITS.map((c) => byC[c]));
+  // Plain derivations — the React Compiler memoizes these; `obs` is rebuilt every render, so a
+  // manual useMemo keyed on it never hit and made the compiler skip this whole component.
+  const critFilteredObs =
+    critStatusFilter === "Open"
+      ? openObs
+      : critStatusFilter === "Closed"
+        ? obs.filter((o) => o.status === "Closed")
+        : obs;
+
+  const critFilteredTotal = critFilteredObs.length;
+  const critFilteredByC: Record<string, number> = {};
+  CRITS.forEach((c) => (critFilteredByC[c] = 0));
+  critFilteredObs.forEach((o) => {
+    if (critFilteredByC[o.criticality] != null) critFilteredByC[o.criticality]++;
+  });
+  const critFilteredSegs = CRITS.map((c) => ({ name: c, value: critFilteredByC[c], color: HEX[c] }));
+  const critFilteredPct = percentages(CRITS.map((c) => critFilteredByC[c]));
+
   const tlUnspecified = openObs.filter((o) => !TIMELINES.includes(String(o.timeline || ""))).length;
   void tlUnspecified;
 
@@ -318,19 +378,69 @@ export default function StaffDashboard() {
 
       <div className="dash2">
         <div className="card chart-card anim-fade-in anim-d2">
-          <div className="seclabel">Observations by criticality</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+            <div className="seclabel" style={{ margin: 0 }}>Observations by criticality</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <select
+                id="crit-status-select"
+                className="crit-filter-select"
+                value={critStatusFilter}
+                onChange={(e) => {
+                  setCritStatusFilter(e.target.value as "All" | "Open" | "Closed");
+                  setHoveredCrit(null);
+                }}
+                aria-label="Filter observations by status"
+              >
+                <option value="All">All ({total})</option>
+                <option value="Open">Open ({open})</option>
+                <option value="Closed">Closed ({closed})</option>
+              </select>
+            </div>
+          </div>
+
           <div className="donutwrap">
-            <Donut segs={segs} total={total} label="total" />
+            <Donut
+              segs={critFilteredSegs}
+              total={critFilteredTotal}
+              label={critStatusFilter === "All" ? "total" : critStatusFilter === "Open" ? "open" : "closed"}
+              hoveredCrit={hoveredCrit}
+              onHoverCrit={setHoveredCrit}
+              activeValue={hoveredCrit ? critFilteredByC[hoveredCrit] : undefined}
+              activeLabel={
+                hoveredCrit
+                  ? `${hoveredCrit} (${critFilteredPct[CRITS.indexOf(hoveredCrit as (typeof CRITS)[number])] || 0}%)`
+                  : undefined
+              }
+              activeColor={hoveredCrit ? HEX[hoveredCrit] : undefined}
+            />
             <div className="legend" style={{ flex: 1 }}>
-              {CRITS.map((c, i) => (
-                <div className="li" key={c}>
-                  <span className="dot" style={{ background: HEX[c] }} />
-                  <span className="lname">{c}</span>
-                  <span className="lval">{byC[c]}</span>
-                  {/* QA-21 — largest-remainder, so these always total exactly 100%. */}
-                  <span className="lpct">{critPct[i]}%</span>
-                </div>
-              ))}
+              {CRITS.map((c) => {
+                const isHovered = hoveredCrit === c;
+                const cnt = critFilteredByC[c] || 0;
+                return (
+                  <div
+                    className={`li interactive-li${isHovered ? " active" : ""}`}
+                    key={c}
+                    onMouseEnter={() => setHoveredCrit(c)}
+                    onMouseLeave={() => setHoveredCrit(null)}
+                  >
+                    <span
+                      className="dot"
+                      style={{
+                        background: HEX[c],
+                        transform: isHovered ? "scale(1.3)" : "scale(1)",
+                        transition: "transform 0.15s ease",
+                      }}
+                    />
+                    <span className="lname" style={{ fontWeight: isHovered ? 700 : 400 }}>
+                      {c}
+                    </span>
+                    <span className="lval" style={{ color: isHovered ? HEX[c] : undefined }}>
+                      {cnt}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -359,47 +469,25 @@ export default function StaffDashboard() {
         </div>
       </div>
 
-      <div className="card anim-fade-in anim-d3">
-        <div className="seclabel">Risk by process / department</div>
-        {areaRows.length ? (
-          <>
-            <table style={{ marginTop: -2 }}>
-              <thead>
-                <tr>
-                  <th scope="col">Area</th>
-                  {CRITS.map((c) => (
-                    <th scope="col" key={c} style={{ textAlign: "center" }} title={c}>
-                      {({ Critical: "Crit", High: "High", Moderate: "Mod", Low: "Low", "Process Improvement": "PI" } as Record<string, string>)[c]}
-                    </th>
-                  ))}
-                  <th scope="col" style={{ textAlign: "right" }}>Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {areaRows.slice(0, 6).map(([k, v]) => (
-                  <tr key={k}>
-                    <td>{k}</td>
-                    {CRITS.map((c) => (
-                      <td key={c} style={{ textAlign: "center", color: HEX[c], fontWeight: v[c] ? 700 : 400 }}>
-                        {v[c] || "·"}
-                      </td>
-                    ))}
-                    <td style={{ textAlign: "right" }}>
-                      <b>{v.t}</b>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {areaRows.length > 6 ? (
-              <div className="hint" style={{ marginTop: 8 }}>
-                Showing top 6 of {areaRows.length} areas.
-              </div>
-            ) : null}
-          </>
-        ) : (
-          <Empty>No observations yet.</Empty>
-        )}
+      <div className="dash2 anim-fade-in anim-d3">
+        <ActionOwnerBarChart
+          observations={obs}
+          onSelectGroup={(title, subtitle, items) =>
+            modal.open(
+              <CarryoverObsDialog title={title} subtitle={subtitle} observations={items} />,
+              { wide: true }
+            )
+          }
+        />
+        <ResolutionTimelineTable
+          observations={obs}
+          onSelectTimeline={(title, subtitle, items) =>
+            modal.open(
+              <CarryoverObsDialog title={title} subtitle={subtitle} observations={items} />,
+              { wide: true }
+            )
+          }
+        />
       </div>
 
       <div className="dash2 anim-fade-in anim-d4">

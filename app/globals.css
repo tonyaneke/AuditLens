@@ -1724,6 +1724,58 @@ select.mini {
 .chart-card .legend .li:nth-child(4) { animation-delay: 0.26s; }
 .chart-card .legend .li:nth-child(5) { animation-delay: 0.32s; }
 
+/* Criticality status filter dropdown & interactive donut */
+.crit-filter-select {
+  appearance: none;
+  background-color: #fff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23587069' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14 2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  padding: 4px 26px 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--brand-700);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.crit-filter-select:hover {
+  border-color: var(--brand-500);
+}
+
+.crit-filter-select:focus {
+  border-color: var(--brand-700);
+  box-shadow: 0 0 0 2px rgba(13, 90, 71, 0.12);
+}
+
+.donut-chart .donut-seg-interactive {
+  transition: stroke-width 0.2s ease, opacity 0.2s ease, filter 0.2s ease;
+  cursor: pointer;
+}
+
+.donut-chart .donut-seg-interactive:hover {
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.18));
+}
+
+.legend .li.interactive-li {
+  padding: 3px 6px;
+  border-radius: 6px;
+  transition: background 0.15s ease;
+  cursor: pointer;
+}
+
+.legend .li.interactive-li:hover,
+.legend .li.interactive-li.active {
+  background: rgba(13, 90, 71, 0.05);
+}
+
+.timeline-table-row:hover {
+  background: rgba(13, 90, 71, 0.03);
+}
+
 /* Remediation status cards */
 .remed-card {
   margin-bottom: 18px;
